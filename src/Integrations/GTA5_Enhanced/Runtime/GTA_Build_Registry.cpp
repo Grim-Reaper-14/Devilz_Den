@@ -12,6 +12,14 @@ std::size_t GTA_Build_Profile::RequiredTargetCount() const noexcept
     }));
 }
 
+std::size_t GTA_Build_Profile::LocatedRequiredTargetCount() const noexcept
+{
+    return static_cast<std::size_t>(std::count_if(targets.begin(), targets.end(), [](const auto& target) {
+        return target.required && (target.state == GTA_Runtime_Target_State::Located ||
+                                   target.state == GTA_Runtime_Target_State::Validated);
+    }));
+}
+
 std::size_t GTA_Build_Profile::ValidatedRequiredTargetCount() const noexcept
 {
     return static_cast<std::size_t>(std::count_if(targets.begin(), targets.end(), [](const auto& target) {
@@ -45,16 +53,17 @@ GTA_Build_Registry::GTA_Build_Registry()
 void GTA_Build_Registry::RecalculateVerification(GTA_Build_Profile& profile) noexcept
 {
     const auto required = profile.RequiredTargetCount();
+    const auto located = profile.LocatedRequiredTargetCount();
     const auto validated = profile.ValidatedRequiredTargetCount();
 
     if (required == 0) {
         profile.verification = GTA_Build_Verification_State::Known;
-    } else if (validated == 0) {
-        profile.verification = GTA_Build_Verification_State::RuntimeUnverified;
-    } else if (validated < required) {
+    } else if (validated == required) {
+        profile.verification = GTA_Build_Verification_State::Supported;
+    } else if (located != 0 || validated != 0) {
         profile.verification = GTA_Build_Verification_State::PartiallyVerified;
     } else {
-        profile.verification = GTA_Build_Verification_State::Supported;
+        profile.verification = GTA_Build_Verification_State::RuntimeUnverified;
     }
 }
 
@@ -64,6 +73,27 @@ void GTA_Build_Registry::Register(GTA_Build_Profile profile)
         return;
     RecalculateVerification(profile);
     m_profiles.insert_or_assign(profile.fingerprint, std::move(profile));
+}
+
+bool GTA_Build_Registry::ApplyTargetStatuses(
+    std::uint64_t fingerprint,
+    const std::vector<GTA_Runtime_Target_Status>& statuses)
+{
+    const auto it = m_profiles.find(fingerprint);
+    if (it == m_profiles.end())
+        return false;
+
+    auto& profile = it->second;
+    for (const auto& incoming : statuses) {
+        const auto target = std::find_if(profile.targets.begin(), profile.targets.end(), [&](const auto& existing) {
+            return existing.id == incoming.id;
+        });
+        if (target != profile.targets.end())
+            *target = incoming;
+    }
+
+    RecalculateVerification(profile);
+    return true;
 }
 
 std::optional<GTA_Build_Profile> GTA_Build_Registry::Find(std::uint64_t fingerprint) const
