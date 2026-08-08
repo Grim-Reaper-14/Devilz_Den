@@ -15,6 +15,7 @@ namespace
 {
 using Devilz::Backend::Process_Architecture;
 using Devilz::Integrations::GTA5_Enhanced::GTA_Module_Manager_State;
+using Devilz::Integrations::GTA5_Enhanced::GTA_Runtime_Target_State;
 
 const char* ArchitectureName(Process_Architecture architecture) noexcept
 {
@@ -32,6 +33,7 @@ const char* StateName(GTA_Module_Manager_State state) noexcept
     case GTA_Module_Manager_State::NotRunning: return "NotRunning";
     case GTA_Module_Manager_State::Detected: return "Detected";
     case GTA_Module_Manager_State::BuildIdentified: return "BuildIdentified";
+    case GTA_Module_Manager_State::RuntimeUnverified: return "RuntimeUnverified";
     case GTA_Module_Manager_State::Unsupported: return "Unsupported";
     case GTA_Module_Manager_State::Supported: return "Supported";
     case GTA_Module_Manager_State::RuntimeReady: return "RuntimeReady";
@@ -40,10 +42,29 @@ const char* StateName(GTA_Module_Manager_State state) noexcept
     }
 }
 
+const char* TargetStateName(GTA_Runtime_Target_State state) noexcept
+{
+    switch (state) {
+    case GTA_Runtime_Target_State::Unknown: return "Unknown";
+    case GTA_Runtime_Target_State::Missing: return "Missing";
+    case GTA_Runtime_Target_State::Located: return "Located";
+    case GTA_Runtime_Target_State::Validated: return "Validated";
+    case GTA_Runtime_Target_State::Failed: return "Failed";
+    default: return "Unknown";
+    }
+}
+
 std::string HexFingerprint(std::uint64_t fingerprint)
 {
     std::ostringstream stream;
     stream << "0x" << std::uppercase << std::hex << fingerprint;
+    return stream.str();
+}
+
+std::string HexAddress(std::uintptr_t address)
+{
+    std::ostringstream stream;
+    stream << "0x" << std::uppercase << std::hex << address;
     return stream.str();
 }
 }
@@ -96,6 +117,22 @@ int main()
                        "Build: " + status.build->version +
                            " | Fingerprint: " + HexFingerprint(status.build->fingerprint),
                        "GTA5_Enhanced");
+        }
+
+        if (status.targetReport) {
+            logger.Log(LogLevel::Info,
+                       "Runtime targets: " + std::to_string(status.targetReport->LocatedCount()) +
+                           " located | " + std::to_string(status.targetReport->ValidatedCount()) + " validated",
+                       "GTA5_Enhanced");
+
+            for (const auto& target : status.targetReport->targets) {
+                std::string message = target.status.name + ": " + TargetStateName(target.status.state);
+                if (target.address != 0)
+                    message += " | Address: " + HexAddress(target.address);
+                if (!target.status.detail.empty())
+                    message += " | " + target.status.detail;
+                logger.Log(LogLevel::Info, std::move(message), "GTA5_Enhanced.Targets");
+            }
         }
     }
 
