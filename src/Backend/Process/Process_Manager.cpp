@@ -4,7 +4,7 @@
 #include <TlHelp32.h>
 
 #include <algorithm>
-#include <cwctype>
+#include <cctype>
 
 namespace Devilz::Backend
 {
@@ -13,10 +13,17 @@ namespace
 std::string WideToUtf8(const wchar_t* value)
 {
     if (!value || *value == L'\0') return {};
-    const int required = ::WideCharToMultiByte(CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
+
+    const int required = ::WideCharToMultiByte(
+        CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
     if (required <= 1) return {};
-    std::string result(static_cast<std::size_t>(required - 1), '\0');
-    ::WideCharToMultiByte(CP_UTF8, 0, value, -1, result.data(), required, nullptr, nullptr);
+
+    std::string result(static_cast<std::size_t>(required), '\0');
+    const int written = ::WideCharToMultiByte(
+        CP_UTF8, 0, value, -1, result.data(), required, nullptr, nullptr);
+    if (written <= 1) return {};
+
+    result.resize(static_cast<std::size_t>(written - 1));
     return result;
 }
 
@@ -24,7 +31,8 @@ bool EqualInsensitive(std::string_view left, std::string_view right)
 {
     if (left.size() != right.size()) return false;
     return std::equal(left.begin(), left.end(), right.begin(), right.end(), [](char a, char b) {
-        return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+        return std::tolower(static_cast<unsigned char>(a)) ==
+               std::tolower(static_cast<unsigned char>(b));
     });
 }
 
