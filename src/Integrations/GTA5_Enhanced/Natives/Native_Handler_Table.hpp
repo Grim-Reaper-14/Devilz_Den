@@ -22,6 +22,13 @@ public:
         m_validated.assign(count, false);
     }
 
+    void Clear() noexcept
+    {
+        m_hashes.clear();
+        m_handlers.clear();
+        m_validated.clear();
+    }
+
     [[nodiscard]] std::size_t Size() const noexcept { return m_handlers.size(); }
 
     [[nodiscard]] bool Set(Native_Index index, Native_Hash runtimeHash, Pointer handler, bool validated) noexcept
