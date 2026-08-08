@@ -13,7 +13,7 @@ Result<void> scrProgramTable::Register(scrProgram* program)
             "Cannot register an invalid scrProgram"));
 
     std::unique_lock lock(m_mutex);
-    m_programs.insert_or_assign(program->nameHash, program);
+    m_programs.insert_or_assign(program->hash, program);
     return Result<void>::Success();
 }
 
