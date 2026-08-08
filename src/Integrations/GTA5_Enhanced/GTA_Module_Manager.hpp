@@ -4,6 +4,7 @@
 #include "Backend/Process/Process_Manager.hpp"
 #include "Runtime/Build_Info.hpp"
 #include "Runtime/Build_Info_Detector.hpp"
+#include "Runtime/GTA_Build_Registry.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -16,6 +17,7 @@ enum class GTA_Module_Manager_State : std::uint8_t
     NotRunning,
     Detected,
     BuildIdentified,
+    RuntimeUnverified,
     Unsupported,
     Supported,
     RuntimeReady,
@@ -27,6 +29,7 @@ struct GTA_Module_Status
     GTA_Module_Manager_State state = GTA_Module_Manager_State::NotRunning;
     std::optional<Devilz::Backend::Process_Info> process;
     std::optional<Build_Info> build;
+    std::optional<GTA_Build_Profile> profile;
     std::string detail;
 };
 
@@ -37,10 +40,9 @@ public:
     [[nodiscard]] GTA_Module_Status Snapshot() const;
 
 private:
-    [[nodiscard]] static bool IsSupportedBuild(const Build_Info& build) noexcept;
-
     Devilz::Backend::Process_Manager m_processes;
     Build_Info_Detector m_buildDetector;
+    GTA_Build_Registry m_buildRegistry;
     GTA_Module_Status m_status{};
 };
 }
