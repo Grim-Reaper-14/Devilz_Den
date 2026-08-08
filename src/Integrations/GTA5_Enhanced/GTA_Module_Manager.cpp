@@ -38,9 +38,18 @@ Result<GTA_Module_Status> GTA_Module_Manager::Refresh()
     }
 
     m_status.profile = *profile;
+
+    auto targets = m_targetCoordinator.Resolve(m_status.process->pid, m_status.build->fingerprint);
+    if (!targets) {
+        m_status.state = GTA_Module_Manager_State::Failed;
+        m_status.detail = "Runtime target discovery failed: " + targets.Failure().Message();
+        return Result<GTA_Module_Status>::Success(m_status);
+    }
+    m_status.targetReport = std::move(targets.Value());
+
     if (!profile->RuntimeSupported()) {
         m_status.state = GTA_Module_Manager_State::RuntimeUnverified;
-        m_status.detail = "Build is known, but its runtime targets have not been fully verified";
+        m_status.detail = "Build is known; runtime target discovery completed but full semantic verification is pending";
         return Result<GTA_Module_Status>::Success(m_status);
     }
 
