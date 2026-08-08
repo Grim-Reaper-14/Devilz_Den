@@ -6,8 +6,8 @@
 #include <Psapi.h>
 
 #include <algorithm>
-#include <array>
 #include <cstring>
+#include <utility>
 
 namespace Devilz::Backend
 {
@@ -25,8 +25,11 @@ std::string Narrow(const wchar_t* value)
     if (!value || !*value) return {};
     const int count = WideCharToMultiByte(CP_UTF8, 0, value, -1, nullptr, 0, nullptr, nullptr);
     if (count <= 1) return {};
-    std::string out(static_cast<std::size_t>(count - 1), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, value, -1, out.data(), count, nullptr, nullptr);
+
+    std::string out(static_cast<std::size_t>(count), '\0');
+    const int written = WideCharToMultiByte(CP_UTF8, 0, value, -1, out.data(), count, nullptr, nullptr);
+    if (written <= 1) return {};
+    out.resize(static_cast<std::size_t>(written - 1));
     return out;
 }
 }
@@ -103,8 +106,11 @@ Result<Memory_Range> Module_Manager::FindSection(const Module_Info& module, std:
     const auto it = std::find_if(module.sections.begin(), module.sections.end(), [&](const Module_Section& section) {
         return section.name == sectionName;
     });
-    if (it == module.sections.end())
-        return Result<Memory_Range>::Failure(ModuleError("PE section not found", module.name).With("Section", std::string(sectionName)));
+    if (it == module.sections.end()) {
+        auto error = ModuleError("PE section not found", module.name);
+        error.With("Section", std::string(sectionName));
+        return Result<Memory_Range>::Failure(std::move(error));
+    }
     return Result<Memory_Range>::Success(it->range);
 }
 
@@ -128,13 +134,21 @@ std::vector<Memory_Range> Module_Manager::SelectSections(const Module_Info& modu
 std::uint64_t Module_Manager::HashImageMetadata(const Module_Info& module) noexcept
 {
     std::uint64_t hash = 1469598103934665603ull;
-    const auto mix = [&](std::uint64_t value) mutable {
-        for (int i = 0; i < 8; ++i) { hash ^= static_cast<std::uint8_t>(value); hash *= 1099511628211ull; value >>= 8; }
+    const auto mix = [&hash](std::uint64_t value) noexcept {
+        for (int i = 0; i < 8; ++i) {
+            hash ^= static_cast<std::uint8_t>(value);
+            hash *= 1099511628211ull;
+            value >>= 8;
+        }
     };
+
     mix(module.fingerprint.timeDateStamp);
     mix(module.fingerprint.sizeOfImage);
     for (const auto& section : module.sections) {
-        for (const unsigned char c : section.name) { hash ^= c; hash *= 1099511628211ull; }
+        for (const unsigned char c : section.name) {
+            hash ^= c;
+            hash *= 1099511628211ull;
+        }
         mix(section.range.size);
         mix(section.characteristics);
     }
