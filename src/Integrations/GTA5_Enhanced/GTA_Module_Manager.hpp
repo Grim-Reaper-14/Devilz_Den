@@ -2,6 +2,7 @@
 
 #include "Backend/Error/Result.hpp"
 #include "Backend/Process/Process_Manager.hpp"
+#include "Memory/GTA_Build_Target_Coordinator.hpp"
 #include "Runtime/Build_Info.hpp"
 #include "Runtime/Build_Info_Detector.hpp"
 #include "Runtime/GTA_Build_Registry.hpp"
@@ -30,6 +31,7 @@ struct GTA_Module_Status
     std::optional<Devilz::Backend::Process_Info> process;
     std::optional<Build_Info> build;
     std::optional<GTA_Build_Profile> profile;
+    std::optional<GTA_Build_Target_Report> targetReport;
     std::string detail;
 };
 
@@ -43,6 +45,7 @@ private:
     Devilz::Backend::Process_Manager m_processes;
     Build_Info_Detector m_buildDetector;
     GTA_Build_Registry m_buildRegistry;
+    GTA_Build_Target_Coordinator m_targetCoordinator;
     GTA_Module_Status m_status{};
 };
 }
