@@ -19,12 +19,17 @@ Result<void> Folder_System_Manager::RegisterFolder(std::string name, std::filesy
     if (name.empty())
         return Result<void>::Failure(Error(ErrorCode::DirectoryCreateFailed, ErrorCategory::Filesystem, "Folder registration requires a name"));
 
+    const std::string key = name;
     m_folders.insert_or_assign(std::move(name), std::move(relativePath));
     if (!create)
         return Result<void>::Success();
 
-    const auto& registered = m_folders.rbegin()->second;
-    return m_directories.Ensure(ResolveRelative(registered));
+    const auto it = m_folders.find(key);
+    if (it == m_folders.end())
+        return Result<void>::Failure(Error(ErrorCode::DirectoryCreateFailed, ErrorCategory::Filesystem,
+            "Registered folder could not be resolved after insertion").With("Folder", key));
+
+    return m_directories.Ensure(ResolveRelative(it->second));
 }
 
 Result<std::filesystem::path> Folder_System_Manager::Resolve(std::string_view name) const
