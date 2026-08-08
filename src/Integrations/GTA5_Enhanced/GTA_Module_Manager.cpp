@@ -30,9 +30,17 @@ Result<GTA_Module_Status> GTA_Module_Manager::Refresh()
     m_status.state = GTA_Module_Manager_State::BuildIdentified;
     m_status.detail = "GTA Enhanced build identified";
 
-    if (!IsSupportedBuild(*m_status.build)) {
+    const auto profile = m_buildRegistry.Find(m_status.build->fingerprint);
+    if (!profile) {
         m_status.state = GTA_Module_Manager_State::Unsupported;
-        m_status.detail = "No verified runtime pattern set is registered for this GTA Enhanced build";
+        m_status.detail = "GTA Enhanced build is not registered";
+        return Result<GTA_Module_Status>::Success(m_status);
+    }
+
+    m_status.profile = *profile;
+    if (!profile->RuntimeSupported()) {
+        m_status.state = GTA_Module_Manager_State::RuntimeUnverified;
+        m_status.detail = "Build is known, but its runtime targets have not been fully verified";
         return Result<GTA_Module_Status>::Success(m_status);
     }
 
@@ -44,13 +52,5 @@ Result<GTA_Module_Status> GTA_Module_Manager::Refresh()
 GTA_Module_Status GTA_Module_Manager::Snapshot() const
 {
     return m_status;
-}
-
-bool GTA_Module_Manager::IsSupportedBuild(const Build_Info& build) noexcept
-{
-    // Fail closed until a build fingerprint has a verified pattern definition.
-    // This prevents accidental runtime initialization against guessed offsets.
-    (void)build;
-    return false;
 }
 }
