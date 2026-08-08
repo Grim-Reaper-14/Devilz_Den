@@ -30,14 +30,11 @@ Result<GTA_Module_Status> GTA_Module_Manager::Refresh()
     m_status.state = GTA_Module_Manager_State::BuildIdentified;
     m_status.detail = "GTA Enhanced build identified";
 
-    const auto profile = m_buildRegistry.Find(m_status.build->fingerprint);
-    if (!profile) {
+    if (!m_buildRegistry.Known(m_status.build->fingerprint)) {
         m_status.state = GTA_Module_Manager_State::Unsupported;
         m_status.detail = "GTA Enhanced build is not registered";
         return Result<GTA_Module_Status>::Success(m_status);
     }
-
-    m_status.profile = *profile;
 
     auto targets = m_targetCoordinator.Resolve(m_status.process->pid, m_status.build->fingerprint);
     if (!targets) {
@@ -47,14 +44,39 @@ Result<GTA_Module_Status> GTA_Module_Manager::Refresh()
     }
     m_status.targetReport = std::move(targets.Value());
 
-    if (!profile->RuntimeSupported()) {
-        m_status.state = GTA_Module_Manager_State::RuntimeUnverified;
-        m_status.detail = "Build is known; runtime target discovery completed but full semantic verification is pending";
+    std::vector<GTA_Runtime_Target_Status> statuses;
+    statuses.reserve(m_status.targetReport->targets.size());
+    for (const auto& target : m_status.targetReport->targets)
+        statuses.push_back(target.status);
+
+    if (!m_buildRegistry.ApplyTargetStatuses(m_status.build->fingerprint, statuses)) {
+        m_status.state = GTA_Module_Manager_State::Failed;
+        m_status.detail = "Unable to apply runtime target results to the GTA build profile";
         return Result<GTA_Module_Status>::Success(m_status);
     }
 
-    m_status.state = GTA_Module_Manager_State::Supported;
-    m_status.detail = "GTA Enhanced build is supported";
+    m_status.profile = m_buildRegistry.Find(m_status.build->fingerprint);
+    if (!m_status.profile) {
+        m_status.state = GTA_Module_Manager_State::Failed;
+        m_status.detail = "GTA build profile disappeared after runtime target discovery";
+        return Result<GTA_Module_Status>::Success(m_status);
+    }
+
+    switch (m_status.profile->verification) {
+    case GTA_Build_Verification_State::Supported:
+        m_status.state = GTA_Module_Manager_State::Supported;
+        m_status.detail = "All required GTA runtime targets are semantically validated";
+        break;
+    case GTA_Build_Verification_State::PartiallyVerified:
+        m_status.state = GTA_Module_Manager_State::RuntimeUnverified;
+        m_status.detail = "Some GTA runtime targets are located or validated; full verification is still pending";
+        break;
+    default:
+        m_status.state = GTA_Module_Manager_State::RuntimeUnverified;
+        m_status.detail = "Build is known; required GTA runtime targets are not yet verified";
+        break;
+    }
+
     return Result<GTA_Module_Status>::Success(m_status);
 }
 
