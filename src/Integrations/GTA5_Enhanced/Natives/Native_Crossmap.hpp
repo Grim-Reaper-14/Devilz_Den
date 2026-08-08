@@ -36,8 +36,8 @@ struct Native_Crossmap_Stats
 class Native_Crossmap final
 {
 public:
-    Result<void> Add(Native_Crossmap_Entry entry);
-    Result<void> AddBatch(std::vector<Native_Crossmap_Entry> entries);
+    Devilz::Backend::Result<void> Add(Native_Crossmap_Entry entry);
+    Devilz::Backend::Result<void> AddBatch(std::vector<Native_Crossmap_Entry> entries);
 
     [[nodiscard]] std::optional<Native_Hash> ToRuntime(
         Native_Hash canonical,
@@ -52,11 +52,11 @@ public:
     [[nodiscard]] bool ContainsRuntime(Native_Hash runtime,
                                        std::uint64_t buildFingerprint) const;
 
-    Result<void> LoadText(Devilz::Backend::File_System_Manager& files,
-                          const std::filesystem::path& path,
-                          std::uint64_t expectedBuildFingerprint = 0);
-    Result<void> SaveText(Devilz::Backend::File_System_Manager& files,
-                          const std::filesystem::path& path) const;
+    Devilz::Backend::Result<void> LoadText(Devilz::Backend::File_System_Manager& files,
+                                            const std::filesystem::path& path,
+                                            std::uint64_t expectedBuildFingerprint = 0);
+    Devilz::Backend::Result<void> SaveText(Devilz::Backend::File_System_Manager& files,
+                                            const std::filesystem::path& path) const;
 
     void InvalidateBuild(std::uint64_t buildFingerprint);
     void Clear();
