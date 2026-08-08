@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>
@@ -16,4 +15,16 @@ class scrProgramTable final
 {
 public:
     Devilz::Backend::Result<void> Register(scrProgram* program);
-    void Un
+    void Unregister(std::uint32_t hash) noexcept;
+    void Clear() noexcept;
+
+    [[nodiscard]] scrProgram* Find(std::uint32_t hash) const noexcept;
+    [[nodiscard]] bool Contains(std::uint32_t hash) const noexcept;
+    [[nodiscard]] std::vector<scrProgram*> Snapshot() const;
+    [[nodiscard]] std::size_t Size() const noexcept;
+
+private:
+    mutable std::shared_mutex m_mutex;
+    std::unordered_map<std::uint32_t, scrProgram*> m_programs;
+};
+}
