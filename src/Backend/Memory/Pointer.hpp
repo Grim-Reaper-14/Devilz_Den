@@ -18,7 +18,10 @@ public:
 
     [[nodiscard]] constexpr std::uintptr_t Address() const noexcept { return m_address; }
     [[nodiscard]] constexpr bool Valid() const noexcept { return m_address != 0; }
+    [[nodiscard]] constexpr bool IsNull() const noexcept { return m_address == 0; }
     explicit constexpr operator bool() const noexcept { return Valid(); }
+
+    [[nodiscard]] constexpr bool operator==(const Pointer&) const noexcept = default;
 
     [[nodiscard]] constexpr Pointer Add(std::ptrdiff_t offset) const noexcept
     {
@@ -49,16 +52,11 @@ public:
         return reinterpret_cast<const T*>(m_address);
     }
 
-    // Resolves a signed 32-bit displacement stored at this + displacementOffset.
-    // instructionSize is the number of bytes from this pointer to the address
-    // immediately following the instruction.
     [[nodiscard]] std::optional<Pointer> ResolveRelative32(
         std::ptrdiff_t displacementOffset,
         std::size_t instructionSize,
         const Memory_Range& readableRange) const noexcept;
 
-    // Follows pointer-sized values using the supplied offsets. Every read must
-    // remain inside readableRange; this utility never reads arbitrary remote memory.
     [[nodiscard]] std::optional<Pointer> Follow(
         const std::ptrdiff_t* offsets,
         std::size_t count,
