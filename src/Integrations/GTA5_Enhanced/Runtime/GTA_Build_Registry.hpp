@@ -33,6 +33,7 @@ struct GTA_Build_Profile
     }
 
     [[nodiscard]] std::size_t RequiredTargetCount() const noexcept;
+    [[nodiscard]] std::size_t LocatedRequiredTargetCount() const noexcept;
     [[nodiscard]] std::size_t ValidatedRequiredTargetCount() const noexcept;
     [[nodiscard]] bool AllRequiredTargetsValidated() const noexcept;
 };
@@ -45,6 +46,10 @@ public:
     [[nodiscard]] std::optional<GTA_Build_Profile> Find(std::uint64_t fingerprint) const;
     [[nodiscard]] bool Known(std::uint64_t fingerprint) const noexcept;
     [[nodiscard]] bool Supported(std::uint64_t fingerprint) const noexcept;
+
+    [[nodiscard]] bool ApplyTargetStatuses(
+        std::uint64_t fingerprint,
+        const std::vector<GTA_Runtime_Target_Status>& statuses);
 
 private:
     void Register(GTA_Build_Profile profile);
