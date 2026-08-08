@@ -66,6 +66,12 @@ public:
                              std::source_location source = std::source_location::current());
 
     Error& With(std::string key, std::string value);
+    [[nodiscard]] Error With(std::string key, std::string value) const
+    {
+        Error copy = *this;
+        copy.With(std::move(key), std::move(value));
+        return copy;
+    }
 
     [[nodiscard]] ErrorCode Code() const noexcept { return m_code; }
     [[nodiscard]] ErrorCategory Category() const noexcept { return m_category; }
