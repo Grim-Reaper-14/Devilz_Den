@@ -9,7 +9,15 @@ file(GLOB_RECURSE DEVILZ_DEN_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
-add_executable(Devilz_Den ${DEVILZ_DEN_SOURCES})
+# Keep the old executable harness in-tree for diagnostics, but it is not part
+# of the injected runtime DLL.
+list(FILTER DEVILZ_DEN_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
+
+add_library(Devilz_Den SHARED ${DEVILZ_DEN_SOURCES})
+
+set_target_properties(Devilz_Den PROPERTIES
+    OUTPUT_NAME "Devilz_Den"
+)
 
 target_include_directories(Devilz_Den PRIVATE src)
 target_compile_definitions(Devilz_Den PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
