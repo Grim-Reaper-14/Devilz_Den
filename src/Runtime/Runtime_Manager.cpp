@@ -3,10 +3,12 @@
 #include "Backend/Logging/Sinks/DebuggerSink.hpp"
 #include "Backend/Logging/Sinks/FileSink.hpp"
 
+#include <exception>
 #include <iomanip>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <utility>
 
 namespace Devilz
 {
