@@ -1,0 +1,35 @@
+name: Windows MSVC Build
+
+on:
+  push:
+    branches:
+      - feature/backend-runtime-foundation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B build -A x64
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build --config Debug --parallel
+
+      - name: Verify output
+        shell: pwsh
+        run: |
+          $dll = "build\Debug\Devilz_Den.dll"
+          if (!(Test-Path $dll)) {
+            throw "Expected DLL was not produced: $dll"
+          }
+          Get-Item $dll | Format-List FullName,Length,LastWriteTime
