@@ -1,0 +1,170 @@
+#include "Runtime_Manager.hpp"
+
+#include "Backend/Logging/Sinks/DebuggerSink.hpp"
+#include "Backend/Logging/Sinks/FileSink.hpp"
+
+#include <iomanip>
+#include <memory>
+#include <sstream>
+#include <string>
+
+namespace Devilz
+{
+namespace
+{
+using Backend::Process_Architecture;
+using Integrations::GTA5_Enhanced::GTA_Module_Manager_State;
+using Integrations::GTA5_Enhanced::GTA_Runtime_Target_State;
+
+const char* ArchitectureName(Process_Architecture architecture) noexcept
+{
+    switch (architecture) {
+    case Process_Architecture::X86: return "x86";
+    case Process_Architecture::X64: return "x64";
+    case Process_Architecture::Arm64: return "ARM64";
+    default: return "Unknown";
+    }
+}
+
+const char* StateName(GTA_Module_Manager_State state) noexcept
+{
+    switch (state) {
+    case GTA_Module_Manager_State::NotRunning: return "NotRunning";
+    case GTA_Module_Manager_State::Detected: return "Detected";
+    case GTA_Module_Manager_State::BuildIdentified: return "BuildIdentified";
+    case GTA_Module_Manager_State::RuntimeUnverified: return "RuntimeUnverified";
+    case GTA_Module_Manager_State::Unsupported: return "Unsupported";
+    case GTA_Module_Manager_State::Supported: return "Supported";
+    case GTA_Module_Manager_State::RuntimeReady: return "RuntimeReady";
+    case GTA_Module_Manager_State::Failed: return "Failed";
+    default: return "Unknown";
+    }
+}
+
+const char* TargetStateName(GTA_Runtime_Target_State state) noexcept
+{
+    switch (state) {
+    case GTA_Runtime_Target_State::Unknown: return "Unknown";
+    case GTA_Runtime_Target_State::Missing: return "Missing";
+    case GTA_Runtime_Target_State::Located: return "Located";
+    case GTA_Runtime_Target_State::Validated: return "Validated";
+    case GTA_Runtime_Target_State::Failed: return "Failed";
+    default: return "Unknown";
+    }
+}
+
+std::string Hex(std::uint64_t value)
+{
+    std::ostringstream stream;
+    stream << "0x" << std::uppercase << std::hex << value;
+    return stream.str();
+}
+}
+
+Runtime_Manager::~Runtime_Manager()
+{
+    Stop();
+}
+
+bool Runtime_Manager::Start()
+{
+    bool expected = false;
+    if (!m_running.compare_exchange_strong(expected, true))
+        return true;
+
+    try {
+        m_logger.AddSink(std::make_unique<Backend::DebuggerSink>());
+        m_logger.AddSink(std::make_unique<Backend::FileSink>("logs/Devilz_Den.log"));
+        m_logger.Start();
+        m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL runtime starting", "Runtime");
+
+        m_threads.Start();
+        m_threads.Workers().Submit([this] {
+            m_logger.Log(Backend::LogLevel::Debug, "Worker executor is operational", "Threading");
+        });
+        m_threads.IO().Submit([this] {
+            m_logger.Log(Backend::LogLevel::Debug, "IO executor is operational", "Threading");
+        });
+
+        const auto refreshed = m_gta.Refresh();
+        if (!refreshed) {
+            m_logger.Log(Backend::LogLevel::Error,
+                         "GTA detection failed: " + refreshed.Failure().Message(),
+                         "GTA5_Enhanced");
+        } else {
+            LogGTAStatus(refreshed.Value());
+        }
+
+        m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL bootstrap completed", "Runtime");
+        return true;
+    } catch (const std::exception& exception) {
+        m_logger.Log(Backend::LogLevel::Error,
+                     std::string("DLL runtime startup threw an exception: ") + exception.what(),
+                     "Runtime");
+    } catch (...) {
+        m_logger.Log(Backend::LogLevel::Error,
+                     "DLL runtime startup threw an unknown exception",
+                     "Runtime");
+    }
+
+    Stop();
+    return false;
+}
+
+void Runtime_Manager::Stop() noexcept
+{
+    if (!m_running.exchange(false))
+        return;
+
+    try {
+        m_threads.Stop();
+        m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL runtime stopped cleanly", "Runtime");
+        m_logger.Flush();
+        m_logger.Stop();
+    } catch (...) {
+        // Shutdown is best-effort and must never escape across the DLL boundary.
+    }
+}
+
+void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
+{
+    m_logger.Log(Backend::LogLevel::Info,
+                 std::string("State: ") + StateName(status.state) + " - " + status.detail,
+                 "GTA5_Enhanced");
+
+    if (status.process) {
+        m_logger.Log(Backend::LogLevel::Info,
+                     "PID: " + std::to_string(status.process->pid) +
+                         " | Architecture: " + ArchitectureName(status.process->architecture),
+                     "GTA5_Enhanced");
+        if (!status.process->executablePath.empty())
+            m_logger.Log(Backend::LogLevel::Info,
+                         "Executable: " + status.process->executablePath.string(),
+                         "GTA5_Enhanced");
+    }
+
+    if (status.build) {
+        m_logger.Log(Backend::LogLevel::Info,
+                     "Build: " + status.build->version +
+                         " | Fingerprint: " + Hex(status.build->fingerprint),
+                     "GTA5_Enhanced");
+    }
+
+    if (!status.targetReport)
+        return;
+
+    m_logger.Log(Backend::LogLevel::Info,
+                 "Runtime targets: " + std::to_string(status.targetReport->LocatedCount()) +
+                     " located | " + std::to_string(status.targetReport->ValidatedCount()) + " validated",
+                 "GTA5_Enhanced");
+
+    for (const auto& target : status.targetReport->targets) {
+        std::string message = target.status.name + ": " + TargetStateName(target.status.state);
+        if (target.address != 0)
+            message += " | Address: " + Hex(target.address);
+        if (!target.status.detail.empty())
+            message += " | " + target.status.detail;
+        m_logger.Log(Backend::LogLevel::Info, std::move(message), "GTA5_Enhanced.Targets");
+    }
+}
+}
