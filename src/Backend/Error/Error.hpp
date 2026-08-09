@@ -27,6 +27,8 @@ enum class ErrorCode : std::uint32_t
 {
     None = 0,
     RuntimeFailure = 1000,
+    InvalidArgument = 1001,
+    NotFound = 1002,
     ServiceInitializationFailed = 1100,
     ServiceDependencyMissing,
     ThreadCreationFailed = 2000,
