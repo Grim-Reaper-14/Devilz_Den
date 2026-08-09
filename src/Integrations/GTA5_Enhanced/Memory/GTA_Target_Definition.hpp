@@ -15,7 +15,7 @@ struct GTA_Target_Definition
     std::string name;
     std::string module = "GTA5_Enhanced.exe";
     std::string pattern;
-    GTA_Address_Resolve_Rule resolve{};
+    GTA_Address_Resolve_Chain resolve;
     bool required = true;
 };
 
