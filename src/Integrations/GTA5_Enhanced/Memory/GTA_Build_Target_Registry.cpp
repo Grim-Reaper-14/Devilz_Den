@@ -11,10 +11,43 @@ GTA_Build_Target_Registry::GTA_Build_Target_Registry()
     current.targets = {
         {GTA_Runtime_Target_Id::GameState, "GameState", "GTA5_Enhanced.exe", {}, {}, true},
         {GTA_Runtime_Target_Id::FrameCount, "FrameCount", "GTA5_Enhanced.exe", {}, {}, true},
-        {GTA_Runtime_Target_Id::ScriptGlobals, "ScriptGlobals", "GTA5_Enhanced.exe", {}, {}, true},
-        {GTA_Runtime_Target_Id::ProgramTable, "ProgramTable", "GTA5_Enhanced.exe", {}, {}, true},
-        {GTA_Runtime_Target_Id::ScriptThreads, "ScriptThreads", "GTA5_Enhanced.exe", {}, {}, true},
-        {GTA_Runtime_Target_Id::InitNativeTables, "InitNativeTables", "GTA5_Enhanced.exe", {}, {}, true},
+        {
+            GTA_Runtime_Target_Id::ScriptGlobals,
+            "ScriptGlobals",
+            "GTA5_Enhanced.exe",
+            "48 8B 8E B8 00 00 00 48 8D 15 ? ? ? ? 49 89 D8",
+            {
+                {GTA_Address_Resolve_Op_Type::Add, 7},
+                {GTA_Address_Resolve_Op_Type::RipRelative32, 3}
+            },
+            true
+        },
+        {
+            GTA_Runtime_Target_Id::ProgramTable,
+            "ProgramTable",
+            "GTA5_Enhanced.exe",
+            "48 C7 84 C8 D8 00 00 00 00 00 00 00",
+            {},
+            true
+        },
+        {
+            GTA_Runtime_Target_Id::ScriptThreads,
+            "ScriptThreads",
+            "GTA5_Enhanced.exe",
+            "48 8B 05 ? ? ? ? 48 89 34 F8 48 FF C7 48 39 FB 75 97",
+            {
+                {GTA_Address_Resolve_Op_Type::RipRelative32, 3}
+            },
+            true
+        },
+        {
+            GTA_Runtime_Target_Id::InitNativeTables,
+            "InitNativeTables",
+            "GTA5_Enhanced.exe",
+            "EB 2A 0F 1F 40 00 48 8B 54 17 10",
+            {},
+            true
+        },
         {GTA_Runtime_Target_Id::NativeTable, "NativeTable", "GTA5_Enhanced.exe", {}, {}, true}
     };
     Register(std::move(current));
