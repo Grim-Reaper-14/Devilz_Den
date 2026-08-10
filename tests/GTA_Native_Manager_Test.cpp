@@ -146,6 +146,7 @@ bool TestRegistry()
     const auto invincible = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::SetEntityInvincible);
     const auto waypoint = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::IsWaypointActive);
     const auto setCoords = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::SetEntityCoordsNoOffset);
+    const auto disableControls = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::DisableAllControlActions);
 
     if (!timer || timer->originalHash != 0x9CD27B0045628463ULL ||
         timer->enhancedHash != 0x1DD05E817C89C737ULL) {
@@ -162,7 +163,8 @@ bool TestRegistry()
     if (!playerPed || playerPed->enhancedHash != 0x4A8C381C258A124DULL ||
         !invincible || invincible->enhancedHash != 0x935364B4448CD584ULL ||
         !waypoint || waypoint->enhancedHash != 0x02213DC34A224533ULL ||
-        !setCoords || setCoords->enhancedHash != 0x62C438C53BB57AFDULL) {
+        !setCoords || setCoords->enhancedHash != 0x62C438C53BB57AFDULL ||
+        !disableControls || disableControls->enhancedHash != 0xD4510218399ED105ULL) {
         std::cerr << "Gameplay native registry mapping is incorrect\n";
         return false;
     }
