@@ -17,6 +17,7 @@ namespace
 {
 using Backend::Process_Architecture;
 using Integrations::GTA5_Enhanced::GTA_Module_Manager_State;
+using Integrations::GTA5_Enhanced::GTA_Runtime_Target_Id;
 using Integrations::GTA5_Enhanced::GTA_Runtime_Target_State;
 using Integrations::GTA5_Enhanced::GTA_Target_Candidate_Kind;
 
@@ -110,6 +111,7 @@ bool Runtime_Manager::Start(const std::filesystem::path& logPath)
                          "GTA5_Enhanced");
         } else {
             LogGTAStatus(refreshed.Value());
+            InitializeNativeManager(refreshed.Value());
         }
 
         m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL bootstrap completed", "Runtime");
@@ -134,6 +136,7 @@ void Runtime_Manager::Stop() noexcept
         return;
 
     try {
+        m_natives.Reset();
         m_threads.Stop();
         m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL runtime stopped cleanly", "Runtime");
         m_logger.Flush();
@@ -141,6 +144,55 @@ void Runtime_Manager::Stop() noexcept
     } catch (...) {
         // Shutdown is best-effort and must never escape across the DLL boundary.
     }
+}
+
+void Runtime_Manager::InitializeNativeManager(
+    const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
+{
+    if (!status.process || !status.targetReport) {
+        m_logger.Log(Backend::LogLevel::Warning,
+                     "Native manager unavailable: GTA process or target report is missing",
+                     "GTA5_Enhanced.Natives");
+        return;
+    }
+
+    std::uintptr_t initNativeTables = 0;
+    for (const auto& target : status.targetReport->targets) {
+        if (target.status.id == GTA_Runtime_Target_Id::InitNativeTables &&
+            target.status.state == GTA_Runtime_Target_State::Validated) {
+            initNativeTables = target.address;
+            break;
+        }
+    }
+
+    if (initNativeTables == 0) {
+        m_logger.Log(Backend::LogLevel::Warning,
+                     "Native manager unavailable: InitNativeTables is not semantically validated",
+                     "GTA5_Enhanced.Natives");
+        return;
+    }
+
+    Backend::Process_Module_Manager modules(status.process->pid);
+    const auto module = modules.Find("GTA5_Enhanced.exe");
+    if (!module) {
+        m_logger.Log(Backend::LogLevel::Warning,
+                     "Native manager unavailable: GTA module image could not be resolved",
+                     "GTA5_Enhanced.Natives");
+        return;
+    }
+
+    const auto nativeStatus = m_natives.Initialize(
+        initNativeTables,
+        module.Value().baseAddress,
+        module.Value().imageSize);
+
+    m_logger.Log(
+        nativeStatus.ready ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
+        std::string("State: ") + (nativeStatus.ready ? "Ready" : "Unavailable") +
+            " | ProbeHandlers: " + std::to_string(nativeStatus.cachedHandlers) +
+            "/" + std::to_string(nativeStatus.requestedHandlers) +
+            " | " + nativeStatus.detail,
+        "GTA5_Enhanced.Natives");
 }
 
 void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
