@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <limits>
 #include <string>
 
 namespace Devilz::Integrations::GTA5_Enhanced
