@@ -106,7 +106,7 @@ std::string FriendlyField(std::string_view field)
     else if (key == "DominantExecImagePtrs") key = "Executable Dispatch Entries";
 
     std::ostringstream out;
-    out << std::left << std::setw(27) << key << value;
+    out << std::left << std::setw(28) << key << value;
     return out.str();
 }
 
