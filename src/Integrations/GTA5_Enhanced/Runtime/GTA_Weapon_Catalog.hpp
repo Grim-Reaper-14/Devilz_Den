@@ -1,0 +1,135 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <string_view>
+
+namespace Devilz::Integrations::GTA5_Enhanced
+{
+[[nodiscard]] constexpr std::uint32_t GTA_Weapon_Hash(std::string_view value) noexcept
+{
+    std::uint32_t hash = 0;
+    for (char raw : value) {
+        auto c = static_cast<std::uint8_t>(raw);
+        if (c >= static_cast<std::uint8_t>('A') && c <= static_cast<std::uint8_t>('Z'))
+            c = static_cast<std::uint8_t>(c + ('a' - 'A'));
+        hash += c;
+        hash += hash << 10;
+        hash ^= hash >> 6;
+    }
+    hash += hash << 3;
+    hash ^= hash >> 11;
+    hash += hash << 15;
+    return hash;
+}
+
+inline constexpr auto GTA_All_Weapon_Names = std::to_array<std::string_view>({
+    "WEAPON_KNIFE",
+    "WEAPON_NIGHTSTICK",
+    "WEAPON_HAMMER",
+    "WEAPON_BAT",
+    "WEAPON_GOLFCLUB",
+    "WEAPON_CROWBAR",
+    "WEAPON_BOTTLE",
+    "WEAPON_DAGGER",
+    "WEAPON_HATCHET",
+    "WEAPON_KNUCKLE",
+    "WEAPON_MACHETE",
+    "WEAPON_FLASHLIGHT",
+    "WEAPON_SWITCHBLADE",
+    "WEAPON_WRENCH",
+    "WEAPON_POOLCUE",
+    "WEAPON_BATTLEAXE",
+    "WEAPON_STONE_HATCHET",
+    "WEAPON_CANDYCANE",
+    "WEAPON_PISTOL",
+    "WEAPON_COMBATPISTOL",
+    "WEAPON_APPISTOL",
+    "WEAPON_PISTOL50",
+    "WEAPON_SNSPISTOL",
+    "WEAPON_HEAVYPISTOL",
+    "WEAPON_VINTAGEPISTOL",
+    "WEAPON_MARKSMANPISTOL",
+    "WEAPON_REVOLVER",
+    "WEAPON_DOUBLEACTION",
+    "WEAPON_NAVYREVOLVER",
+    "WEAPON_CERAMICPISTOL",
+    "WEAPON_GADGETPISTOL",
+    "WEAPON_PISTOL_MK2",
+    "WEAPON_SNSPISTOL_MK2",
+    "WEAPON_REVOLVER_MK2",
+    "WEAPON_PISTOLXM3",
+    "WEAPON_STUNGUN",
+    "WEAPON_STUNGUN_MP",
+    "WEAPON_RAYPISTOL",
+    "WEAPON_MICROSMG",
+    "WEAPON_SMG",
+    "WEAPON_ASSAULTSMG",
+    "WEAPON_COMBATPDW",
+    "WEAPON_MACHINEPISTOL",
+    "WEAPON_MINISMG",
+    "WEAPON_SMG_MK2",
+    "WEAPON_TECPISTOL",
+    "WEAPON_ASSAULTRIFLE",
+    "WEAPON_CARBINERIFLE",
+    "WEAPON_ADVANCEDRIFLE",
+    "WEAPON_SPECIALCARBINE",
+    "WEAPON_BULLPUPRIFLE",
+    "WEAPON_COMPACTRIFLE",
+    "WEAPON_ASSAULTRIFLE_MK2",
+    "WEAPON_CARBINERIFLE_MK2",
+    "WEAPON_SPECIALCARBINE_MK2",
+    "WEAPON_BULLPUPRIFLE_MK2",
+    "WEAPON_MILITARYRIFLE",
+    "WEAPON_HEAVYRIFLE",
+    "WEAPON_TACTICALRIFLE",
+    "WEAPON_BATTLERIFLE",
+    "WEAPON_MG",
+    "WEAPON_COMBATMG",
+    "WEAPON_GUSENBERG",
+    "WEAPON_COMBATMG_MK2",
+    "WEAPON_PUMPSHOTGUN",
+    "WEAPON_SAWNOFFSHOTGUN",
+    "WEAPON_ASSAULTSHOTGUN",
+    "WEAPON_BULLPUPSHOTGUN",
+    "WEAPON_DBSHOTGUN",
+    "WEAPON_HEAVYSHOTGUN",
+    "WEAPON_AUTOSHOTGUN",
+    "WEAPON_PUMPSHOTGUN_MK2",
+    "WEAPON_COMBATSHOTGUN",
+    "WEAPON_SNIPERRIFLE",
+    "WEAPON_HEAVYSNIPER",
+    "WEAPON_MARKSMANRIFLE",
+    "WEAPON_HEAVYSNIPER_MK2",
+    "WEAPON_MARKSMANRIFLE_MK2",
+    "WEAPON_PRECISIONRIFLE",
+    "WEAPON_GRENADELAUNCHER",
+    "WEAPON_RPG",
+    "WEAPON_MINIGUN",
+    "WEAPON_FIREWORK",
+    "WEAPON_RAILGUN",
+    "WEAPON_HOMINGLAUNCHER",
+    "WEAPON_COMPACTLAUNCHER",
+    "WEAPON_RAYMINIGUN",
+    "WEAPON_RAYCARBINE",
+    "WEAPON_RAILGUNXM3",
+    "WEAPON_EMPLAUNCHER",
+    "WEAPON_SNOWLAUNCHER",
+    "WEAPON_GRENADE",
+    "WEAPON_STICKYBOMB",
+    "WEAPON_SMOKEGRENADE",
+    "WEAPON_BZGAS",
+    "WEAPON_MOLOTOV",
+    "WEAPON_PROXMINE",
+    "WEAPON_PIPEBOMB",
+    "WEAPON_SNOWBALL",
+    "WEAPON_FLARE",
+    "WEAPON_BALL",
+    "WEAPON_FIREEXTINGUISHER",
+    "WEAPON_PETROLCAN",
+    "WEAPON_HAZARDCAN",
+    "WEAPON_FERTILIZERCAN",
+    "WEAPON_MUSKET",
+    "WEAPON_FLAREGUN"
+});
+}
