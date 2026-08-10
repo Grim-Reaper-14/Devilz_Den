@@ -14,6 +14,7 @@ namespace Devilz::Integrations::GTA5_Enhanced
 struct GTA_Target_Resolution
 {
     GTA_Runtime_Target_Status status{};
+    GTA_Target_Candidate_Kind candidateKind = GTA_Target_Candidate_Kind::Unknown;
     std::uintptr_t address = 0;
     std::vector<std::uintptr_t> candidates;
 };
