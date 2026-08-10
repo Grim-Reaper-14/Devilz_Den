@@ -15,6 +15,7 @@ struct GTA_Build_Target_Report
     std::vector<GTA_Target_Resolution> targets;
 
     [[nodiscard]] std::size_t LocatedCount() const noexcept;
+    [[nodiscard]] std::size_t StructurallyValidatedCount() const noexcept;
     [[nodiscard]] std::size_t ValidatedCount() const noexcept;
 };
 
