@@ -22,6 +22,7 @@ class GTA_Target_Semantic_Validator final
 {
 public:
     static constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
+    static constexpr std::uintptr_t ScriptGlobalsRva = 0x3ED15A8ULL;
     static constexpr std::uintptr_t ScriptThreadsDispatchTableRva = 0x2679270ULL;
     static constexpr std::uintptr_t RunScriptThreadsEntryRva = 0x920A40ULL;
     static constexpr std::uintptr_t InitNativeTablesEntryRva = 0x91BF20ULL;
@@ -36,6 +37,49 @@ public:
         std::uintptr_t candidateAddress)
     {
         GTA_Target_Semantic_Validation result{};
+
+        if (definition.id == GTA_Runtime_Target_Id::ScriptGlobals &&
+            definition.candidateKind == GTA_Target_Candidate_Kind::DirectData) {
+            result.applicable = true;
+
+            if (fingerprint != SupportedFingerprint) {
+                result.detail = "No ScriptGlobals semantic identity is registered for this GTA build fingerprint";
+                return result;
+            }
+
+            if (moduleBase == 0 ||
+                moduleBase > (std::numeric_limits<std::uintptr_t>::max)() - ScriptGlobalsRva) {
+                result.detail = "GTA module base is unavailable for ScriptGlobals semantic validation";
+                return result;
+            }
+
+            const auto expectedAddress = moduleBase + ScriptGlobalsRva;
+            if (candidateAddress != expectedAddress) {
+                result.detail = "ScriptGlobals RVA does not match the verified build identity";
+                return result;
+            }
+
+            if (!evidence.candidateCommitted || !evidence.candidateReadable ||
+                evidence.candidateType != 0x01000000U) {
+                result.detail = "ScriptGlobals candidate is not committed readable GTA image memory";
+                return result;
+            }
+
+            if (!evidence.sampleRead || evidence.sampleNonZeroQwords < 4 ||
+                evidence.sampleReadablePointers < 4) {
+                result.detail = "ScriptGlobals candidate does not expose the expected readable pointer-like sample";
+                return result;
+            }
+
+            std::ostringstream detail;
+            detail << "ScriptGlobals semantic identity validated for fingerprint 0x"
+                   << std::uppercase << std::hex << fingerprint
+                   << " at RVA 0x" << ScriptGlobalsRva;
+
+            result.passed = true;
+            result.detail = detail.str();
+            return result;
+        }
 
         if (definition.id == GTA_Runtime_Target_Id::ScriptThreads &&
             definition.candidateKind == GTA_Target_Candidate_Kind::PointerStorage) {
