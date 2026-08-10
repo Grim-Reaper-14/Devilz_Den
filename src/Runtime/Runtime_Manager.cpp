@@ -68,7 +68,7 @@ Runtime_Manager::~Runtime_Manager()
     Stop();
 }
 
-bool Runtime_Manager::Start()
+bool Runtime_Manager::Start(const std::filesystem::path& logPath)
 {
     bool expected = false;
     if (!m_running.compare_exchange_strong(expected, true))
@@ -76,9 +76,11 @@ bool Runtime_Manager::Start()
 
     try {
         m_logger.AddSink(std::make_unique<Backend::DebuggerSink>());
-        m_logger.AddSink(std::make_unique<Backend::FileSink>("logs/Devilz_Den.log"));
+        m_logger.AddSink(std::make_unique<Backend::FileSink>(logPath));
         m_logger.Start();
-        m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL runtime starting", "Runtime");
+        m_logger.Log(Backend::LogLevel::Info,
+                     "Devilz_Den DLL runtime starting | Log: " + logPath.string(),
+                     "Runtime");
 
         m_threads.Start();
         m_threads.Workers().Submit([this] {
