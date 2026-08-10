@@ -25,6 +25,7 @@ void FileSink::Write(const LogRecord& record)
              << " [" << record.sequence << "] [" << record.service << "] " << record.message;
     if (record.error) m_stream << " | " << record.error->DetailedDescription();
     m_stream << '\n';
+    m_stream.flush();
 }
 
 void FileSink::Flush()
