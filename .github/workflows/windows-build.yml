@@ -34,6 +34,14 @@ jobs:
           }
           Get-Item $dll | Format-List FullName,Length,LastWriteTime
 
+      - name: Run DLL bootstrap smoke test
+        shell: pwsh
+        run: |
+          & ".\build\Debug\Devilz_Den_Smoke_Test.exe" ".\build\Debug\Devilz_Den.dll"
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
       - name: Upload Debug artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -42,3 +50,4 @@ jobs:
           path: |
             build/Debug/Devilz_Den.dll
             build/Debug/Devilz_Den.pdb
+            build/Debug/Devilz_Den_Smoke_Test.exe
