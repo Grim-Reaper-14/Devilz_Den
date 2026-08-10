@@ -197,6 +197,12 @@ void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module
         if (!target.status.detail.empty())
             message += " | " + target.status.detail;
         m_logger.Log(Backend::LogLevel::Info, std::move(message), "GTA5_Enhanced.Targets");
+
+        if (target.address != 0 && !target.evidence.summary.empty()) {
+            m_logger.Log(Backend::LogLevel::Info,
+                         target.status.name + ": " + target.evidence.summary,
+                         "GTA5_Enhanced.Evidence");
+        }
     }
 }
 }
