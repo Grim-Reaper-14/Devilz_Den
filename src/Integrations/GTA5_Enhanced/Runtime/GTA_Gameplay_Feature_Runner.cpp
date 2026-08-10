@@ -9,6 +9,7 @@
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <string>
@@ -382,8 +383,13 @@ int GTA_Gameplay_Feature_Runner::CurrentVehicle() noexcept
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return 0;
+
+    const auto seated = m_natives->Invoke<bool>(GTA_Native_Id::IsPedInAnyVehicle, *ped, false);
+    if (!seated || !*seated)
+        return 0;
+
     const auto vehicle = m_natives->Invoke<int>(GTA_Native_Id::GetVehiclePedIsIn, *ped, false);
-    return vehicle ? *vehicle : 0;
+    return vehicle && *vehicle != 0 ? *vehicle : 0;
 }
 
 void GTA_Gameplay_Feature_Runner::TickVehicleForge() noexcept
@@ -532,10 +538,12 @@ bool GTA_Gameplay_Feature_Runner::TeleportPlayer(float x, float y, float z) noex
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return false;
+
     int entity = *ped;
-    const auto vehicle = m_natives->Invoke<int>(GTA_Native_Id::GetVehiclePedIsIn, *ped, false);
-    if (vehicle && *vehicle != 0)
-        entity = *vehicle;
+    const int vehicle = CurrentVehicle();
+    if (vehicle != 0)
+        entity = vehicle;
+
     return m_natives->Invoke<void>(GTA_Native_Id::SetEntityCoordsNoOffset, entity, x, y, z, true, true, true);
 }
 
