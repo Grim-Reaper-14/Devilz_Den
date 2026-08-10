@@ -9,9 +9,12 @@ namespace Devilz::Integrations::GTA5_Enhanced
 {
 struct GTA_Native_Script_Vector
 {
-    alignas(8) float x = 0.0F;
-    alignas(8) float y = 0.0F;
-    alignas(8) float z = 0.0F;
+    float x = 0.0F;
+    std::uint32_t pad04 = 0;
+    float y = 0.0F;
+    std::uint32_t pad0C = 0;
+    float z = 0.0F;
+    std::uint32_t pad14 = 0;
 };
 
 static_assert(offsetof(GTA_Native_Script_Vector, x) == 0x00);
@@ -24,8 +27,12 @@ struct alignas(16) GTA_Native_Vector3
     float x = 0.0F;
     float y = 0.0F;
     float z = 0.0F;
+    float pad0C = 0.0F;
 };
 
+static_assert(offsetof(GTA_Native_Vector3, x) == 0x00);
+static_assert(offsetof(GTA_Native_Vector3, y) == 0x04);
+static_assert(offsetof(GTA_Native_Vector3, z) == 0x08);
 static_assert(sizeof(GTA_Native_Vector3) == 0x10);
 
 struct GTA_Native_Call_Context
