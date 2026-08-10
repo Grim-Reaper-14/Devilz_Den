@@ -1,6 +1,7 @@
 #include "Devils_Den_Menu.hpp"
 
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Locations.hpp"
 
 #include <imgui.h>
 
@@ -11,6 +12,7 @@ namespace Devilz::Frontend
 namespace
 {
 using Integrations::GTA5_Enhanced::GTA_Gameplay_State;
+using Integrations::GTA5_Enhanced::GTA_Teleport_Locations;
 using Integrations::GTA5_Enhanced::GTA_Teleport_Waypoint_Status;
 
 constexpr ImVec4 EmberRed{0.88F, 0.10F, 0.045F, 1.00F};
@@ -23,7 +25,7 @@ const char* TeleportStatusText(GTA_Teleport_Waypoint_Status status) noexcept
     switch (status) {
     case GTA_Teleport_Waypoint_Status::Idle: return "Ready";
     case GTA_Teleport_Waypoint_Status::Queued: return "Queued";
-    case GTA_Teleport_Waypoint_Status::Resolving: return "Resolving ground...";
+    case GTA_Teleport_Waypoint_Status::Resolving: return "Resolving terrain...";
     case GTA_Teleport_Waypoint_Status::Succeeded: return "Teleport complete";
     case GTA_Teleport_Waypoint_Status::NoWaypoint: return "No waypoint is active";
     case GTA_Teleport_Waypoint_Status::Failed: return "Teleport failed - see runtime log";
@@ -252,7 +254,7 @@ void Devils_Den_Menu::DrawTeleportPage()
 
     ImGui::TextColored(EmberRed, "TELEPORT");
     ImGui::SameLine();
-    ImGui::TextDisabled("- waypoint travel");
+    ImGui::TextDisabled("- waypoint and landmark travel");
     MedievalDivider();
 
     ImGui::TextColored(Bronze, "WAYPOINT");
@@ -276,7 +278,27 @@ void Devils_Den_Menu::DrawTeleportPage()
 
     ImGui::Spacing();
     MedievalDivider();
-    ImGui::TextDisabled("Ground height is resolved over game ticks before the player is moved.");
+    ImGui::TextColored(Bronze, "PLACES");
+    ImGui::Spacing();
+
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const float buttonWidth = (ImGui::GetContentRegionAvail().x - spacing) * 0.5F;
+
+    ImGui::BeginDisabled(busy);
+    for (std::size_t index = 0; index < GTA_Teleport_Locations.size(); ++index) {
+        const auto& location = GTA_Teleport_Locations[index];
+        ImGui::PushID(static_cast<int>(index));
+        if (ImGui::Button(location.label.data(), ImVec2(buttonWidth, 34.0F)))
+            gameplay.RequestTeleportToLocation(location.id);
+        ImGui::PopID();
+
+        if ((index % 2U) == 0U)
+            ImGui::SameLine();
+    }
+    ImGui::EndDisabled();
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Waypoint travel resolves ground, water, then approximate terrain. Presets use verified landmark coordinates.");
 }
 
 void Devils_Den_Menu::DrawPlaceholderPage(const char* title, const char* detail)
