@@ -53,8 +53,10 @@ bool IsReadableAddress(std::uintptr_t address, std::size_t size) noexcept
         return false;
 
     const auto regionStart = reinterpret_cast<std::uintptr_t>(memory.BaseAddress);
+    if (regionStart > (std::numeric_limits<std::uintptr_t>::max)() - memory.RegionSize)
+        return false;
     const auto regionEnd = regionStart + memory.RegionSize;
-    return address >= regionStart && size <= regionEnd - address;
+    return address >= regionStart && address <= regionEnd && size <= regionEnd - address;
 }
 
 std::array<std::byte, GTA_Run_Script_Threads_Bridge::AbsoluteJumpSize> AbsoluteJump(
@@ -153,6 +155,7 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_logger = &logger;
     m_smokeCompleted.store(false);
     m_smokeAttempting.store(false);
+    m_activeCalls.store(0);
 
     s_active = this;
     if (!WriteExecutableBytes(m_targetAddress, patch.data(), patch.size())) {
@@ -184,6 +187,9 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     if (m_targetAddress != 0)
         WriteExecutableBytes(m_targetAddress, m_originalBytes.data(), m_originalBytes.size());
 
+    while (m_activeCalls.load() != 0)
+        ::Sleep(0);
+
     if (s_active == this)
         s_active = nullptr;
 
@@ -205,7 +211,11 @@ bool GTA_Run_Script_Threads_Bridge::HookThunk(int opsToExecute)
     auto* bridge = s_active;
     if (!bridge || !bridge->m_original)
         return false;
-    return bridge->OnRunScriptThreads(opsToExecute);
+
+    bridge->m_activeCalls.fetch_add(1);
+    const bool result = bridge->OnRunScriptThreads(opsToExecute);
+    bridge->m_activeCalls.fetch_sub(1);
+    return result;
 }
 
 bool GTA_Run_Script_Threads_Bridge::OnRunScriptThreads(int opsToExecute) noexcept
