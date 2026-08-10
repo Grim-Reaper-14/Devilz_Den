@@ -2,6 +2,7 @@
 
 #include "Backend/Logging/LoggerService.hpp"
 #include "Frontend/Menu/Devils_Den_Theme.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
 
 #include <backends/imgui_impl_dx12.h>
 #include <backends/imgui_impl_win32.h>
@@ -33,6 +34,11 @@ bool IsKeyboardMessage(UINT message) noexcept
     return (message >= WM_KEYFIRST && message <= WM_KEYLAST) ||
            message == WM_CHAR ||
            message == WM_SYSCHAR;
+}
+
+bool IsMenuInputMessage(UINT message) noexcept
+{
+    return message == WM_INPUT || IsMouseMessage(message) || IsKeyboardMessage(message);
 }
 }
 
@@ -105,6 +111,7 @@ bool D3D12_Renderer::Initialize(D3D12_Targets targets, Backend::LoggerService& l
     m_originalWndProc = previous;
 
     m_menuOpen.store(true);
+    Integrations::GTA5_Enhanced::GTA_Gameplay_State::Instance().SetMenuInputCaptured(true);
     m_resizing.store(false);
     io.MouseDrawCursor = true;
     m_initialized.store(true);
@@ -124,6 +131,7 @@ void D3D12_Renderer::Shutdown() noexcept
     m_initialized.store(false);
     m_resizing.store(true);
     m_menuOpen.store(false);
+    Integrations::GTA5_Enhanced::GTA_Gameplay_State::Instance().SetMenuInputCaptured(false);
 
     if (m_window && m_originalWndProc) {
         ::SetWindowLongPtrW(
@@ -311,6 +319,7 @@ void D3D12_Renderer::OnPresent() noexcept
     bool open = m_menuOpen.load();
     m_menu.Draw(open);
     m_menuOpen.store(open);
+    Integrations::GTA5_Enhanced::GTA_Gameplay_State::Instance().SetMenuInputCaptured(open);
     ImGui::GetIO().MouseDrawCursor = open;
 
     ImGui::Render();
@@ -446,20 +455,19 @@ LRESULT D3D12_Renderer::WndProc(HWND window, UINT message, WPARAM wParam, LPARAM
     if (message == WM_KEYUP && wParam == VK_INSERT) {
         const bool next = !m_menuOpen.load();
         m_menuOpen.store(next);
+        Integrations::GTA5_Enhanced::GTA_Gameplay_State::Instance().SetMenuInputCaptured(next);
         if (ImGui::GetCurrentContext())
             ImGui::GetIO().MouseDrawCursor = next;
         return 0;
     }
 
-    if (ImGui::GetCurrentContext()) {
-        const auto handled = ImGui_ImplWin32_WndProcHandler(window, message, wParam, lParam);
-        if (m_menuOpen.load()) {
-            const auto& io = ImGui::GetIO();
-            if (handled || (io.WantCaptureMouse && IsMouseMessage(message)) ||
-                (io.WantCaptureKeyboard && IsKeyboardMessage(message))) {
-                return 1;
-            }
-        }
+    if (ImGui::GetCurrentContext())
+        (void)ImGui_ImplWin32_WndProcHandler(window, message, wParam, lParam);
+
+    if (m_menuOpen.load(std::memory_order_acquire) && IsMenuInputMessage(message)) {
+        if (message == WM_INPUT)
+            return ::DefWindowProcW(window, message, wParam, lParam);
+        return 1;
     }
 
     return m_originalWndProc
