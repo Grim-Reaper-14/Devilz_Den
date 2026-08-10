@@ -2,6 +2,7 @@
 
 #include "Backend/Process/Process_Memory_Reader.hpp"
 #include "GTA_Address_Resolver.hpp"
+#include "GTA_Target_Semantic_Validator.hpp"
 #include "GTA_Target_Structural_Validator.hpp"
 
 namespace Devilz::Integrations::GTA5_Enhanced
@@ -72,8 +73,21 @@ Result<GTA_Target_Resolution> GTA_Target_Resolver::Resolve(const GTA_Target_Defi
 
     const auto structural = GTA_Target_Structural_Validator::Validate(definition, output.evidence);
     if (structural.applicable && structural.passed) {
-        output.status.state = GTA_Runtime_Target_State::StructurallyValidated;
-        output.status.detail = structural.detail;
+        const auto semantic = GTA_Target_Semantic_Validator::Validate(
+            definition,
+            output.evidence,
+            m_fingerprint,
+            module.Value().baseAddress);
+
+        if (semantic.applicable && semantic.passed) {
+            output.status.state = GTA_Runtime_Target_State::Validated;
+            output.status.detail = semantic.detail;
+        } else {
+            output.status.state = GTA_Runtime_Target_State::StructurallyValidated;
+            output.status.detail = semantic.applicable
+                ? structural.detail + "; semantic validation is not yet satisfied: " + semantic.detail
+                : structural.detail;
+        }
     } else {
         output.status.state = GTA_Runtime_Target_State::Located;
         output.status.detail = structural.applicable
