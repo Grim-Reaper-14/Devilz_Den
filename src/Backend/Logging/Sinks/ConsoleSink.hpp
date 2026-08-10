@@ -5,6 +5,7 @@
 #include <Windows.h>
 
 #include <mutex>
+#include <string>
 
 namespace Devilz::Backend
 {
@@ -27,5 +28,7 @@ private:
     HANDLE m_output = INVALID_HANDLE_VALUE;
     WORD m_defaultAttributes = FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
     bool m_ownedConsole = false;
+    bool m_bannerWritten = false;
+    std::string m_lastSection;
 };
 }
