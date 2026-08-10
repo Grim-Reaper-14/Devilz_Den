@@ -48,11 +48,21 @@ GTA_Build_Target_Registry::GTA_Build_Target_Registry()
             "InitNativeTables",
             "GTA5_Enhanced.exe",
             "EB 2A 0F 1F 40 00 48 8B 54 17 10",
-            {},
+            {
+                {GTA_Address_Resolve_Op_Type::Add, -0x2A}
+            },
             true,
             GTA_Target_Candidate_Kind::CodeSite
         },
-        {GTA_Runtime_Target_Id::NativeTable, "NativeTable", "GTA5_Enhanced.exe", {}, {}, true, GTA_Target_Candidate_Kind::Unknown}
+        {
+            GTA_Runtime_Target_Id::NativeTable,
+            "NativeTable",
+            "GTA5_Enhanced.exe",
+            {},
+            {},
+            false,
+            GTA_Target_Candidate_Kind::Unknown
+        }
     };
     Register(std::move(current));
 }
