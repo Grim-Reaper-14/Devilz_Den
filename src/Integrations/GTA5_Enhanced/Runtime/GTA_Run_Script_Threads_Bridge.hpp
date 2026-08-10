@@ -17,6 +17,9 @@ class GTA_Run_Script_Threads_Bridge final
 public:
     using RunScriptThreads = bool (*)(int);
 
+    static constexpr std::size_t PatchSize = 15;
+    static constexpr std::size_t AbsoluteJumpSize = 14;
+
     GTA_Run_Script_Threads_Bridge() = default;
     ~GTA_Run_Script_Threads_Bridge();
 
@@ -41,12 +44,10 @@ private:
     void TryNativeSmoke() noexcept;
     [[nodiscard]] void* FindValidatedScriptThread() const noexcept;
 
-    static constexpr std::size_t PatchSize = 15;
-    static constexpr std::size_t AbsoluteJumpSize = 14;
-
     std::atomic_bool m_installed{false};
     std::atomic_bool m_smokeCompleted{false};
     std::atomic_bool m_smokeAttempting{false};
+    std::atomic_uint32_t m_activeCalls{0};
 
     std::uintptr_t m_targetAddress = 0;
     std::uintptr_t m_scriptThreadsStorageAddress = 0;
