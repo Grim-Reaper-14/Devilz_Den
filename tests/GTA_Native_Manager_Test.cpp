@@ -124,6 +124,17 @@ bool TestCallContextLayoutAndFrame()
         return false;
     }
 
+    GTA_Native_Script_Vector vectorValue{};
+    vectorValue.x = 10.0F;
+    vectorValue.y = 20.0F;
+    vectorValue.z = 30.0F;
+    std::memcpy(frame.Context().returnValue, &vectorValue, sizeof(vectorValue));
+    const auto copiedVector = frame.Return<GTA_Native_Script_Vector>();
+    if (copiedVector.x != 10.0F || copiedVector.y != 20.0F || copiedVector.z != 30.0F) {
+        std::cerr << "Native vector return transport failed\n";
+        return false;
+    }
+
     return true;
 }
 
@@ -131,6 +142,10 @@ bool TestRegistry()
 {
     const auto timer = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::GetGameTimer);
     const auto hashKey = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::GetHashKey);
+    const auto playerPed = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::PlayerPedId);
+    const auto invincible = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::SetEntityInvincible);
+    const auto waypoint = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::IsWaypointActive);
+    const auto setCoords = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::SetEntityCoordsNoOffset);
 
     if (!timer || timer->originalHash != 0x9CD27B0045628463ULL ||
         timer->enhancedHash != 0x1DD05E817C89C737ULL) {
@@ -141,6 +156,14 @@ bool TestRegistry()
     if (!hashKey || hashKey->originalHash != 0xD24D37CC275948CCULL ||
         hashKey->enhancedHash != 0x70E57E9927B6BA58ULL) {
         std::cerr << "GET_HASH_KEY registry mapping is incorrect\n";
+        return false;
+    }
+
+    if (!playerPed || playerPed->enhancedHash != 0x4A8C381C258A124DULL ||
+        !invincible || invincible->enhancedHash != 0x935364B4448CD584ULL ||
+        !waypoint || waypoint->enhancedHash != 0x02213DC34A224533ULL ||
+        !setCoords || setCoords->enhancedHash != 0x62C438C53BB57AFDULL) {
+        std::cerr << "Gameplay native registry mapping is incorrect\n";
         return false;
     }
 
@@ -168,7 +191,8 @@ bool TestGoodBootstrapAndInvocation()
         imageSize,
         Fingerprint);
 
-    constexpr std::size_t expectedHandlers = GTA_Native_Manager::BootstrapProbeHashes.size() + 2;
+    constexpr std::size_t expectedHandlers =
+        GTA_Native_Manager::BootstrapProbeHashes.size() + GTA_Native_Registry::NamedIds.size();
     if (!status.ready || !manager.Ready() ||
         status.cachedHandlers != expectedHandlers ||
         manager.CachedHandlerCount() != expectedHandlers) {
@@ -176,10 +200,11 @@ bool TestGoodBootstrapAndInvocation()
         return false;
     }
 
-    if (!manager.Find(GTA_Native_Id::GetGameTimer) ||
-        !manager.Find(GTA_Native_Id::GetHashKey)) {
-        std::cerr << "Named native handlers could not be found\n";
-        return false;
+    for (const auto id : GTA_Native_Registry::NamedIds) {
+        if (!manager.Find(id)) {
+            std::cerr << "Named gameplay native handler could not be found\n";
+            return false;
+        }
     }
 
     const auto timer = manager.Invoke<int>(GTA_Native_Id::GetGameTimer);
