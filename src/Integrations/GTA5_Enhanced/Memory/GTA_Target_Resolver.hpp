@@ -4,6 +4,7 @@
 #include "Backend/Process/Process_Module_Manager.hpp"
 #include "Backend/Process/Process_Pattern_Scanner.hpp"
 #include "GTA_Target_Definition.hpp"
+#include "GTA_Target_Evidence.hpp"
 #include "../Runtime/GTA_Runtime_Target.hpp"
 
 #include <cstdint>
@@ -15,6 +16,7 @@ struct GTA_Target_Resolution
 {
     GTA_Runtime_Target_Status status{};
     GTA_Target_Candidate_Kind candidateKind = GTA_Target_Candidate_Kind::Unknown;
+    GTA_Target_Evidence evidence{};
     std::uintptr_t address = 0;
     std::vector<std::uintptr_t> candidates;
 };
