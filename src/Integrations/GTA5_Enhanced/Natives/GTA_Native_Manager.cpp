@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <array>
 #include <limits>
 
@@ -22,14 +23,14 @@ bool IsExecutableProtection(DWORD protection) noexcept
 GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
     std::uintptr_t initNativeTablesAddress,
     std::uintptr_t moduleBase,
-    std::size_t moduleSize)
+    std::size_t moduleSize,
+    std::uint64_t fingerprint)
 {
     Reset();
 
     GTA_Native_Manager_Status status{};
-    status.requestedHandlers = BootstrapProbeHashes.size();
 
-    if (initNativeTablesAddress == 0 || moduleBase == 0 || moduleSize == 0) {
+    if (initNativeTablesAddress == 0 || moduleBase == 0 || moduleSize == 0 || fingerprint == 0) {
         status.detail = "Native bootstrap prerequisites are incomplete";
         return status;
     }
@@ -39,10 +40,25 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
         return status;
     }
 
-    std::array<GTA_Native_Handler, BootstrapProbeHashes.size()> entries{};
-    for (std::size_t i = 0; i < BootstrapProbeHashes.size(); ++i) {
+    const auto getGameTimer = GTA_Native_Registry::Find(fingerprint, GTA_Native_Id::GetGameTimer);
+    const auto getHashKey = GTA_Native_Registry::Find(fingerprint, GTA_Native_Id::GetHashKey);
+    if (!getGameTimer || !getHashKey) {
+        status.detail = "No native registry is available for this GTA build fingerprint";
+        return status;
+    }
+
+    constexpr std::size_t namedNativeCount = 2;
+    std::array<GTA_Native_Hash, BootstrapProbeHashes.size() + namedNativeCount> requestedHashes{};
+    std::copy(BootstrapProbeHashes.begin(), BootstrapProbeHashes.end(), requestedHashes.begin());
+    requestedHashes[BootstrapProbeHashes.size()] = getGameTimer->enhancedHash;
+    requestedHashes[BootstrapProbeHashes.size() + 1] = getHashKey->enhancedHash;
+
+    status.requestedHandlers = requestedHashes.size();
+
+    std::array<GTA_Native_Handler, requestedHashes.size()> entries{};
+    for (std::size_t i = 0; i < requestedHashes.size(); ++i) {
         entries[i] = reinterpret_cast<GTA_Native_Handler>(
-            static_cast<std::uintptr_t>(BootstrapProbeHashes[i]));
+            static_cast<std::uintptr_t>(requestedHashes[i]));
     }
 
     GTA_Native_Program_Bootstrap program{};
@@ -62,21 +78,25 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
             return status;
         }
 
-        m_handlers.insert_or_assign(BootstrapProbeHashes[i], entries[i]);
+        m_handlers.insert_or_assign(requestedHashes[i], entries[i]);
     }
 
-    m_ready = m_handlers.size() == BootstrapProbeHashes.size();
+    m_ready = m_handlers.size() == requestedHashes.size();
+    if (m_ready)
+        m_fingerprint = fingerprint;
+
     status.ready = m_ready;
     status.cachedHandlers = m_handlers.size();
     status.detail = m_ready
-        ? "Enhanced native bootstrap resolved and validated all probe handlers"
-        : "Enhanced native bootstrap did not populate the complete probe handler set";
+        ? "Enhanced native bootstrap resolved and validated probe and named native handlers"
+        : "Enhanced native bootstrap did not populate the complete handler set";
     return status;
 }
 
 void GTA_Native_Manager::Reset() noexcept
 {
     m_ready = false;
+    m_fingerprint = 0;
     m_handlers.clear();
 }
 
@@ -84,6 +104,12 @@ GTA_Native_Handler GTA_Native_Manager::Find(GTA_Native_Hash hash) const noexcept
 {
     const auto it = m_handlers.find(hash);
     return it == m_handlers.end() ? nullptr : it->second;
+}
+
+GTA_Native_Handler GTA_Native_Manager::Find(GTA_Native_Id id) const noexcept
+{
+    const auto definition = GTA_Native_Registry::Find(m_fingerprint, id);
+    return definition ? Find(definition->enhancedHash) : nullptr;
 }
 
 bool GTA_Native_Manager::IsExecutableImageAddress(
