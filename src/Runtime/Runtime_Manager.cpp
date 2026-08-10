@@ -51,6 +51,7 @@ const char* TargetStateName(GTA_Runtime_Target_State state) noexcept
     case GTA_Runtime_Target_State::Unknown: return "Unknown";
     case GTA_Runtime_Target_State::Missing: return "Missing";
     case GTA_Runtime_Target_State::Located: return "Located";
+    case GTA_Runtime_Target_State::StructurallyValidated: return "StructurallyValidated";
     case GTA_Runtime_Target_State::Validated: return "Validated";
     case GTA_Runtime_Target_State::Failed: return "Failed";
     default: return "Unknown";
@@ -183,7 +184,9 @@ void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module
 
     m_logger.Log(Backend::LogLevel::Info,
                  "Runtime targets: " + std::to_string(status.targetReport->LocatedCount()) +
-                     " located | " + std::to_string(status.targetReport->ValidatedCount()) + " validated",
+                     " located | " + std::to_string(status.targetReport->StructurallyValidatedCount()) +
+                     " structurally validated | " +
+                     std::to_string(status.targetReport->ValidatedCount()) + " semantically validated",
                  "GTA5_Enhanced");
 
     for (const auto& target : status.targetReport->targets) {
