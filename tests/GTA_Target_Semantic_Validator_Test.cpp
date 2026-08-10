@@ -16,6 +16,15 @@ GTA_Target_Definition ScriptThreadsDefinition()
     return definition;
 }
 
+GTA_Target_Definition RunScriptThreadsDefinition()
+{
+    GTA_Target_Definition definition{};
+    definition.id = GTA_Runtime_Target_Id::RunScriptThreads;
+    definition.name = "RunScriptThreads";
+    definition.candidateKind = GTA_Target_Candidate_Kind::CodeSite;
+    return definition;
+}
+
 GTA_Target_Definition InitNativeTablesDefinition()
 {
     GTA_Target_Definition definition{};
@@ -35,6 +44,18 @@ GTA_Target_Evidence VerifiedScriptThreadsEvidence(std::uintptr_t moduleBase)
     evidence.objectDominantFirstQwordSampleRead = true;
     evidence.objectDominantFirstQwordReadablePointers = 8;
     evidence.objectDominantFirstQwordExecutableImagePointers = 8;
+    return evidence;
+}
+
+GTA_Target_Evidence VerifiedRunScriptThreadsEvidence()
+{
+    GTA_Target_Evidence evidence{};
+    evidence.candidateCommitted = true;
+    evidence.candidateReadable = true;
+    evidence.candidateExecutable = true;
+    evidence.candidateType = 0x01000000U;
+    evidence.sampleRead = true;
+    evidence.samplePreview = GTA_Target_Semantic_Validator::RunScriptThreadsEntryBytes;
     return evidence;
 }
 
@@ -101,6 +122,66 @@ bool TestWrongScriptThreadsFingerprint()
 
     if (!validation.applicable || validation.passed) {
         std::cerr << "Unregistered GTA fingerprint was accepted for ScriptThreads semantic identity\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool TestVerifiedRunScriptThreadsIdentity()
+{
+    constexpr std::uintptr_t moduleBase = 0x00007FF600000000ULL;
+    const auto candidate = moduleBase + GTA_Target_Semantic_Validator::RunScriptThreadsEntryRva;
+    const auto validation = GTA_Target_Semantic_Validator::Validate(
+        RunScriptThreadsDefinition(),
+        VerifiedRunScriptThreadsEvidence(),
+        GTA_Target_Semantic_Validator::SupportedFingerprint,
+        moduleBase,
+        candidate);
+
+    if (!validation.applicable || !validation.passed) {
+        std::cerr << "Verified RunScriptThreads callable entry was rejected: "
+                  << validation.detail << '\n';
+        return false;
+    }
+
+    return true;
+}
+
+bool TestWrongRunScriptThreadsRva()
+{
+    constexpr std::uintptr_t moduleBase = 0x00007FF600000000ULL;
+    const auto candidate = moduleBase + GTA_Target_Semantic_Validator::RunScriptThreadsEntryRva + 1;
+    const auto validation = GTA_Target_Semantic_Validator::Validate(
+        RunScriptThreadsDefinition(),
+        VerifiedRunScriptThreadsEvidence(),
+        GTA_Target_Semantic_Validator::SupportedFingerprint,
+        moduleBase,
+        candidate);
+
+    if (!validation.applicable || validation.passed) {
+        std::cerr << "Wrong RunScriptThreads callable-entry RVA was accepted\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool TestWrongRunScriptThreadsBytes()
+{
+    constexpr std::uintptr_t moduleBase = 0x00007FF600000000ULL;
+    auto evidence = VerifiedRunScriptThreadsEvidence();
+    evidence.samplePreview = "90 90 90 90";
+    const auto candidate = moduleBase + GTA_Target_Semantic_Validator::RunScriptThreadsEntryRva;
+    const auto validation = GTA_Target_Semantic_Validator::Validate(
+        RunScriptThreadsDefinition(),
+        evidence,
+        GTA_Target_Semantic_Validator::SupportedFingerprint,
+        moduleBase,
+        candidate);
+
+    if (!validation.applicable || validation.passed) {
+        std::cerr << "Wrong RunScriptThreads callable-entry bytes were accepted\n";
         return false;
     }
 
@@ -176,6 +257,9 @@ int main()
     if (!TestVerifiedScriptThreadsIdentity() ||
         !TestWrongDispatchTableRva() ||
         !TestWrongScriptThreadsFingerprint() ||
+        !TestVerifiedRunScriptThreadsIdentity() ||
+        !TestWrongRunScriptThreadsRva() ||
+        !TestWrongRunScriptThreadsBytes() ||
         !TestVerifiedNativeBootstrapIdentity() ||
         !TestWrongNativeBootstrapRva() ||
         !TestWrongNativeBootstrapFingerprint()) {
