@@ -2,6 +2,7 @@
 
 #include "Backend/Logging/LoggerService.hpp"
 #include "Backend/Threading/ThreadManager.hpp"
+#include "Frontend/Frontend_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/GTA_Module_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Run_Script_Threads_Bridge.hpp"
@@ -35,6 +36,7 @@ private:
     Integrations::GTA5_Enhanced::GTA_Module_Manager m_gta;
     Integrations::GTA5_Enhanced::GTA_Native_Manager m_natives;
     Integrations::GTA5_Enhanced::GTA_Run_Script_Threads_Bridge m_gameThreadBridge;
+    Frontend::Frontend_Manager m_frontend;
     std::atomic_bool m_running{false};
 };
 }
