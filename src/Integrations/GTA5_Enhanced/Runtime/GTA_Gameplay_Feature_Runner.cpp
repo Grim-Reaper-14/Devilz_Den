@@ -2,6 +2,7 @@
 
 #include "Backend/Logging/LoggerService.hpp"
 #include "GTA_Gameplay_State.hpp"
+#include "GTA_Teleport_Locations.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
@@ -11,7 +12,8 @@ namespace Devilz::Integrations::GTA5_Enhanced
 {
 namespace
 {
-constexpr std::uint32_t MaxGroundAttempts = 20;
+constexpr std::uint32_t MaxGroundAttempts = 40;
+constexpr float GroundProbeZ = 1000.0F;
 }
 
 void GTA_Gameplay_Feature_Runner::Configure(
@@ -41,6 +43,7 @@ void GTA_Gameplay_Feature_Runner::Tick() noexcept
     TickMenuInputSuppression();
     TickGodMode();
     TickNeverWanted();
+    TickPresetTeleport();
     TickTeleportToWaypoint();
 }
 
@@ -124,6 +127,33 @@ void GTA_Gameplay_Feature_Runner::TickNeverWanted() noexcept
     }
 }
 
+void GTA_Gameplay_Feature_Runner::TickPresetTeleport() noexcept
+{
+    auto& state = GTA_Gameplay_State::Instance();
+    const auto id = state.ConsumeTeleportToLocationRequest();
+    if (id == GTA_Teleport_Location_Id::None)
+        return;
+
+    const auto* location = FindTeleportLocation(id);
+    if (!location) {
+        if (m_logger) {
+            m_logger->Log(
+                Backend::LogLevel::Warning,
+                "Preset teleport ignored: unknown location id",
+                "GTA5_Enhanced.Features");
+        }
+        return;
+    }
+
+    const bool moved = TeleportPlayer(location->x, location->y, location->z);
+    if (m_logger) {
+        m_logger->Log(
+            moved ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
+            std::string("Preset teleport ") + (moved ? "succeeded: " : "failed: ") + std::string(location->label),
+            "GTA5_Enhanced.Features");
+    }
+}
+
 void GTA_Gameplay_Feature_Runner::TickTeleportToWaypoint() noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
@@ -136,49 +166,64 @@ void GTA_Gameplay_Feature_Runner::TickTeleportToWaypoint() noexcept
 
     state.SetTeleportStatus(GTA_Teleport_Waypoint_Status::Resolving);
 
-    constexpr float probeZ = 1000.0F;
     (void)m_natives->Invoke<void>(
         GTA_Native_Id::RequestCollisionAtCoord,
         m_waypoint.x,
         m_waypoint.y,
-        probeZ);
+        m_waypoint.z);
 
-    float groundZ = 0.0F;
-    const auto found = m_natives->Invoke<bool>(
+    float groundZ = m_waypoint.z;
+    const auto foundGround = m_natives->Invoke<bool>(
         GTA_Native_Id::GetGroundZFor3DCoord,
         m_waypoint.x,
         m_waypoint.y,
-        probeZ,
+        GroundProbeZ,
         &groundZ,
         false,
         false);
 
-    if (found && *found) {
-        const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
-        if (!ped || *ped == 0) {
-            FinishTeleport(false, "Teleport failed: local player ped is unavailable");
-            return;
-        }
-
-        const bool moved = m_natives->Invoke<void>(
-            GTA_Native_Id::SetEntityCoordsNoOffset,
-            *ped,
-            m_waypoint.x,
-            m_waypoint.y,
-            groundZ + 1.0F,
-            true,
-            true,
-            true);
-
+    if (foundGround && *foundGround) {
+        const bool moved = TeleportPlayer(m_waypoint.x, m_waypoint.y, groundZ + 1.0F);
         FinishTeleport(moved, moved
-            ? "Teleport to waypoint succeeded"
+            ? "Teleport to waypoint succeeded using exact ground height"
             : "Teleport failed: SET_ENTITY_COORDS_NO_OFFSET invocation failed");
         return;
     }
 
     ++m_groundAttempts;
-    if (m_groundAttempts >= MaxGroundAttempts)
-        FinishTeleport(false, "Teleport failed: ground height could not be resolved");
+    if (m_groundAttempts < MaxGroundAttempts)
+        return;
+
+    float waterHeight = 0.0F;
+    const auto foundWater = m_natives->Invoke<bool>(
+        GTA_Native_Id::GetWaterHeight,
+        m_waypoint.x,
+        m_waypoint.y,
+        m_waypoint.z,
+        &waterHeight);
+
+    if (foundWater && *foundWater) {
+        const bool moved = TeleportPlayer(m_waypoint.x, m_waypoint.y, waterHeight + 1.0F);
+        FinishTeleport(moved, moved
+            ? "Teleport to waypoint succeeded using water height fallback"
+            : "Teleport failed: water fallback move failed");
+        return;
+    }
+
+    const auto approxHeight = m_natives->Invoke<float>(
+        GTA_Native_Id::GetApproxHeightForPoint,
+        m_waypoint.x,
+        m_waypoint.y);
+
+    if (approxHeight) {
+        const bool moved = TeleportPlayer(m_waypoint.x, m_waypoint.y, *approxHeight + 1.0F);
+        FinishTeleport(moved, moved
+            ? "Teleport to waypoint succeeded using approximate terrain fallback"
+            : "Teleport failed: approximate terrain fallback move failed");
+        return;
+    }
+
+    FinishTeleport(false, "Teleport failed: no exact ground, water, or approximate terrain height was available");
 }
 
 void GTA_Gameplay_Feature_Runner::BeginTeleportToWaypoint() noexcept
@@ -223,9 +268,26 @@ void GTA_Gameplay_Feature_Runner::BeginTeleportToWaypoint() noexcept
     if (m_logger) {
         m_logger->Log(
             Backend::LogLevel::Info,
-            "Teleport to waypoint queued for ground resolution",
+            "Teleport to waypoint queued for terrain resolution",
             "GTA5_Enhanced.Features");
     }
+}
+
+bool GTA_Gameplay_Feature_Runner::TeleportPlayer(float x, float y, float z) noexcept
+{
+    const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
+    if (!ped || *ped == 0)
+        return false;
+
+    return m_natives->Invoke<void>(
+        GTA_Native_Id::SetEntityCoordsNoOffset,
+        *ped,
+        x,
+        y,
+        z,
+        true,
+        true,
+        true);
 }
 
 void GTA_Gameplay_Feature_Runner::FinishTeleport(bool success, const char* detail) noexcept
