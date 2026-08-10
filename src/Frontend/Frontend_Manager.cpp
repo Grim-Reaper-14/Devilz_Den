@@ -69,6 +69,7 @@ void Frontend_Manager::Bootstrap(
             continue;
         }
 
+        auto* swapChain = targets.Value().swapChain.Get();
         if (!m_renderer.Initialize(std::move(targets.Value()), *logger)) {
             logger->Log(
                 Backend::LogLevel::Warning,
@@ -79,7 +80,7 @@ void Frontend_Manager::Bootstrap(
         }
 
         m_presentHook = std::make_unique<Integrations::GTA5_Enhanced::D3D12_Present_Hook>(
-            targets.Value().swapChain.Get(),
+            swapChain,
             m_renderer);
 
         auto installed = m_presentHook->Install();
