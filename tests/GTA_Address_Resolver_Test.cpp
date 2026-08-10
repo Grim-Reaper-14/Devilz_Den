@@ -128,6 +128,22 @@ bool TestScriptGlobalsAddRip(const Process_Memory_Reader& reader)
         target);
 }
 
+bool TestInitNativeTablesBacktrack(const Process_Memory_Reader& reader)
+{
+    std::array<std::byte, 128> storage{};
+    const auto entry = reinterpret_cast<std::uintptr_t>(storage.data() + 16);
+    const auto match = entry + 0x2A;
+
+    const GTA_Address_Resolve_Chain chain{
+        {GTA_Address_Resolve_Op_Type::Add, -0x2A}
+    };
+
+    return ExpectAddress(
+        "InitNativeTables backtrack",
+        GTA_Address_Resolver::Resolve(reader, match, chain),
+        entry);
+}
+
 bool TestNegativeRip(const Process_Memory_Reader& reader)
 {
     std::array<std::byte, 160> storage{};
@@ -158,6 +174,7 @@ int main()
         TestEmptyAndAdd(reader) &&
         TestScriptThreadsRip(reader) &&
         TestScriptGlobalsAddRip(reader) &&
+        TestInitNativeTablesBacktrack(reader) &&
         TestNegativeRip(reader);
 
     if (!passed)
