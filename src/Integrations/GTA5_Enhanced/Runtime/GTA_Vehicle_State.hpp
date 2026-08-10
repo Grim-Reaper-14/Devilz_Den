@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -95,7 +96,6 @@ public:
     {
         if (!m_spawnRequested.exchange(false, std::memory_order_acq_rel))
             return false;
-
         modelHash = m_spawnModel.load(std::memory_order_acquire);
         const auto flags = m_spawnFlags.load(std::memory_order_acquire);
         options.spawnInside = (flags & (1U << 0U)) != 0;
@@ -181,12 +181,10 @@ private:
     std::atomic<std::uint8_t> m_spawnFlags{0};
     std::atomic<GTA_Vehicle_Spawn_Status> m_spawnStatus{GTA_Vehicle_Spawn_Status::Idle};
     std::atomic_int m_lastSpawnedVehicle{0};
-
     std::atomic<GTA_Vehicle_Forge_Command_Type> m_forgeCommand{GTA_Vehicle_Forge_Command_Type::None};
     std::atomic_int m_forgeArg0{0};
     std::atomic_int m_forgeArg1{0};
     std::atomic_int m_forgeArg2{0};
-
     mutable std::mutex m_catalogMutex;
     std::vector<GTA_Vehicle_Metadata> m_catalog;
     std::atomic<std::uint64_t> m_catalogGeneration{0};
