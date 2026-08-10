@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GTA_Vehicle_Catalog.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -149,7 +151,18 @@ public:
     void PublishMetadata(GTA_Vehicle_Metadata metadata)
     {
         std::scoped_lock lock(m_catalogMutex);
-        m_catalog.push_back(std::move(metadata));
+        const auto existing = std::find_if(
+            m_catalog.begin(),
+            m_catalog.end(),
+            [&metadata](const GTA_Vehicle_Metadata& entry) {
+                return entry.modelHash == metadata.modelHash;
+            });
+
+        if (existing != m_catalog.end())
+            *existing = std::move(metadata);
+        else
+            m_catalog.push_back(std::move(metadata));
+
         m_catalogGeneration.fetch_add(1, std::memory_order_release);
     }
 
@@ -174,13 +187,30 @@ public:
         m_forgeCommand.store(GTA_Vehicle_Forge_Command_Type::None, std::memory_order_release);
         {
             std::scoped_lock lock(m_catalogMutex);
-            m_catalog.clear();
+            SeedStaticCatalogLocked();
         }
         m_catalogGeneration.fetch_add(1, std::memory_order_release);
     }
 
 private:
-    GTA_Vehicle_State() = default;
+    GTA_Vehicle_State()
+    {
+        SeedStaticCatalogLocked();
+    }
+
+    void SeedStaticCatalogLocked()
+    {
+        m_catalog.clear();
+        m_catalog.reserve(GTA_Vehicle_Model_Names.size());
+
+        for (const auto modelName : GTA_Vehicle_Model_Names) {
+            GTA_Vehicle_Metadata metadata{};
+            metadata.modelHash = GTA_Model_Hash(modelName);
+            metadata.modelName = std::string(modelName);
+            metadata.displayName = metadata.modelName;
+            m_catalog.push_back(std::move(metadata));
+        }
+    }
 
     std::atomic_bool m_spawnRequested{false};
     std::atomic<std::uint32_t> m_spawnModel{0};
