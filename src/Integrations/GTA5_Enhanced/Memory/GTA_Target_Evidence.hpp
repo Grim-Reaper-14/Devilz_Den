@@ -47,6 +47,14 @@ struct GTA_Target_Evidence
     std::size_t objectFirstQwordExecutableImagePointers = 0;
     std::string objectSamplePreview;
 
+    std::uintptr_t objectDominantFirstQwordAddress = 0;
+    std::size_t objectDominantFirstQwordCount = 0;
+    bool objectDominantFirstQwordSampleRead = false;
+    std::string objectDominantFirstQwordBytes;
+    std::string objectDominantFirstQwordQwordPreview;
+    std::size_t objectDominantFirstQwordReadablePointers = 0;
+    std::size_t objectDominantFirstQwordExecutableImagePointers = 0;
+
     std::string summary;
 };
 
