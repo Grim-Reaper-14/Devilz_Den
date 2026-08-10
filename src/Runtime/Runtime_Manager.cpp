@@ -37,7 +37,7 @@ const char* StateName(GTA_Module_Manager_State state) noexcept
     case GTA_Module_Manager_State::BuildIdentified: return "BuildIdentified";
     case GTA_Module_Manager_State::RuntimeUnverified: return "RuntimeUnverified";
     case GTA_Module_Manager_State::Unsupported: return "Unsupported";
-    case GTA_Module_Manager_Manager_State::Supported: return "Supported";
+    case GTA_Module_Manager_State::Supported: return "Supported";
     case GTA_Module_Manager_State::RuntimeReady: return "RuntimeReady";
     case GTA_Module_Manager_State::Failed: return "Failed";
     default: return "Unknown";
