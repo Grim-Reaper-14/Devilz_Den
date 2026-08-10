@@ -45,6 +45,7 @@ GTA_Build_Registry::GTA_Build_Registry()
         {GTA_Runtime_Target_Id::ScriptGlobals, GTA_Runtime_Target_State::Unknown, true, "ScriptGlobals", "Awaiting verified locator"},
         {GTA_Runtime_Target_Id::ProgramTable, GTA_Runtime_Target_State::Unknown, true, "ProgramTable", "Awaiting verified locator"},
         {GTA_Runtime_Target_Id::ScriptThreads, GTA_Runtime_Target_State::Unknown, true, "ScriptThreads", "Awaiting verified locator"},
+        {GTA_Runtime_Target_Id::RunScriptThreads, GTA_Runtime_Target_State::Unknown, false, "RunScriptThreads", "Optional game-thread execution locator; semantic validation pending"},
         {GTA_Runtime_Target_Id::InitNativeTables, GTA_Runtime_Target_State::Unknown, true, "InitNativeTables", "Awaiting verified locator"},
         {GTA_Runtime_Target_Id::NativeTable, GTA_Runtime_Target_State::Unknown, false, "NativeTable", "Standalone native table is not required by the Enhanced bootstrap path"}
     };
