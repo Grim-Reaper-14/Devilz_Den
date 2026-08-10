@@ -24,6 +24,7 @@ private:
     void DrawBanner();
     void DrawNavigation();
     void DrawSelfPage();
+    void DrawTeleportPage();
     void DrawPlaceholderPage(const char* title, const char* detail);
 
     Page m_page = Page::Self;
