@@ -74,37 +74,23 @@ void Devils_Den_Menu::Draw(bool& open)
     MedievalDivider();
 
     const float navWidth = 180.0F;
-    if (ImGui::BeginChild("##DevilsDenNavigation", ImVec2(navWidth, 0.0F), ImGuiChildFlags_Borders)) {
+    if (ImGui::BeginChild("##DevilsDenNavigation", ImVec2(navWidth, 0.0F), ImGuiChildFlags_Borders))
         DrawNavigation();
-    }
     ImGui::EndChild();
 
     ImGui::SameLine();
 
     if (ImGui::BeginChild("##DevilsDenContent", ImVec2(0.0F, 0.0F), ImGuiChildFlags_Borders)) {
         switch (m_page) {
-        case Page::Self:
-            DrawSelfPage();
-            break;
-        case Page::Weapons:
-            DrawPlaceholderPage("WEAPONS", "The armory page will inherit this same medieval frame.");
-            break;
-        case Page::Vehicle:
-            DrawPlaceholderPage("VEHICLE", "The stable and vehicle page is queued for the next pass.");
-            break;
-        case Page::Teleport:
-            DrawTeleportPage();
-            break;
-        case Page::World:
-            DrawPlaceholderPage("WORLD", "World and environment controls will live here.");
-            break;
-        case Page::Settings:
-            DrawPlaceholderPage("SETTINGS", "Theme, hotkeys, configuration, and diagnostics will live here.");
-            break;
+        case Page::Self: DrawSelfPage(); break;
+        case Page::Weapons: DrawPlaceholderPage("WEAPONS", "The armory page will inherit this same medieval frame."); break;
+        case Page::Vehicle: DrawPlaceholderPage("VEHICLE", "The stable and vehicle page is queued for the next pass."); break;
+        case Page::Teleport: DrawTeleportPage(); break;
+        case Page::World: DrawPlaceholderPage("WORLD", "World and environment controls will live here."); break;
+        case Page::Settings: DrawPlaceholderPage("SETTINGS", "Theme, hotkeys, configuration, and diagnostics will live here."); break;
         }
     }
     ImGui::EndChild();
-
     ImGui::End();
 }
 
@@ -115,50 +101,24 @@ void Devils_Den_Menu::DrawBanner()
     constexpr float height = 94.0F;
     auto* draw = ImGui::GetWindowDrawList();
 
-    draw->AddRectFilled(
-        origin,
-        ImVec2(origin.x + width, origin.y + height),
-        ImGui::GetColorU32(ImVec4(0.055F, 0.020F, 0.018F, 1.00F)),
-        2.0F);
-    draw->AddRect(
-        origin,
-        ImVec2(origin.x + width, origin.y + height),
-        ImGui::GetColorU32(ImVec4(0.48F, 0.09F, 0.055F, 1.00F)),
-        2.0F,
-        0,
-        2.0F);
+    draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height), ImGui::GetColorU32(ImVec4(0.055F, 0.020F, 0.018F, 1.00F)), 2.0F);
+    draw->AddRect(origin, ImVec2(origin.x + width, origin.y + height), ImGui::GetColorU32(ImVec4(0.48F, 0.09F, 0.055F, 1.00F)), 2.0F, 0, 2.0F);
 
     for (int i = 0; i < 5; ++i) {
         const float inset = 7.0F + static_cast<float>(i) * 6.0F;
-        draw->AddLine(
-            ImVec2(origin.x + inset, origin.y + 14.0F),
-            ImVec2(origin.x + inset + 24.0F, origin.y + height - 14.0F),
-            ImGui::GetColorU32(ImVec4(0.22F, 0.055F, 0.038F, 0.45F)),
-            1.0F);
-        draw->AddLine(
-            ImVec2(origin.x + width - inset, origin.y + 14.0F),
-            ImVec2(origin.x + width - inset - 24.0F, origin.y + height - 14.0F),
-            ImGui::GetColorU32(ImVec4(0.22F, 0.055F, 0.038F, 0.45F)),
-            1.0F);
+        draw->AddLine(ImVec2(origin.x + inset, origin.y + 14.0F), ImVec2(origin.x + inset + 24.0F, origin.y + height - 14.0F), ImGui::GetColorU32(ImVec4(0.22F, 0.055F, 0.038F, 0.45F)), 1.0F);
+        draw->AddLine(ImVec2(origin.x + width - inset, origin.y + 14.0F), ImVec2(origin.x + width - inset - 24.0F, origin.y + height - 14.0F), ImGui::GetColorU32(ImVec4(0.22F, 0.055F, 0.038F, 0.45F)), 1.0F);
     }
 
     const char* title = "DEVILS DEN MENU";
     const auto titleSize = ImGui::CalcTextSize(title);
-    const auto titlePos = ImVec2(
-        origin.x + (width - titleSize.x) * 0.5F,
-        origin.y + 27.0F);
-    draw->AddText(
-        ImVec2(titlePos.x + 2.0F, titlePos.y + 2.0F),
-        ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, 0.85F)),
-        title);
+    const auto titlePos = ImVec2(origin.x + (width - titleSize.x) * 0.5F, origin.y + 27.0F);
+    draw->AddText(ImVec2(titlePos.x + 2.0F, titlePos.y + 2.0F), ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, 0.85F)), title);
     draw->AddText(titlePos, ImGui::GetColorU32(EmberRed), title);
 
     const char* subtitle = "GTA V ENHANCED  |  RUNTIME READY";
     const auto subtitleSize = ImGui::CalcTextSize(subtitle);
-    draw->AddText(
-        ImVec2(origin.x + (width - subtitleSize.x) * 0.5F, origin.y + 56.0F),
-        ImGui::GetColorU32(Bronze),
-        subtitle);
+    draw->AddText(ImVec2(origin.x + (width - subtitleSize.x) * 0.5F, origin.y + 56.0F), ImGui::GetColorU32(Bronze), subtitle);
 
     ImGui::Dummy(ImVec2(width, height));
 }
@@ -169,12 +129,7 @@ void Devils_Den_Menu::DrawNavigation()
     ImGui::TextColored(Bronze, "CATEGORIES");
     MedievalDivider();
 
-    struct NavigationEntry
-    {
-        const char* label;
-        Page page;
-    };
-
+    struct NavigationEntry { const char* label; Page page; };
     constexpr std::array entries{
         NavigationEntry{"SELF", Page::Self},
         NavigationEntry{"WEAPONS", Page::Weapons},
@@ -193,10 +148,8 @@ void Devils_Den_Menu::DrawNavigation()
             ImGui::PushStyleColor(ImGuiCol_Button, Iron);
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24F, 0.055F, 0.040F, 1.00F));
         }
-
         if (ImGui::Button(entry.label, ImVec2(-1.0F, 42.0F)))
             m_page = entry.page;
-
         ImGui::PopStyleColor(2);
     }
 
@@ -218,34 +171,44 @@ void Devils_Den_Menu::DrawSelfPage()
     ImGui::Spacing();
 
     m_godMode = gameplay.GodMode();
-    if (ImGui::Checkbox("God Mode", &m_godMode))
-        gameplay.SetGodMode(m_godMode);
+    if (ImGui::Checkbox("God Mode", &m_godMode)) gameplay.SetGodMode(m_godMode);
 
     m_neverWanted = gameplay.NeverWanted();
-    if (ImGui::Checkbox("Never Wanted", &m_neverWanted))
-        gameplay.SetNeverWanted(m_neverWanted);
+    if (ImGui::Checkbox("Never Wanted", &m_neverWanted)) gameplay.SetNeverWanted(m_neverWanted);
+
+    m_superJump = gameplay.SuperJump();
+    if (ImGui::Checkbox("Super Jump", &m_superJump)) gameplay.SetSuperJump(m_superJump);
+
+    m_infiniteOxygen = gameplay.InfiniteOxygen();
+    if (ImGui::Checkbox("Infinite Oxygen", &m_infiniteOxygen)) gameplay.SetInfiniteOxygen(m_infiniteOxygen);
+
+    m_noRagdoll = gameplay.NoRagdoll();
+    if (ImGui::Checkbox("No Ragdoll", &m_noRagdoll)) gameplay.SetNoRagdoll(m_noRagdoll);
+
+    m_keepPlayerClean = gameplay.KeepPlayerClean();
+    if (ImGui::Checkbox("Keep Player Clean", &m_keepPlayerClean)) gameplay.SetKeepPlayerClean(m_keepPlayerClean);
+
+    m_infiniteAmmo = gameplay.InfiniteAmmo();
+    if (ImGui::Checkbox("Infinite Ammo", &m_infiniteAmmo)) gameplay.SetInfiniteAmmo(m_infiniteAmmo);
 
     ImGui::BeginDisabled();
     ImGui::Checkbox("Fast Run", &m_fastRun);
-    ImGui::Checkbox("Super Jump", &m_superJump);
     ImGui::SliderFloat("Health", &m_health, 0.0F, 100.0F, "%.0f");
     ImGui::EndDisabled();
 
     ImGui::Spacing();
     MedievalDivider();
-    ImGui::TextColored(Bronze, "QUICK ACTIONS");
+    ImGui::TextColored(Bronze, "WEAPONS / ACTIONS");
     ImGui::Spacing();
 
-    ImGui::BeginDisabled();
-    ImGui::Button("HEAL PLAYER", ImVec2(150.0F, 38.0F));
+    if (ImGui::Button("GIVE ALL WEAPONS", ImVec2(190.0F, 38.0F)))
+        gameplay.RequestGiveAllWeapons();
     ImGui::SameLine();
-    ImGui::Button("REFILL HEALTH", ImVec2(150.0F, 38.0F));
-    ImGui::SameLine();
-    ImGui::Button("RESET SELF", ImVec2(150.0F, 38.0F));
-    ImGui::EndDisabled();
+    if (ImGui::Button("GIVE MAX AMMO", ImVec2(190.0F, 38.0F)))
+        gameplay.RequestGiveMaxAmmo();
 
     ImGui::Spacing();
-    ImGui::TextDisabled("God Mode and Never Wanted execute on RunScriptThreads. Other controls remain staged.");
+    ImGui::TextDisabled("Live Self features execute only from the validated RunScriptThreads game-thread context.");
 }
 
 void Devils_Den_Menu::DrawTeleportPage()
@@ -259,12 +222,11 @@ void Devils_Den_Menu::DrawTeleportPage()
 
     ImGui::TextColored(Bronze, "WAYPOINT");
     ImGui::Spacing();
-    ImGui::TextWrapped("Place a waypoint on the Story Mode map, then use the button below.");
+    ImGui::TextWrapped("Place a waypoint on the Story Mode map, then use the button below. If you are inside a vehicle, the vehicle teleports with you.");
     ImGui::Spacing();
 
     const auto status = gameplay.TeleportStatus();
-    const bool busy = status == GTA_Teleport_Waypoint_Status::Queued ||
-                      status == GTA_Teleport_Waypoint_Status::Resolving;
+    const bool busy = status == GTA_Teleport_Waypoint_Status::Queued || status == GTA_Teleport_Waypoint_Status::Resolving;
 
     ImGui::BeginDisabled(busy);
     if (ImGui::Button("TELEPORT TO WAYPOINT", ImVec2(240.0F, 44.0F)))
@@ -291,14 +253,12 @@ void Devils_Den_Menu::DrawTeleportPage()
         if (ImGui::Button(location.label.data(), ImVec2(buttonWidth, 34.0F)))
             gameplay.RequestTeleportToLocation(location.id);
         ImGui::PopID();
-
-        if ((index % 2U) == 0U)
-            ImGui::SameLine();
+        if ((index % 2U) == 0U) ImGui::SameLine();
     }
     ImGui::EndDisabled();
 
     ImGui::Spacing();
-    ImGui::TextDisabled("Waypoint travel resolves ground, water, then approximate terrain. Presets use verified landmark coordinates.");
+    ImGui::TextDisabled("Waypoint travel resolves ground, water, then approximate terrain. Current vehicles are moved with the player.");
 }
 
 void Devils_Den_Menu::DrawPlaceholderPage(const char* title, const char* detail)
