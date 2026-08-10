@@ -1,23 +1,45 @@
 #include "GTA_Module_Manager.hpp"
 
+#include <algorithm>
+#include <cctype>
+
 namespace Devilz::Integrations::GTA5_Enhanced
 {
 using namespace Devilz::Backend;
+
+namespace
+{
+bool EqualInsensitive(std::string_view left, std::string_view right)
+{
+    if (left.size() != right.size()) return false;
+    return std::equal(left.begin(), left.end(), right.begin(), right.end(), [](char a, char b) {
+        return std::tolower(static_cast<unsigned char>(a)) ==
+               std::tolower(static_cast<unsigned char>(b));
+    });
+}
+}
 
 Result<GTA_Module_Status> GTA_Module_Manager::Refresh()
 {
     m_status = {};
 
-    auto process = m_processes.Find("GTA5_Enhanced.exe");
+    auto process = m_processes.Current();
     if (!process) {
+        m_status.state = GTA_Module_Manager_State::Failed;
+        m_status.detail = "Unable to inspect the current host process: " + process.Failure().Message();
+        return Result<GTA_Module_Status>::Success(m_status);
+    }
+
+    if (!EqualInsensitive(process.Value().executableName, "GTA5_Enhanced.exe")) {
         m_status.state = GTA_Module_Manager_State::NotRunning;
-        m_status.detail = "GTA5_Enhanced.exe is not running";
+        m_status.detail = "Devilz_Den is not loaded inside GTA5_Enhanced.exe; current host is " +
+                          process.Value().executableName;
         return Result<GTA_Module_Status>::Success(m_status);
     }
 
     m_status.process = process.Value();
     m_status.state = GTA_Module_Manager_State::Detected;
-    m_status.detail = "GTA5_Enhanced.exe detected";
+    m_status.detail = "GTA5_Enhanced.exe detected as the current host process";
 
     auto build = m_buildDetector.Detect(*m_status.process);
     if (!build) {
