@@ -7,6 +7,18 @@
 
 namespace Devilz::Integrations::GTA5_Enhanced
 {
+struct GTA_Native_Script_Vector
+{
+    alignas(8) float x = 0.0F;
+    alignas(8) float y = 0.0F;
+    alignas(8) float z = 0.0F;
+};
+
+static_assert(offsetof(GTA_Native_Script_Vector, x) == 0x00);
+static_assert(offsetof(GTA_Native_Script_Vector, y) == 0x08);
+static_assert(offsetof(GTA_Native_Script_Vector, z) == 0x10);
+static_assert(sizeof(GTA_Native_Script_Vector) == 0x18);
+
 struct alignas(16) GTA_Native_Vector3
 {
     float x = 0.0F;
@@ -18,14 +30,14 @@ static_assert(sizeof(GTA_Native_Vector3) == 0x10);
 
 struct GTA_Native_Call_Context
 {
-    void* returnValue = nullptr;                    // 0x00
-    std::uint32_t argumentCount = 0;                // 0x08
-    std::uint32_t pad0C = 0;                        // 0x0C
-    void* arguments = nullptr;                      // 0x10
-    std::int32_t vectorReferenceCount = 0;           // 0x18
-    std::uint32_t pad1C = 0;                        // 0x1C
-    GTA_Native_Vector3* vectorReferenceTargets[4]{}; // 0x20
-    GTA_Native_Vector3 vectorReferenceSources[4]{}; // 0x40
+    void* returnValue = nullptr;                           // 0x00
+    std::uint32_t argumentCount = 0;                       // 0x08
+    std::uint32_t pad0C = 0;                               // 0x0C
+    void* arguments = nullptr;                             // 0x10
+    std::int32_t vectorReferenceCount = 0;                 // 0x18
+    std::uint32_t pad1C = 0;                               // 0x1C
+    GTA_Native_Script_Vector* vectorReferenceTargets[4]{}; // 0x20
+    GTA_Native_Vector3 vectorReferenceSources[4]{};        // 0x40
 };
 
 static_assert(offsetof(GTA_Native_Call_Context, returnValue) == 0x00);
@@ -41,6 +53,7 @@ class GTA_Native_Call_Frame final
 public:
     static constexpr std::size_t MaxArguments = 40;
     static constexpr std::size_t ReturnSlots = 10;
+    static constexpr std::size_t MaxVectorReferences = 4;
 
     GTA_Native_Call_Frame() noexcept
     {
@@ -53,6 +66,8 @@ public:
     {
         m_context.argumentCount = 0;
         m_context.vectorReferenceCount = 0;
+        std::memset(m_context.vectorReferenceTargets, 0, sizeof(m_context.vectorReferenceTargets));
+        std::memset(m_context.vectorReferenceSources, 0, sizeof(m_context.vectorReferenceSources));
         std::memset(m_returns, 0, sizeof(m_returns));
         std::memset(m_arguments, 0, sizeof(m_arguments));
     }
@@ -80,6 +95,28 @@ public:
         T value{};
         std::memcpy(&value, m_returns, sizeof(T));
         return value;
+    }
+
+    void FixVectors() noexcept
+    {
+        auto count = m_context.vectorReferenceCount;
+        if (count < 0)
+            count = 0;
+        if (count > static_cast<std::int32_t>(MaxVectorReferences))
+            count = static_cast<std::int32_t>(MaxVectorReferences);
+
+        for (std::int32_t i = 0; i < count; ++i) {
+            auto* target = m_context.vectorReferenceTargets[i];
+            if (!target)
+                continue;
+
+            const auto& source = m_context.vectorReferenceSources[i];
+            target->x = source.x;
+            target->y = source.y;
+            target->z = source.z;
+        }
+
+        m_context.vectorReferenceCount = 0;
     }
 
     [[nodiscard]] GTA_Native_Call_Context& Context() noexcept { return m_context; }
