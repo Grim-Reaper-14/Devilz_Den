@@ -40,6 +40,13 @@ struct GTA_Target_Evidence
     std::size_t pointeeSampleNonZeroQwords = 0;
     std::size_t pointeeSampleReadablePointers = 0;
 
+    std::size_t objectSlotsSampled = 0;
+    std::size_t readableObjects = 0;
+    std::size_t objectFirstQwordsDecoded = 0;
+    std::size_t objectFirstQwordImagePointers = 0;
+    std::size_t objectFirstQwordExecutableImagePointers = 0;
+    std::string objectSamplePreview;
+
     std::string summary;
 };
 
