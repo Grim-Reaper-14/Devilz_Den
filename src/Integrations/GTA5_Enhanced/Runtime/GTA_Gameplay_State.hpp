@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GTA_Teleport_Locations.hpp"
+
 #include <atomic>
 #include <cstdint>
 
@@ -68,6 +70,18 @@ public:
         return m_teleportWaypointRequested.exchange(false, std::memory_order_acq_rel);
     }
 
+    void RequestTeleportToLocation(GTA_Teleport_Location_Id id) noexcept
+    {
+        m_requestedTeleportLocation.store(id, std::memory_order_release);
+    }
+
+    [[nodiscard]] GTA_Teleport_Location_Id ConsumeTeleportToLocationRequest() noexcept
+    {
+        return m_requestedTeleportLocation.exchange(
+            GTA_Teleport_Location_Id::None,
+            std::memory_order_acq_rel);
+    }
+
     [[nodiscard]] GTA_Teleport_Waypoint_Status TeleportStatus() const noexcept
     {
         return m_teleportStatus.load(std::memory_order_acquire);
@@ -84,6 +98,7 @@ public:
         m_godMode.store(false, std::memory_order_release);
         m_neverWanted.store(false, std::memory_order_release);
         m_teleportWaypointRequested.store(false, std::memory_order_release);
+        m_requestedTeleportLocation.store(GTA_Teleport_Location_Id::None, std::memory_order_release);
         m_teleportStatus.store(GTA_Teleport_Waypoint_Status::Idle, std::memory_order_release);
     }
 
@@ -94,6 +109,7 @@ private:
     std::atomic_bool m_godMode{false};
     std::atomic_bool m_neverWanted{false};
     std::atomic_bool m_teleportWaypointRequested{false};
+    std::atomic<GTA_Teleport_Location_Id> m_requestedTeleportLocation{GTA_Teleport_Location_Id::None};
     std::atomic<GTA_Teleport_Waypoint_Status> m_teleportStatus{GTA_Teleport_Waypoint_Status::Idle};
 };
 }
