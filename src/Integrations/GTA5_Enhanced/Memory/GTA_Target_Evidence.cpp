@@ -126,6 +126,60 @@ void CaptureRegion(const Region_Info& region, GTA_Target_Evidence& evidence)
     evidence.candidateRegionBase = region.base;
     evidence.candidateRegionSize = region.size;
 }
+
+void ProbeObjectSlots(
+    Backend::Process_Memory_Reader& reader,
+    const std::vector<std::byte>& sample,
+    GTA_Target_Evidence& evidence)
+{
+    constexpr std::size_t maxSlots = 8;
+    const auto availableSlots = sample.size() / sizeof(std::uintptr_t);
+    const auto slotCount = std::min(maxSlots, availableSlots);
+
+    std::ostringstream preview;
+    for (std::size_t i = 0; i < slotCount; ++i) {
+        std::uintptr_t objectAddress = 0;
+        std::memcpy(&objectAddress,
+                    sample.data() + (i * sizeof(std::uintptr_t)),
+                    sizeof(objectAddress));
+
+        ++evidence.objectSlotsSampled;
+        const auto objectRegion = QueryRegion(objectAddress);
+        if (objectRegion.readable)
+            ++evidence.readableObjects;
+
+        std::uintptr_t firstQword = 0;
+        bool decoded = false;
+        Region_Info firstQwordRegion{};
+
+        if (objectAddress != 0 && objectRegion.readable) {
+            auto first = reader.Read(objectAddress, sizeof(std::uintptr_t));
+            if (first) {
+                std::memcpy(&firstQword, first.Value().data(), sizeof(firstQword));
+                decoded = true;
+                ++evidence.objectFirstQwordsDecoded;
+
+                firstQwordRegion = QueryRegion(firstQword);
+                if (firstQwordRegion.type == MEM_IMAGE)
+                    ++evidence.objectFirstQwordImagePointers;
+                if (firstQwordRegion.type == MEM_IMAGE && firstQwordRegion.executable)
+                    ++evidence.objectFirstQwordExecutableImagePointers;
+            }
+        }
+
+        if (i != 0)
+            preview << ';';
+        preview << i << ':' << HexValue(objectAddress);
+        if (decoded)
+            preview << "->" << HexValue(firstQword)
+                    << "[T=" << HexValue(firstQwordRegion.type)
+                    << ",P=" << HexValue(firstQwordRegion.protection) << ']';
+        else
+            preview << "->unreadable";
+    }
+
+    evidence.objectSamplePreview = preview.str();
+}
 }
 
 GTA_Target_Evidence GTA_Target_Evidence_Probe::Probe(
@@ -186,6 +240,7 @@ GTA_Target_Evidence GTA_Target_Evidence_Probe::Probe(
                         sample.Value().size(),
                         evidence.pointeeSampleNonZeroQwords,
                         evidence.pointeeSampleReadablePointers);
+                    ProbeObjectSlots(reader, sample.Value(), evidence);
                 }
             }
         }
@@ -228,7 +283,13 @@ GTA_Target_Evidence GTA_Target_Evidence_Probe::Probe(
             if (evidence.pointeeSampleRead) {
                 summary << " | PointeeQwords=" << evidence.pointeeSamplePreview
                         << " | PointeeNonZero=" << evidence.pointeeSampleNonZeroQwords
-                        << " | PointeeReadablePtrLike=" << evidence.pointeeSampleReadablePointers;
+                        << " | PointeeReadablePtrLike=" << evidence.pointeeSampleReadablePointers
+                        << " | ObjectSlots=" << evidence.objectSlotsSampled
+                        << " | ReadableObjects=" << evidence.readableObjects
+                        << " | FirstQwordsDecoded=" << evidence.objectFirstQwordsDecoded
+                        << " | FirstQwordImagePtrs=" << evidence.objectFirstQwordImagePointers
+                        << " | FirstQwordExecImagePtrs=" << evidence.objectFirstQwordExecutableImagePointers
+                        << " | Objects=" << evidence.objectSamplePreview;
             }
         }
     }
