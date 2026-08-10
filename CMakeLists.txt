@@ -24,8 +24,12 @@ target_compile_definitions(Devilz_Den PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_ME
 
 if(WIN32)
     target_link_libraries(Devilz_Den PRIVATE psapi)
+
+    add_executable(Devilz_Den_Smoke_Test tests/Runtime_Smoke_Test.cpp)
+    target_compile_definitions(Devilz_Den_Smoke_Test PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 endif()
 
 if(MSVC)
     target_compile_options(Devilz_Den PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(Devilz_Den_Smoke_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
 endif()
