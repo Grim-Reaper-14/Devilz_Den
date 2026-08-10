@@ -40,19 +40,19 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
         return status;
     }
 
-    const auto getGameTimer = GTA_Native_Registry::Find(fingerprint, GTA_Native_Id::GetGameTimer);
-    const auto getHashKey = GTA_Native_Registry::Find(fingerprint, GTA_Native_Id::GetHashKey);
-    if (!getGameTimer || !getHashKey) {
-        status.detail = "No native registry is available for this GTA build fingerprint";
-        return status;
-    }
-
-    constexpr std::size_t namedNativeCount = 2;
+    constexpr std::size_t namedNativeCount = GTA_Native_Registry::NamedIds.size();
     constexpr std::size_t requestedHandlerCount = BootstrapProbeHashes.size() + namedNativeCount;
     std::array<GTA_Native_Hash, requestedHandlerCount> requestedHashes{};
     std::copy(BootstrapProbeHashes.begin(), BootstrapProbeHashes.end(), requestedHashes.begin());
-    requestedHashes[BootstrapProbeHashes.size()] = getGameTimer->enhancedHash;
-    requestedHashes[BootstrapProbeHashes.size() + 1] = getHashKey->enhancedHash;
+
+    for (std::size_t i = 0; i < GTA_Native_Registry::NamedIds.size(); ++i) {
+        const auto definition = GTA_Native_Registry::Find(fingerprint, GTA_Native_Registry::NamedIds[i]);
+        if (!definition) {
+            status.detail = "No complete native registry is available for this GTA build fingerprint";
+            return status;
+        }
+        requestedHashes[BootstrapProbeHashes.size() + i] = definition->enhancedHash;
+    }
 
     status.requestedHandlers = requestedHashes.size();
 
@@ -89,7 +89,7 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
     status.ready = m_ready;
     status.cachedHandlers = m_handlers.size();
     status.detail = m_ready
-        ? "Enhanced native bootstrap resolved and validated probe and named native handlers"
+        ? "Enhanced native bootstrap resolved and validated probe and gameplay native handlers"
         : "Enhanced native bootstrap did not populate the complete handler set";
     return status;
 }
