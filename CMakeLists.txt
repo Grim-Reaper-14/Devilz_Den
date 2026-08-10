@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 project(Devilz_Den LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -28,6 +30,21 @@ if(WIN32)
     add_executable(Devilz_Den_Smoke_Test tests/Runtime_Smoke_Test.cpp)
     target_compile_definitions(Devilz_Den_Smoke_Test PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 
+    add_executable(Devilz_Den_Address_Resolver_Test
+        tests/GTA_Address_Resolver_Test.cpp
+        src/Backend/Error/Error.cpp
+        src/Backend/Process/Process_Memory_Reader.cpp
+        src/Integrations/GTA5_Enhanced/Memory/GTA_Address_Resolver.cpp
+    )
+    target_include_directories(Devilz_Den_Address_Resolver_Test PRIVATE src)
+    target_compile_definitions(Devilz_Den_Address_Resolver_Test PRIVATE
+        UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+    )
+
+    if(BUILD_TESTING)
+        add_test(NAME Devilz_Den.AddressResolver COMMAND Devilz_Den_Address_Resolver_Test)
+    endif()
+
     set(DEVILZ_RUNTIME_DIR "${CMAKE_BINARY_DIR}/runtime/$<CONFIG>")
     add_custom_command(TARGET Devilz_Den POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${DEVILZ_RUNTIME_DIR}"
@@ -51,4 +68,5 @@ endif()
 if(MSVC)
     target_compile_options(Devilz_Den PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Smoke_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(Devilz_Den_Address_Resolver_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
 endif()
