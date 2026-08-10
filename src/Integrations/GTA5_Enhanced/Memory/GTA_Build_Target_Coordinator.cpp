@@ -46,7 +46,7 @@ Result<GTA_Build_Target_Report> GTA_Build_Target_Coordinator::Resolve(
     report.fingerprint = fingerprint;
     report.targets.reserve(set->targets.size());
 
-    GTA_Target_Resolver resolver(pid);
+    GTA_Target_Resolver resolver(pid, fingerprint);
     for (const auto& definition : set->targets) {
         auto resolution = resolver.Resolve(definition);
         if (!resolution)
