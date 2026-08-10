@@ -114,6 +114,7 @@ bool Runtime_Manager::Start(const std::filesystem::path& logPath)
         } else {
             LogGTAStatus(refreshed.Value());
             InitializeNativeManager(refreshed.Value());
+            InitializeGameThreadBridge(refreshed.Value());
         }
 
         m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL bootstrap completed", "Runtime");
@@ -138,6 +139,7 @@ void Runtime_Manager::Stop() noexcept
         return;
 
     try {
+        m_gameThreadBridge.Uninstall();
         m_natives.Reset();
         m_threads.Stop();
         m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL runtime stopped cleanly", "Runtime");
@@ -196,6 +198,51 @@ void Runtime_Manager::InitializeNativeManager(
             "/" + std::to_string(nativeStatus.requestedHandlers) +
             " | " + nativeStatus.detail,
         "GTA5_Enhanced.Natives");
+}
+
+void Runtime_Manager::InitializeGameThreadBridge(
+    const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
+{
+    if (!m_natives.Ready() || !status.targetReport) {
+        m_logger.Log(Backend::LogLevel::Warning,
+                     "Game-thread native bridge unavailable: native manager or target report is not ready",
+                     "GTA5_Enhanced.Natives");
+        return;
+    }
+
+    std::uintptr_t runScriptThreads = 0;
+    std::uintptr_t scriptThreadsStorage = 0;
+    std::uintptr_t expectedDispatch = 0;
+
+    for (const auto& target : status.targetReport->targets) {
+        if (target.status.state != GTA_Runtime_Target_State::Validated)
+            continue;
+
+        if (target.status.id == GTA_Runtime_Target_Id::RunScriptThreads)
+            runScriptThreads = target.address;
+        else if (target.status.id == GTA_Runtime_Target_Id::ScriptThreads) {
+            scriptThreadsStorage = target.address;
+            expectedDispatch = target.evidence.objectDominantFirstQwordAddress;
+        }
+    }
+
+    if (runScriptThreads == 0 || scriptThreadsStorage == 0 || expectedDispatch == 0) {
+        m_logger.Log(Backend::LogLevel::Warning,
+                     "Game-thread native bridge unavailable: RunScriptThreads or ScriptThreads is not semantically validated",
+                     "GTA5_Enhanced.Natives");
+        return;
+    }
+
+    if (!m_gameThreadBridge.Install(
+            runScriptThreads,
+            scriptThreadsStorage,
+            expectedDispatch,
+            m_natives,
+            m_logger)) {
+        m_logger.Log(Backend::LogLevel::Warning,
+                     "RunScriptThreads bridge installation failed closed",
+                     "GTA5_Enhanced.Natives");
+    }
 }
 
 void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
