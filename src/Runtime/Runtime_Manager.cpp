@@ -2,6 +2,7 @@
 
 #include "Backend/Logging/Sinks/DebuggerSink.hpp"
 #include "Backend/Logging/Sinks/FileSink.hpp"
+#include "Backend/Process/Process_Module_Manager.hpp"
 
 #include <exception>
 #include <iomanip>
@@ -36,7 +37,7 @@ const char* StateName(GTA_Module_Manager_State state) noexcept
     case GTA_Module_Manager_State::BuildIdentified: return "BuildIdentified";
     case GTA_Module_Manager_State::RuntimeUnverified: return "RuntimeUnverified";
     case GTA_Module_Manager_State::Unsupported: return "Unsupported";
-    case GTA_Module_Manager_State::Supported: return "Supported";
+    case GTA_Module_Manager_Manager_State::Supported: return "Supported";
     case GTA_Module_Manager_State::RuntimeReady: return "RuntimeReady";
     case GTA_Module_Manager_State::Failed: return "Failed";
     default: return "Unknown";
@@ -136,6 +137,8 @@ void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module
                  std::string("State: ") + StateName(status.state) + " - " + status.detail,
                  "GTA5_Enhanced");
 
+    std::uintptr_t moduleBase = 0;
+
     if (status.process) {
         m_logger.Log(Backend::LogLevel::Info,
                      "PID: " + std::to_string(status.process->pid) +
@@ -145,6 +148,16 @@ void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module
             m_logger.Log(Backend::LogLevel::Info,
                          "Executable: " + status.process->executablePath.string(),
                          "GTA5_Enhanced");
+
+        Backend::Process_Module_Manager modules(status.process->pid);
+        auto module = modules.Find("GTA5_Enhanced.exe");
+        if (module) {
+            moduleBase = module.Value().baseAddress;
+            m_logger.Log(Backend::LogLevel::Info,
+                         "ModuleBase: " + Hex(moduleBase) +
+                             " | ImageSize: " + Hex(module.Value().imageSize),
+                         "GTA5_Enhanced");
+        }
     }
 
     if (status.build) {
@@ -164,8 +177,11 @@ void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module
 
     for (const auto& target : status.targetReport->targets) {
         std::string message = target.status.name + ": " + TargetStateName(target.status.state);
-        if (target.address != 0)
+        if (target.address != 0) {
             message += " | Address: " + Hex(target.address);
+            if (moduleBase != 0 && target.address >= moduleBase)
+                message += " | RVA: " + Hex(target.address - moduleBase);
+        }
         if (!target.status.detail.empty())
             message += " | " + target.status.detail;
         m_logger.Log(Backend::LogLevel::Info, std::move(message), "GTA5_Enhanced.Targets");
