@@ -9,8 +9,8 @@ GTA_Build_Target_Registry::GTA_Build_Target_Registry()
     GTA_Build_Target_Set current{};
     current.fingerprint = 0x6A4F97F605B81000ULL;
     current.targets = {
-        {GTA_Runtime_Target_Id::GameState, "GameState", "GTA5_Enhanced.exe", {}, {}, true, GTA_Target_Candidate_Kind::Unknown},
-        {GTA_Runtime_Target_Id::FrameCount, "FrameCount", "GTA5_Enhanced.exe", {}, {}, true, GTA_Target_Candidate_Kind::Unknown},
+        {GTA_Runtime_Target_Id::GameState, "GameState", "GTA5_Enhanced.exe", {}, {}, false, GTA_Target_Candidate_Kind::Unknown},
+        {GTA_Runtime_Target_Id::FrameCount, "FrameCount", "GTA5_Enhanced.exe", {}, {}, false, GTA_Target_Candidate_Kind::Unknown},
         {
             GTA_Runtime_Target_Id::ScriptGlobals,
             "ScriptGlobals",
@@ -20,7 +20,7 @@ GTA_Build_Target_Registry::GTA_Build_Target_Registry()
                 {GTA_Address_Resolve_Op_Type::Add, 7},
                 {GTA_Address_Resolve_Op_Type::RipRelative32, 3}
             },
-            true,
+            false,
             GTA_Target_Candidate_Kind::DirectData
         },
         {
@@ -28,9 +28,13 @@ GTA_Build_Target_Registry::GTA_Build_Target_Registry()
             "ProgramTable",
             "GTA5_Enhanced.exe",
             "48 C7 84 C8 D8 00 00 00 00 00 00 00",
-            {},
-            true,
-            GTA_Target_Candidate_Kind::CodeSite
+            {
+                {GTA_Address_Resolve_Op_Type::Add, 0x13},
+                {GTA_Address_Resolve_Op_Type::RipRelative32, 3},
+                {GTA_Address_Resolve_Op_Type::Add, 0xD8}
+            },
+            false,
+            GTA_Target_Candidate_Kind::DirectData
         },
         {
             GTA_Runtime_Target_Id::ScriptThreads,
@@ -51,7 +55,7 @@ GTA_Build_Target_Registry::GTA_Build_Target_Registry()
             {
                 {GTA_Address_Resolve_Op_Type::Add, -0xA}
             },
-            false,
+            true,
             GTA_Target_Candidate_Kind::CodeSite
         },
         {
