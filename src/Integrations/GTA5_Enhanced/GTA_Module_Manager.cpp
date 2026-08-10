@@ -91,7 +91,7 @@ Result<GTA_Module_Status> GTA_Module_Manager::Refresh()
         break;
     case GTA_Build_Verification_State::PartiallyVerified:
         m_status.state = GTA_Module_Manager_State::RuntimeUnverified;
-        m_status.detail = "Some GTA runtime targets are located or validated; full verification is still pending";
+        m_status.detail = "Some GTA runtime targets are located or structurally validated; semantic verification is still pending";
         break;
     default:
         m_status.state = GTA_Module_Manager_State::RuntimeUnverified;
