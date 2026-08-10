@@ -27,6 +27,16 @@ public:
     GTA_Gameplay_State(const GTA_Gameplay_State&) = delete;
     GTA_Gameplay_State& operator=(const GTA_Gameplay_State&) = delete;
 
+    [[nodiscard]] bool MenuInputCaptured() const noexcept
+    {
+        return m_menuInputCaptured.load(std::memory_order_acquire);
+    }
+
+    void SetMenuInputCaptured(bool captured) noexcept
+    {
+        m_menuInputCaptured.store(captured, std::memory_order_release);
+    }
+
     [[nodiscard]] bool GodMode() const noexcept
     {
         return m_godMode.load(std::memory_order_acquire);
@@ -70,6 +80,7 @@ public:
 
     void Reset() noexcept
     {
+        m_menuInputCaptured.store(false, std::memory_order_release);
         m_godMode.store(false, std::memory_order_release);
         m_neverWanted.store(false, std::memory_order_release);
         m_teleportWaypointRequested.store(false, std::memory_order_release);
@@ -79,6 +90,7 @@ public:
 private:
     GTA_Gameplay_State() = default;
 
+    std::atomic_bool m_menuInputCaptured{false};
     std::atomic_bool m_godMode{false};
     std::atomic_bool m_neverWanted{false};
     std::atomic_bool m_teleportWaypointRequested{false};
