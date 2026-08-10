@@ -18,6 +18,7 @@ namespace
 using Backend::Process_Architecture;
 using Integrations::GTA5_Enhanced::GTA_Module_Manager_State;
 using Integrations::GTA5_Enhanced::GTA_Runtime_Target_State;
+using Integrations::GTA5_Enhanced::GTA_Target_Candidate_Kind;
 
 const char* ArchitectureName(Process_Architecture architecture) noexcept
 {
@@ -52,6 +53,16 @@ const char* TargetStateName(GTA_Runtime_Target_State state) noexcept
     case GTA_Runtime_Target_State::Located: return "Located";
     case GTA_Runtime_Target_State::Validated: return "Validated";
     case GTA_Runtime_Target_State::Failed: return "Failed";
+    default: return "Unknown";
+    }
+}
+
+const char* CandidateKindName(GTA_Target_Candidate_Kind kind) noexcept
+{
+    switch (kind) {
+    case GTA_Target_Candidate_Kind::DirectData: return "DirectData";
+    case GTA_Target_Candidate_Kind::PointerStorage: return "PointerStorage";
+    case GTA_Target_Candidate_Kind::CodeSite: return "CodeSite";
     default: return "Unknown";
     }
 }
@@ -176,7 +187,8 @@ void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module
                  "GTA5_Enhanced");
 
     for (const auto& target : status.targetReport->targets) {
-        std::string message = target.status.name + ": " + TargetStateName(target.status.state);
+        std::string message = target.status.name + ": " + TargetStateName(target.status.state) +
+                              " | Kind: " + CandidateKindName(target.candidateKind);
         if (target.address != 0) {
             message += " | Address: " + Hex(target.address);
             if (moduleBase != 0 && target.address >= moduleBase)
