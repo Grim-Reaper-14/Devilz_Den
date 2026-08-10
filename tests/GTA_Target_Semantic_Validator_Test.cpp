@@ -16,7 +16,16 @@ GTA_Target_Definition ScriptThreadsDefinition()
     return definition;
 }
 
-GTA_Target_Evidence VerifiedEvidence(std::uintptr_t moduleBase)
+GTA_Target_Definition InitNativeTablesDefinition()
+{
+    GTA_Target_Definition definition{};
+    definition.id = GTA_Runtime_Target_Id::InitNativeTables;
+    definition.name = "InitNativeTables";
+    definition.candidateKind = GTA_Target_Candidate_Kind::CodeSite;
+    return definition;
+}
+
+GTA_Target_Evidence VerifiedScriptThreadsEvidence(std::uintptr_t moduleBase)
 {
     GTA_Target_Evidence evidence{};
     evidence.objectFirstQwordsDecoded = 8;
@@ -29,14 +38,26 @@ GTA_Target_Evidence VerifiedEvidence(std::uintptr_t moduleBase)
     return evidence;
 }
 
-bool TestVerifiedIdentity()
+GTA_Target_Evidence VerifiedNativeBootstrapEvidence()
+{
+    GTA_Target_Evidence evidence{};
+    evidence.candidateCommitted = true;
+    evidence.candidateReadable = true;
+    evidence.candidateExecutable = true;
+    evidence.sampleRead = true;
+    evidence.samplePreview = "48 89 5C 24 08";
+    return evidence;
+}
+
+bool TestVerifiedScriptThreadsIdentity()
 {
     constexpr std::uintptr_t moduleBase = 0x00007FF600000000ULL;
     const auto validation = GTA_Target_Semantic_Validator::Validate(
         ScriptThreadsDefinition(),
-        VerifiedEvidence(moduleBase),
+        VerifiedScriptThreadsEvidence(moduleBase),
         GTA_Target_Semantic_Validator::SupportedFingerprint,
-        moduleBase);
+        moduleBase,
+        0);
 
     if (!validation.applicable || !validation.passed) {
         std::cerr << "Verified ScriptThreads semantic identity was rejected: "
@@ -50,14 +71,15 @@ bool TestVerifiedIdentity()
 bool TestWrongDispatchTableRva()
 {
     constexpr std::uintptr_t moduleBase = 0x00007FF600000000ULL;
-    auto evidence = VerifiedEvidence(moduleBase);
+    auto evidence = VerifiedScriptThreadsEvidence(moduleBase);
     evidence.objectDominantFirstQwordAddress += 0x10;
 
     const auto validation = GTA_Target_Semantic_Validator::Validate(
         ScriptThreadsDefinition(),
         evidence,
         GTA_Target_Semantic_Validator::SupportedFingerprint,
-        moduleBase);
+        moduleBase,
+        0);
 
     if (!validation.applicable || validation.passed) {
         std::cerr << "Wrong ScriptThreads dispatch-table identity was accepted\n";
@@ -67,17 +89,81 @@ bool TestWrongDispatchTableRva()
     return true;
 }
 
-bool TestWrongFingerprint()
+bool TestWrongScriptThreadsFingerprint()
 {
     constexpr std::uintptr_t moduleBase = 0x00007FF600000000ULL;
     const auto validation = GTA_Target_Semantic_Validator::Validate(
         ScriptThreadsDefinition(),
-        VerifiedEvidence(moduleBase),
+        VerifiedScriptThreadsEvidence(moduleBase),
         GTA_Target_Semantic_Validator::SupportedFingerprint + 1,
-        moduleBase);
+        moduleBase,
+        0);
 
     if (!validation.applicable || validation.passed) {
         std::cerr << "Unregistered GTA fingerprint was accepted for ScriptThreads semantic identity\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool TestVerifiedNativeBootstrapIdentity()
+{
+    constexpr std::uintptr_t moduleBase = 0x00007FF600000000ULL;
+    constexpr auto fingerprint = GTA_Target_Semantic_Validator::SupportedFingerprint;
+    const auto candidate = moduleBase + GTA_Target_Semantic_Validator::InitNativeTablesEntryRva;
+
+    const auto validation = GTA_Target_Semantic_Validator::Validate(
+        InitNativeTablesDefinition(),
+        VerifiedNativeBootstrapEvidence(),
+        fingerprint,
+        moduleBase,
+        candidate);
+
+    if (!validation.applicable || !validation.passed) {
+        std::cerr << "Verified InitNativeTables callable entry was rejected: "
+                  << validation.detail << '\n';
+        return false;
+    }
+
+    return true;
+}
+
+bool TestWrongNativeBootstrapRva()
+{
+    constexpr std::uintptr_t moduleBase = 0x00007FF600000000ULL;
+    const auto candidate =
+        moduleBase + GTA_Target_Semantic_Validator::InitNativeTablesEntryRva + 1;
+
+    const auto validation = GTA_Target_Semantic_Validator::Validate(
+        InitNativeTablesDefinition(),
+        VerifiedNativeBootstrapEvidence(),
+        GTA_Target_Semantic_Validator::SupportedFingerprint,
+        moduleBase,
+        candidate);
+
+    if (!validation.applicable || validation.passed) {
+        std::cerr << "Wrong InitNativeTables callable-entry RVA was accepted\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool TestWrongNativeBootstrapFingerprint()
+{
+    constexpr std::uintptr_t moduleBase = 0x00007FF600000000ULL;
+    const auto candidate = moduleBase + GTA_Target_Semantic_Validator::InitNativeTablesEntryRva;
+
+    const auto validation = GTA_Target_Semantic_Validator::Validate(
+        InitNativeTablesDefinition(),
+        VerifiedNativeBootstrapEvidence(),
+        GTA_Target_Semantic_Validator::SupportedFingerprint + 1,
+        moduleBase,
+        candidate);
+
+    if (!validation.applicable || validation.passed) {
+        std::cerr << "Unregistered GTA fingerprint was accepted for InitNativeTables semantic identity\n";
         return false;
     }
 
@@ -87,9 +173,12 @@ bool TestWrongFingerprint()
 
 int main()
 {
-    if (!TestVerifiedIdentity() ||
+    if (!TestVerifiedScriptThreadsIdentity() ||
         !TestWrongDispatchTableRva() ||
-        !TestWrongFingerprint()) {
+        !TestWrongScriptThreadsFingerprint() ||
+        !TestVerifiedNativeBootstrapIdentity() ||
+        !TestWrongNativeBootstrapRva() ||
+        !TestWrongNativeBootstrapFingerprint()) {
         return 1;
     }
 
