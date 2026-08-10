@@ -1,5 +1,7 @@
 #include "Devils_Den_Menu.hpp"
 
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
+
 #include <imgui.h>
 
 #include <array>
@@ -8,10 +10,26 @@ namespace Devilz::Frontend
 {
 namespace
 {
+using Integrations::GTA5_Enhanced::GTA_Gameplay_State;
+using Integrations::GTA5_Enhanced::GTA_Teleport_Waypoint_Status;
+
 constexpr ImVec4 EmberRed{0.88F, 0.10F, 0.045F, 1.00F};
 constexpr ImVec4 Bronze{0.78F, 0.66F, 0.44F, 1.00F};
 constexpr ImVec4 Iron{0.13F, 0.11F, 0.10F, 1.00F};
 constexpr ImVec4 DeepStone{0.055F, 0.045F, 0.040F, 1.00F};
+
+const char* TeleportStatusText(GTA_Teleport_Waypoint_Status status) noexcept
+{
+    switch (status) {
+    case GTA_Teleport_Waypoint_Status::Idle: return "Ready";
+    case GTA_Teleport_Waypoint_Status::Queued: return "Queued";
+    case GTA_Teleport_Waypoint_Status::Resolving: return "Resolving ground...";
+    case GTA_Teleport_Waypoint_Status::Succeeded: return "Teleport complete";
+    case GTA_Teleport_Waypoint_Status::NoWaypoint: return "No waypoint is active";
+    case GTA_Teleport_Waypoint_Status::Failed: return "Teleport failed - see runtime log";
+    default: return "Unknown";
+    }
+}
 
 void MedievalDivider()
 {
@@ -73,7 +91,7 @@ void Devils_Den_Menu::Draw(bool& open)
             DrawPlaceholderPage("VEHICLE", "The stable and vehicle page is queued for the next pass.");
             break;
         case Page::Teleport:
-            DrawPlaceholderPage("TELEPORT", "Waypoints and location controls will live here.");
+            DrawTeleportPage();
             break;
         case Page::World:
             DrawPlaceholderPage("WORLD", "World and environment controls will live here.");
@@ -187,33 +205,78 @@ void Devils_Den_Menu::DrawNavigation()
 
 void Devils_Den_Menu::DrawSelfPage()
 {
+    auto& gameplay = GTA_Gameplay_State::Instance();
+
     ImGui::TextColored(EmberRed, "SELF");
     ImGui::SameLine();
-    ImGui::TextDisabled("- first live frontend page");
+    ImGui::TextDisabled("- live Story Mode features");
     MedievalDivider();
 
     ImGui::TextColored(Bronze, "PLAYER OPTIONS");
     ImGui::Spacing();
 
-    ImGui::Checkbox("God Mode", &m_godMode);
-    ImGui::Checkbox("Never Wanted", &m_neverWanted);
+    m_godMode = gameplay.GodMode();
+    if (ImGui::Checkbox("God Mode", &m_godMode))
+        gameplay.SetGodMode(m_godMode);
+
+    m_neverWanted = gameplay.NeverWanted();
+    if (ImGui::Checkbox("Never Wanted", &m_neverWanted))
+        gameplay.SetNeverWanted(m_neverWanted);
+
+    ImGui::BeginDisabled();
     ImGui::Checkbox("Fast Run", &m_fastRun);
     ImGui::Checkbox("Super Jump", &m_superJump);
     ImGui::SliderFloat("Health", &m_health, 0.0F, 100.0F, "%.0f");
+    ImGui::EndDisabled();
 
     ImGui::Spacing();
     MedievalDivider();
     ImGui::TextColored(Bronze, "QUICK ACTIONS");
     ImGui::Spacing();
 
+    ImGui::BeginDisabled();
     ImGui::Button("HEAL PLAYER", ImVec2(150.0F, 38.0F));
     ImGui::SameLine();
     ImGui::Button("REFILL HEALTH", ImVec2(150.0F, 38.0F));
     ImGui::SameLine();
     ImGui::Button("RESET SELF", ImVec2(150.0F, 38.0F));
+    ImGui::EndDisabled();
 
     ImGui::Spacing();
-    ImGui::TextDisabled("Frontend milestone: controls are visual only until renderer/input stability is verified.");
+    ImGui::TextDisabled("God Mode and Never Wanted execute on RunScriptThreads. Other controls remain staged.");
+}
+
+void Devils_Den_Menu::DrawTeleportPage()
+{
+    auto& gameplay = GTA_Gameplay_State::Instance();
+
+    ImGui::TextColored(EmberRed, "TELEPORT");
+    ImGui::SameLine();
+    ImGui::TextDisabled("- waypoint travel");
+    MedievalDivider();
+
+    ImGui::TextColored(Bronze, "WAYPOINT");
+    ImGui::Spacing();
+    ImGui::TextWrapped("Place a waypoint on the Story Mode map, then use the button below.");
+    ImGui::Spacing();
+
+    const auto status = gameplay.TeleportStatus();
+    const bool busy = status == GTA_Teleport_Waypoint_Status::Queued ||
+                      status == GTA_Teleport_Waypoint_Status::Resolving;
+
+    ImGui::BeginDisabled(busy);
+    if (ImGui::Button("TELEPORT TO WAYPOINT", ImVec2(240.0F, 44.0F)))
+        gameplay.RequestTeleportToWaypoint();
+    ImGui::EndDisabled();
+
+    ImGui::Spacing();
+    ImGui::TextColored(Bronze, "STATUS");
+    ImGui::SameLine();
+    ImGui::TextUnformatted(TeleportStatusText(status));
+
+    ImGui::Spacing();
+    MedievalDivider();
+    ImGui::TextDisabled("Ground height is resolved over game ticks before the player is moved.");
 }
 
 void Devils_Den_Menu::DrawPlaceholderPage(const char* title, const char* detail)
