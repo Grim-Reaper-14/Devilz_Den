@@ -49,9 +49,19 @@ if(WIN32)
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
     )
 
+    add_executable(Devilz_Den_Native_Manager_Test
+        tests/GTA_Native_Manager_Test.cpp
+        src/Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.cpp
+    )
+    target_include_directories(Devilz_Den_Native_Manager_Test PRIVATE src)
+    target_compile_definitions(Devilz_Den_Native_Manager_Test PRIVATE
+        UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+    )
+
     if(BUILD_TESTING)
         add_test(NAME Devilz_Den.AddressResolver COMMAND Devilz_Den_Address_Resolver_Test)
         add_test(NAME Devilz_Den.TargetSemanticValidator COMMAND Devilz_Den_Target_Semantic_Validator_Test)
+        add_test(NAME Devilz_Den.NativeManager COMMAND Devilz_Den_Native_Manager_Test)
     endif()
 
     set(DEVILZ_RUNTIME_DIR "${CMAKE_BINARY_DIR}/runtime/$<CONFIG>")
@@ -79,4 +89,5 @@ if(MSVC)
     target_compile_options(Devilz_Den_Smoke_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Address_Resolver_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Target_Semantic_Validator_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(Devilz_Den_Native_Manager_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
 endif()
