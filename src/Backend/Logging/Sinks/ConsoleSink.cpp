@@ -44,6 +44,7 @@ std::string ServiceName(std::string_view service)
     if (service == "GTA5_Enhanced.Evidence") return "EVIDENCE";
     if (service == "GTA5_Enhanced.Natives") return "NATIVES";
     if (service == "GTA5_Enhanced.Frontend") return "FRONTEND";
+    if (service == "GTA5_Enhanced.Features") return "FEATURES";
     return std::string(service);
 }
 
@@ -53,6 +54,7 @@ std::string SectionName(std::string_view service)
     if (service == "GTA5_Enhanced.Targets" || service == "GTA5_Enhanced.Evidence") return "TARGETS";
     if (service == "GTA5_Enhanced.Natives") return "NATIVES";
     if (service == "GTA5_Enhanced.Frontend") return "FRONTEND";
+    if (service == "GTA5_Enhanced.Features") return "FEATURES";
     return {};
 }
 
