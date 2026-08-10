@@ -2,6 +2,7 @@
 
 #include "GTA_Target_Definition.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -14,12 +15,30 @@ struct GTA_Target_Evidence
     bool candidateWritable = false;
     bool candidateExecutable = false;
     std::uint32_t candidateProtection = 0;
+    std::uint32_t candidateType = 0;
+    std::uintptr_t candidateRegionBase = 0;
+    std::size_t candidateRegionSize = 0;
+
+    bool sampleRead = false;
+    std::string samplePreview;
+    std::size_t sampleNonZeroQwords = 0;
+    std::size_t sampleReadablePointers = 0;
 
     bool pointerDecoded = false;
     std::uintptr_t pointeeAddress = 0;
     bool pointeeCommitted = false;
     bool pointeeReadable = false;
+    bool pointeeWritable = false;
+    bool pointeeExecutable = false;
     std::uint32_t pointeeProtection = 0;
+    std::uint32_t pointeeType = 0;
+    std::uintptr_t pointeeRegionBase = 0;
+    std::size_t pointeeRegionSize = 0;
+
+    bool pointeeSampleRead = false;
+    std::string pointeeSamplePreview;
+    std::size_t pointeeSampleNonZeroQwords = 0;
+    std::size_t pointeeSampleReadablePointers = 0;
 
     std::string summary;
 };
