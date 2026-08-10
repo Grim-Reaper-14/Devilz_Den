@@ -53,6 +53,10 @@ private:
     int m_forgeModSlot = 11;
     int m_forgeModIndex = -1;
     int m_forgeWheelType = 7;
+    int m_forgeWheelIndex = -1;
+    bool m_forgeCustomTires = false;
+    int m_forgeWindowTint = 0;
+    int m_forgePlateStyle = 0;
     int m_forgePrimaryPaintType = 1;
     int m_forgePrimaryColor = 0;
     int m_forgeSecondaryPaintType = 1;
