@@ -1,5 +1,6 @@
 #include "GTA_Run_Script_Threads_Bridge.hpp"
 
+#include "GTA_Gameplay_State.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
 #include <intrin.h>
@@ -157,10 +158,13 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_smokeCompleted.store(false);
     m_smokeAttempting.store(false);
     m_activeCalls.store(0);
+    m_gameplay.Configure(natives, logger);
+    GTA_Gameplay_State::Instance().Reset();
 
     s_active = this;
     if (!WriteExecutableBytes(m_targetAddress, patch.data(), patch.size())) {
         s_active = nullptr;
+        m_gameplay.Reset();
         m_original = nullptr;
         m_natives = nullptr;
         m_logger = nullptr;
@@ -175,13 +179,24 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_installed.store(true);
     logger.Log(
         Backend::LogLevel::Info,
-        "RunScriptThreads bridge installed | Mode: one-shot native smoke",
+        "RunScriptThreads bridge installed | Mode: native smoke + gameplay features",
         "GTA5_Enhanced.Natives");
     return true;
 }
 
 void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
 {
+    if (!m_installed.load())
+        return;
+
+    auto& gameplayState = GTA_Gameplay_State::Instance();
+    gameplayState.SetGodMode(false);
+    gameplayState.SetNeverWanted(false);
+
+    // Give the live game thread a brief opportunity to restore looped feature state
+    // before the RunScriptThreads patch is removed.
+    ::Sleep(50);
+
     if (!m_installed.exchange(false))
         return;
 
@@ -194,6 +209,8 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     if (s_active == this)
         s_active = nullptr;
 
+    m_gameplay.Reset();
+    gameplayState.Reset();
     m_original = nullptr;
     m_natives = nullptr;
     m_logger = nullptr;
@@ -222,8 +239,13 @@ bool GTA_Run_Script_Threads_Bridge::HookThunk(int opsToExecute)
 bool GTA_Run_Script_Threads_Bridge::OnRunScriptThreads(int opsToExecute) noexcept
 {
     const bool result = m_original ? m_original(opsToExecute) : false;
-    if (m_installed.load() && !m_smokeCompleted.load())
+    if (!m_installed.load())
+        return result;
+
+    if (!m_smokeCompleted.load())
         TryNativeSmoke();
+
+    RunGameplayTick();
     return result;
 }
 
@@ -276,6 +298,34 @@ void GTA_Run_Script_Threads_Bridge::TryNativeSmoke() noexcept
     }
 
     m_smokeAttempting.store(false);
+}
+
+void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
+{
+    if (!m_natives || !m_natives->Ready())
+        return;
+
+    void* scriptThread = FindValidatedScriptThread();
+    if (!scriptThread)
+        return;
+
+    const auto tlsArray = static_cast<std::uintptr_t>(__readgsqword(0x58));
+    if (!IsReadableAddress(tlsArray, sizeof(void*)))
+        return;
+
+    GTA_Tls_Context_View* tls = nullptr;
+    std::memcpy(&tls, reinterpret_cast<const void*>(tlsArray), sizeof(tls));
+    if (!tls || !IsReadableAddress(reinterpret_cast<std::uintptr_t>(tls), sizeof(GTA_Tls_Context_View)))
+        return;
+
+    void* previousThread = tls->currentScriptThread;
+    const bool previousActive = tls->scriptThreadActive;
+
+    tls->currentScriptThread = scriptThread;
+    tls->scriptThreadActive = true;
+    m_gameplay.Tick();
+    tls->scriptThreadActive = previousActive;
+    tls->currentScriptThread = previousThread;
 }
 
 void* GTA_Run_Script_Threads_Bridge::FindValidatedScriptThread() const noexcept
