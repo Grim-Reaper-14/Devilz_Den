@@ -43,6 +43,7 @@ enum class GTA_Vehicle_Forge_Command_Type : std::uint8_t
     SetExtraColours,
     SetCustomPrimaryRgb,
     SetCustomSecondaryRgb,
+    SetLoweredStance,
     CleanVehicle
 };
 
