@@ -3,6 +3,7 @@
 #include "Backend/Logging/LoggerService.hpp"
 #include "Backend/Threading/ThreadManager.hpp"
 #include "Integrations/GTA5_Enhanced/GTA_Module_Manager.hpp"
+#include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 
 #include <atomic>
 #include <filesystem>
@@ -25,10 +26,12 @@ public:
 
 private:
     void LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module_Status& status);
+    void InitializeNativeManager(const Integrations::GTA5_Enhanced::GTA_Module_Status& status);
 
     Backend::LoggerService m_logger;
     Backend::ThreadManager m_threads;
     Integrations::GTA5_Enhanced::GTA_Module_Manager m_gta;
+    Integrations::GTA5_Enhanced::GTA_Native_Manager m_natives;
     std::atomic_bool m_running{false};
 };
 }
