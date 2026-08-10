@@ -24,12 +24,14 @@ struct GTA_Target_Resolution
 class GTA_Target_Resolver final
 {
 public:
-    explicit GTA_Target_Resolver(std::uint32_t pid) noexcept : m_pid(pid) {}
+    GTA_Target_Resolver(std::uint32_t pid, std::uint64_t fingerprint) noexcept
+        : m_pid(pid), m_fingerprint(fingerprint) {}
 
     [[nodiscard]] Devilz::Backend::Result<GTA_Target_Resolution> Resolve(
         const GTA_Target_Definition& definition) const;
 
 private:
     std::uint32_t m_pid = 0;
+    std::uint64_t m_fingerprint = 0;
 };
 }
