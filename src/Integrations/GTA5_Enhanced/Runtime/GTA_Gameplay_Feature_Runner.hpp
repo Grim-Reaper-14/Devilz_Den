@@ -50,6 +50,9 @@ private:
     void TickVehicleCatalog() noexcept;
     void TickVehicleSpawner() noexcept;
     void TickVehicleForge() noexcept;
+    void TickVehicleMaintenance() noexcept;
+    void TickVehicleForgeSnapshot() noexcept;
+    void BuildVehicleForgeSnapshot(int vehicle) noexcept;
     void BeginVehicleSpawn(std::uint32_t modelHash, const GTA_Vehicle_Spawn_Options& options) noexcept;
     void FinishVehicleSpawn(bool success, const char* detail) noexcept;
     [[nodiscard]] int CurrentVehicle() noexcept;
@@ -75,6 +78,8 @@ private:
     float m_vehicleSpawnHeading = 0.0F;
     int m_vehicleSpawnHandle = 0;
     std::uint32_t m_vehicleStreamAttempts = 0;
+    int m_forgeSnapshotVehicle = 0;
+    int m_vehicleGodModeAppliedVehicle = 0;
 
     Teleport_Phase m_teleportPhase = Teleport_Phase::Idle;
     GTA_Native_Script_Vector m_waypoint{};
