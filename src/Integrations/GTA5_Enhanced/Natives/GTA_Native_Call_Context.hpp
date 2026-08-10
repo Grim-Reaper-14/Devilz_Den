@@ -97,7 +97,7 @@ public:
     [[nodiscard]] T Return() const noexcept
     {
         static_assert(std::is_trivially_copyable_v<T>);
-        static_assert(sizeof(T) <= sizeof(std::uint64_t));
+        static_assert(sizeof(T) <= sizeof(m_returns));
 
         T value{};
         std::memcpy(&value, m_returns, sizeof(T));
