@@ -10,7 +10,15 @@ std::size_t GTA_Build_Target_Report::LocatedCount() const noexcept
 {
     return static_cast<std::size_t>(std::count_if(targets.begin(), targets.end(), [](const auto& target) {
         return target.status.state == GTA_Runtime_Target_State::Located ||
+               target.status.state == GTA_Runtime_Target_State::StructurallyValidated ||
                target.status.state == GTA_Runtime_Target_State::Validated;
+    }));
+}
+
+std::size_t GTA_Build_Target_Report::StructurallyValidatedCount() const noexcept
+{
+    return static_cast<std::size_t>(std::count_if(targets.begin(), targets.end(), [](const auto& target) {
+        return target.status.state == GTA_Runtime_Target_State::StructurallyValidated;
     }));
 }
 
