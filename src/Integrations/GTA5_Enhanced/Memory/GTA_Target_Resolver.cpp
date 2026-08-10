@@ -67,6 +67,7 @@ Result<GTA_Target_Resolution> GTA_Target_Resolver::Resolve(const GTA_Target_Defi
     }
 
     output.address = output.candidates.front();
+    output.evidence = GTA_Target_Evidence_Probe::Probe(m_pid, output.candidateKind, output.address);
     output.status.state = GTA_Runtime_Target_State::Located;
     output.status.detail = "Unique candidate address resolved; semantic validation is still required";
     return Result<GTA_Target_Resolution>::Success(std::move(output));
