@@ -25,7 +25,8 @@ enum class GTA_Native_Id : std::uint8_t
     GetBlipCoords,
     RequestCollisionAtCoord,
     GetGroundZFor3DCoord,
-    SetEntityCoordsNoOffset
+    SetEntityCoordsNoOffset,
+    DisableAllControlActions
 };
 
 struct GTA_Native_Definition
@@ -40,7 +41,7 @@ class GTA_Native_Registry final
 {
 public:
     static constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
-    static constexpr std::array<GTA_Native_Id, 15> NamedIds{
+    static constexpr std::array<GTA_Native_Id, 16> NamedIds{
         GTA_Native_Id::GetGameTimer,
         GTA_Native_Id::GetHashKey,
         GTA_Native_Id::PlayerPedId,
@@ -55,7 +56,8 @@ public:
         GTA_Native_Id::GetBlipCoords,
         GTA_Native_Id::RequestCollisionAtCoord,
         GTA_Native_Id::GetGroundZFor3DCoord,
-        GTA_Native_Id::SetEntityCoordsNoOffset
+        GTA_Native_Id::SetEntityCoordsNoOffset,
+        GTA_Native_Id::DisableAllControlActions
     };
 
     [[nodiscard]] static constexpr std::optional<GTA_Native_Definition> Find(
@@ -96,6 +98,8 @@ public:
             return GTA_Native_Definition{id, "GET_GROUND_Z_FOR_3D_COORD", 0xC906A7DAB05C8D2BULL, 0xB1EAADCB692D69CEULL};
         case GTA_Native_Id::SetEntityCoordsNoOffset:
             return GTA_Native_Definition{id, "SET_ENTITY_COORDS_NO_OFFSET", 0x239A3351AC1DA385ULL, 0x62C438C53BB57AFDULL};
+        case GTA_Native_Id::DisableAllControlActions:
+            return GTA_Native_Definition{id, "DISABLE_ALL_CONTROL_ACTIONS", 0x5F4B6931816E599BULL, 0xD4510218399ED105ULL};
         default:
             return std::nullopt;
         }
