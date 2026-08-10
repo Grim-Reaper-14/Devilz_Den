@@ -2,6 +2,7 @@
 
 #include "Backend/Process/Process_Memory_Reader.hpp"
 #include "GTA_Address_Resolver.hpp"
+#include "GTA_Target_Structural_Validator.hpp"
 
 namespace Devilz::Integrations::GTA5_Enhanced
 {
@@ -68,8 +69,17 @@ Result<GTA_Target_Resolution> GTA_Target_Resolver::Resolve(const GTA_Target_Defi
 
     output.address = output.candidates.front();
     output.evidence = GTA_Target_Evidence_Probe::Probe(m_pid, output.candidateKind, output.address);
-    output.status.state = GTA_Runtime_Target_State::Located;
-    output.status.detail = "Unique candidate address resolved; semantic validation is still required";
+
+    const auto structural = GTA_Target_Structural_Validator::Validate(definition, output.evidence);
+    if (structural.applicable && structural.passed) {
+        output.status.state = GTA_Runtime_Target_State::StructurallyValidated;
+        output.status.detail = structural.detail;
+    } else {
+        output.status.state = GTA_Runtime_Target_State::Located;
+        output.status.detail = structural.applicable
+            ? "Unique candidate address resolved; structural validation is not yet satisfied: " + structural.detail
+            : "Unique candidate address resolved; semantic validation is still required";
+    }
     return Result<GTA_Target_Resolution>::Success(std::move(output));
 }
 }
