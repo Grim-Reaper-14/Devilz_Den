@@ -49,13 +49,17 @@ private:
     bool m_spawnVehicleEngineRunning = true;
     bool m_spawnVehicleInvincible = false;
     bool m_spawnVehicleClean = true;
+
     int m_forgeModSlot = 11;
     int m_forgeModIndex = -1;
     int m_forgeWheelType = 7;
     int m_forgePrimaryPaintType = 1;
     int m_forgePrimaryColor = 0;
-    int m_forgePearlescent = 0;
     int m_forgeSecondaryPaintType = 1;
     int m_forgeSecondaryColor = 0;
+    int m_forgePearlescent = 0;
+    int m_forgeWheelColor = 0;
+    std::array<int, 3> m_forgePrimaryRgb{80, 0, 0};
+    std::array<int, 3> m_forgeSecondaryRgb{0, 0, 0};
 };
 }
