@@ -40,13 +40,13 @@ GTA_Build_Registry::GTA_Build_Registry()
     current.fingerprint = 0x6A4F97F605B81000ULL;
     current.label = "PE-1783601142-95948800";
     current.targets = {
-        {GTA_Runtime_Target_Id::GameState, GTA_Runtime_Target_State::Unknown, true, "GameState", "Awaiting verified locator"},
-        {GTA_Runtime_Target_Id::FrameCount, GTA_Runtime_Target_State::Unknown, true, "FrameCount", "Awaiting verified locator"},
-        {GTA_Runtime_Target_Id::ScriptGlobals, GTA_Runtime_Target_State::Unknown, true, "ScriptGlobals", "Awaiting verified locator"},
-        {GTA_Runtime_Target_Id::ProgramTable, GTA_Runtime_Target_State::Unknown, true, "ProgramTable", "Awaiting verified locator"},
-        {GTA_Runtime_Target_Id::ScriptThreads, GTA_Runtime_Target_State::Unknown, true, "ScriptThreads", "Awaiting verified locator"},
-        {GTA_Runtime_Target_Id::RunScriptThreads, GTA_Runtime_Target_State::Unknown, false, "RunScriptThreads", "Optional game-thread execution locator; semantic validation pending"},
-        {GTA_Runtime_Target_Id::InitNativeTables, GTA_Runtime_Target_State::Unknown, true, "InitNativeTables", "Awaiting verified locator"},
+        {GTA_Runtime_Target_Id::GameState, GTA_Runtime_Target_State::Unknown, false, "GameState", "Legacy optional target; no verified locator is required by the active DLL runtime"},
+        {GTA_Runtime_Target_Id::FrameCount, GTA_Runtime_Target_State::Unknown, false, "FrameCount", "Legacy optional target; no verified locator is required by the active DLL runtime"},
+        {GTA_Runtime_Target_Id::ScriptGlobals, GTA_Runtime_Target_State::Unknown, false, "ScriptGlobals", "Optional script-global capability; semantic identity is build-specific"},
+        {GTA_Runtime_Target_Id::ProgramTable, GTA_Runtime_Target_State::Unknown, false, "ProgramTable", "Optional script-program capability; semantic identity is build-specific"},
+        {GTA_Runtime_Target_Id::ScriptThreads, GTA_Runtime_Target_State::Unknown, true, "ScriptThreads", "Required game-thread script context locator"},
+        {GTA_Runtime_Target_Id::RunScriptThreads, GTA_Runtime_Target_State::Unknown, true, "RunScriptThreads", "Required game-thread execution bridge entry"},
+        {GTA_Runtime_Target_Id::InitNativeTables, GTA_Runtime_Target_State::Unknown, true, "InitNativeTables", "Required Enhanced native bootstrap entry"},
         {GTA_Runtime_Target_Id::NativeTable, GTA_Runtime_Target_State::Unknown, false, "NativeTable", "Standalone native table is not required by the Enhanced bootstrap path"}
     };
     Register(std::move(current));
