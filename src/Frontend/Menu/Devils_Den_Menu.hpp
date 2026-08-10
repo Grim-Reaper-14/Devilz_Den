@@ -59,6 +59,7 @@ private:
     int m_forgeSecondaryColor = 0;
     int m_forgePearlescent = 0;
     int m_forgeWheelColor = 0;
+    bool m_forgeLoweredStance = false;
     std::array<int, 3> m_forgePrimaryRgb{80, 0, 0};
     std::array<int, 3> m_forgeSecondaryRgb{0, 0, 0};
 };
