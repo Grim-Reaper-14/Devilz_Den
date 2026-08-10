@@ -7,12 +7,14 @@
 
 namespace Devilz::Integrations::GTA5_Enhanced
 {
-struct GTA_Native_Vector3
+struct alignas(16) GTA_Native_Vector3
 {
     float x = 0.0F;
     float y = 0.0F;
     float z = 0.0F;
 };
+
+static_assert(sizeof(GTA_Native_Vector3) == 0x10);
 
 struct GTA_Native_Call_Context
 {
