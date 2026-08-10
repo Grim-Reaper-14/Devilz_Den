@@ -26,7 +26,7 @@ enum class GTA_Native_Id : std::uint8_t
     GetFilenameForAudioConversation, SetVehicleModKit, GetNumVehicleMods, SetVehicleMod,
     ToggleVehicleMod, GetVehicleMod, SetVehicleWheelType, GetVehicleWheelType,
     SetVehicleModColor1, SetVehicleModColor2, SetVehicleColours, SetVehicleExtraColours,
-    SetVehicleCustomPrimaryColour, SetVehicleCustomSecondaryColour
+    SetVehicleCustomPrimaryColour, SetVehicleCustomSecondaryColour, SetReducedSuspensionForce
 };
 
 struct GTA_Native_Definition
@@ -41,7 +41,7 @@ class GTA_Native_Registry final
 {
 public:
     static constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
-    static constexpr std::array<GTA_Native_Id, 57> NamedIds{
+    static constexpr std::array<GTA_Native_Id, 58> NamedIds{
         GTA_Native_Id::GetGameTimer, GTA_Native_Id::GetHashKey, GTA_Native_Id::PlayerPedId,
         GTA_Native_Id::SetEntityInvincible, GTA_Native_Id::PlayerId,
         GTA_Native_Id::SetPlayerWantedLevel, GTA_Native_Id::SetPlayerWantedLevelNow,
@@ -69,7 +69,8 @@ public:
         GTA_Native_Id::SetVehicleWheelType, GTA_Native_Id::GetVehicleWheelType,
         GTA_Native_Id::SetVehicleModColor1, GTA_Native_Id::SetVehicleModColor2,
         GTA_Native_Id::SetVehicleColours, GTA_Native_Id::SetVehicleExtraColours,
-        GTA_Native_Id::SetVehicleCustomPrimaryColour, GTA_Native_Id::SetVehicleCustomSecondaryColour
+        GTA_Native_Id::SetVehicleCustomPrimaryColour, GTA_Native_Id::SetVehicleCustomSecondaryColour,
+        GTA_Native_Id::SetReducedSuspensionForce
     };
 
     [[nodiscard]] static constexpr std::optional<GTA_Native_Definition> Find(
@@ -136,6 +137,7 @@ public:
         case GTA_Native_Id::SetVehicleExtraColours: return GTA_Native_Definition{id, "SET_VEHICLE_EXTRA_COLOURS", 0x2036F561ADD12E33ULL, 0xBB361D7264AC4FD8ULL};
         case GTA_Native_Id::SetVehicleCustomPrimaryColour: return GTA_Native_Definition{id, "SET_VEHICLE_CUSTOM_PRIMARY_COLOUR", 0x7141766F91D15BEAULL, 0x84F5FD9CD27457EEULL};
         case GTA_Native_Id::SetVehicleCustomSecondaryColour: return GTA_Native_Definition{id, "SET_VEHICLE_CUSTOM_SECONDARY_COLOUR", 0x36CED73BFED89754ULL, 0x593A3115B8AE759BULL};
+        case GTA_Native_Id::SetReducedSuspensionForce: return GTA_Native_Definition{id, "SET_REDUCED_SUSPENSION_FORCE", 0x3A375167F5782A65ULL, 0xCE2ADF354D3F97AEULL};
         default: return std::nullopt;
         }
     }
