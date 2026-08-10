@@ -13,6 +13,8 @@
 #include <mutex>
 #include <vector>
 
+struct ImGui_ImplDX12_InitInfo;
+
 namespace Devilz::Backend
 {
 class LoggerService;
@@ -55,11 +57,11 @@ private:
     void WaitForAllFrames() noexcept;
 
     static void AllocateSrvDescriptor(
-        struct ImGui_ImplDX12_InitInfo* info,
+        ImGui_ImplDX12_InitInfo* info,
         D3D12_CPU_DESCRIPTOR_HANDLE* cpuHandle,
         D3D12_GPU_DESCRIPTOR_HANDLE* gpuHandle);
     static void FreeSrvDescriptor(
-        struct ImGui_ImplDX12_InitInfo* info,
+        ImGui_ImplDX12_InitInfo* info,
         D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle,
         D3D12_GPU_DESCRIPTOR_HANDLE gpuHandle);
 
@@ -84,6 +86,8 @@ private:
     UINT m_srvDescriptorSize = 0;
     std::uint64_t m_nextFenceValue = 1;
     Devils_Den_Menu m_menu;
+    bool m_win32BackendInitialized = false;
+    bool m_dx12BackendInitialized = false;
     std::atomic_bool m_initialized{false};
     std::atomic_bool m_resizing{false};
     std::atomic_bool m_menuOpen{false};
