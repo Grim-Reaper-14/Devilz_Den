@@ -19,6 +19,17 @@ enum class GTA_Native_Id : std::uint8_t
     SetPlayerWantedLevel,
     SetPlayerWantedLevelNow,
     SetMaxWantedLevel,
+    SetSuperJumpThisFrame,
+    SetPedMaxTimeUnderwater,
+    SetPedCanRagdoll,
+    ClearPedBloodDamage,
+    ClearPedWetness,
+    ClearPedEnvDirt,
+    ResetPedVisibleDamage,
+    SetPedInfiniteAmmo,
+    GiveWeaponToPed,
+    SetPedAmmo,
+    GetVehiclePedIsIn,
     IsWaypointActive,
     GetWaypointBlipEnumId,
     GetClosestBlipInfoId,
@@ -43,7 +54,7 @@ class GTA_Native_Registry final
 {
 public:
     static constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
-    static constexpr std::array<GTA_Native_Id, 18> NamedIds{
+    static constexpr std::array<GTA_Native_Id, 29> NamedIds{
         GTA_Native_Id::GetGameTimer,
         GTA_Native_Id::GetHashKey,
         GTA_Native_Id::PlayerPedId,
@@ -52,6 +63,17 @@ public:
         GTA_Native_Id::SetPlayerWantedLevel,
         GTA_Native_Id::SetPlayerWantedLevelNow,
         GTA_Native_Id::SetMaxWantedLevel,
+        GTA_Native_Id::SetSuperJumpThisFrame,
+        GTA_Native_Id::SetPedMaxTimeUnderwater,
+        GTA_Native_Id::SetPedCanRagdoll,
+        GTA_Native_Id::ClearPedBloodDamage,
+        GTA_Native_Id::ClearPedWetness,
+        GTA_Native_Id::ClearPedEnvDirt,
+        GTA_Native_Id::ResetPedVisibleDamage,
+        GTA_Native_Id::SetPedInfiniteAmmo,
+        GTA_Native_Id::GiveWeaponToPed,
+        GTA_Native_Id::SetPedAmmo,
+        GTA_Native_Id::GetVehiclePedIsIn,
         GTA_Native_Id::IsWaypointActive,
         GTA_Native_Id::GetWaypointBlipEnumId,
         GTA_Native_Id::GetClosestBlipInfoId,
@@ -88,6 +110,28 @@ public:
             return GTA_Native_Definition{id, "SET_PLAYER_WANTED_LEVEL_NOW", 0xE0A7D1E497FFCD6FULL, 0x42C9A22D6724F283ULL};
         case GTA_Native_Id::SetMaxWantedLevel:
             return GTA_Native_Definition{id, "SET_MAX_WANTED_LEVEL", 0xAA5F02DB48D704B9ULL, 0xDAE61414743C8D1DULL};
+        case GTA_Native_Id::SetSuperJumpThisFrame:
+            return GTA_Native_Definition{id, "SET_SUPER_JUMP_THIS_FRAME", 0x57FFF03E423A4C0BULL, 0x353BF8D85390AA39ULL};
+        case GTA_Native_Id::SetPedMaxTimeUnderwater:
+            return GTA_Native_Definition{id, "SET_PED_MAX_TIME_UNDERWATER", 0x6BA428C528D9E522ULL, 0x0ACCC8916441860AULL};
+        case GTA_Native_Id::SetPedCanRagdoll:
+            return GTA_Native_Definition{id, "SET_PED_CAN_RAGDOLL", 0xB128377056A54E2AULL, 0x9FF00EA9A61211D2ULL};
+        case GTA_Native_Id::ClearPedBloodDamage:
+            return GTA_Native_Definition{id, "CLEAR_PED_BLOOD_DAMAGE", 0x8FE22675A5A45817ULL, 0x8EA9C5E0178372E1ULL};
+        case GTA_Native_Id::ClearPedWetness:
+            return GTA_Native_Definition{id, "CLEAR_PED_WETNESS", 0x9C720776DAA43E7EULL, 0x5EF96FB2D3902DC7ULL};
+        case GTA_Native_Id::ClearPedEnvDirt:
+            return GTA_Native_Definition{id, "CLEAR_PED_ENV_DIRT", 0x6585D955A68452A5ULL, 0xD81F5EA29FD2682EULL};
+        case GTA_Native_Id::ResetPedVisibleDamage:
+            return GTA_Native_Definition{id, "RESET_PED_VISIBLE_DAMAGE", 0x3AC1F7B898F30C05ULL, 0x69AE13B08EFD8497ULL};
+        case GTA_Native_Id::SetPedInfiniteAmmo:
+            return GTA_Native_Definition{id, "SET_PED_INFINITE_AMMO", 0x3EDCB0505123623BULL, 0xA83DA0A0DF32920CULL};
+        case GTA_Native_Id::GiveWeaponToPed:
+            return GTA_Native_Definition{id, "GIVE_WEAPON_TO_PED", 0xBF0FD6E56C964FCBULL, 0xB41DEC3AAC1AA107ULL};
+        case GTA_Native_Id::SetPedAmmo:
+            return GTA_Native_Definition{id, "SET_PED_AMMO", 0x14E56BC5B5DB6A19ULL, 0x45FC566246B3511BULL};
+        case GTA_Native_Id::GetVehiclePedIsIn:
+            return GTA_Native_Definition{id, "GET_VEHICLE_PED_IS_IN", 0x9A9112A0FE9A4713ULL, 0x6EF03BE64E058E2FULL};
         case GTA_Native_Id::IsWaypointActive:
             return GTA_Native_Definition{id, "IS_WAYPOINT_ACTIVE", 0x1DD1F58F493F1DA5ULL, 0x02213DC34A224533ULL};
         case GTA_Native_Id::GetWaypointBlipEnumId:
