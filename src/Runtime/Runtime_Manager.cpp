@@ -151,9 +151,9 @@ void Runtime_Manager::Stop() noexcept
 void Runtime_Manager::InitializeNativeManager(
     const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
 {
-    if (!status.process || !status.targetReport) {
+    if (!status.process || !status.build || !status.targetReport) {
         m_logger.Log(Backend::LogLevel::Warning,
-                     "Native manager unavailable: GTA process or target report is missing",
+                     "Native manager unavailable: GTA process, build, or target report is missing",
                      "GTA5_Enhanced.Natives");
         return;
     }
@@ -186,12 +186,13 @@ void Runtime_Manager::InitializeNativeManager(
     const auto nativeStatus = m_natives.Initialize(
         initNativeTables,
         module.Value().baseAddress,
-        module.Value().imageSize);
+        module.Value().imageSize,
+        status.build->fingerprint);
 
     m_logger.Log(
         nativeStatus.ready ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
         std::string("State: ") + (nativeStatus.ready ? "Ready" : "Unavailable") +
-            " | ProbeHandlers: " + std::to_string(nativeStatus.cachedHandlers) +
+            " | CachedHandlers: " + std::to_string(nativeStatus.cachedHandlers) +
             "/" + std::to_string(nativeStatus.requestedHandlers) +
             " | " + nativeStatus.detail,
         "GTA5_Enhanced.Natives");
