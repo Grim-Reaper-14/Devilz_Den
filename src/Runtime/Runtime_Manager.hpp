@@ -5,6 +5,7 @@
 #include "Integrations/GTA5_Enhanced/GTA_Module_Manager.hpp"
 
 #include <atomic>
+#include <filesystem>
 
 namespace Devilz
 {
@@ -17,7 +18,7 @@ public:
     Runtime_Manager(const Runtime_Manager&) = delete;
     Runtime_Manager& operator=(const Runtime_Manager&) = delete;
 
-    [[nodiscard]] bool Start();
+    [[nodiscard]] bool Start(const std::filesystem::path& logPath);
     void Stop() noexcept;
 
     [[nodiscard]] bool Running() const noexcept { return m_running.load(); }
