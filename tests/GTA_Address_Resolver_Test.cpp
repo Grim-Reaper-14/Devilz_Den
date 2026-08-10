@@ -128,6 +128,31 @@ bool TestScriptGlobalsAddRip(const Process_Memory_Reader& reader)
         target);
 }
 
+bool TestProgramTableAddRipAdd(const Process_Memory_Reader& reader)
+{
+    std::array<std::byte, 512> storage{};
+    const auto match = reinterpret_cast<std::uintptr_t>(storage.data() + 32);
+    const auto instruction = match + 0x13;
+    const auto ripTarget = reinterpret_cast<std::uintptr_t>(storage.data() + 192);
+    const auto expected = ripTarget + 0xD8;
+
+    if (!WriteRipDisplacement(instruction, 3, ripTarget)) {
+        std::cerr << "ProgramTable RIP displacement did not fit int32\n";
+        return false;
+    }
+
+    const GTA_Address_Resolve_Chain chain{
+        {GTA_Address_Resolve_Op_Type::Add, 0x13},
+        {GTA_Address_Resolve_Op_Type::RipRelative32, 3},
+        {GTA_Address_Resolve_Op_Type::Add, 0xD8}
+    };
+
+    return ExpectAddress(
+        "ProgramTable Add+RIP+Add chain",
+        GTA_Address_Resolver::Resolve(reader, match, chain),
+        expected);
+}
+
 bool TestRunScriptThreadsBacktrack(const Process_Memory_Reader& reader)
 {
     std::array<std::byte, 64> storage{};
@@ -190,6 +215,7 @@ int main()
         TestEmptyAndAdd(reader) &&
         TestScriptThreadsRip(reader) &&
         TestScriptGlobalsAddRip(reader) &&
+        TestProgramTableAddRipAdd(reader) &&
         TestRunScriptThreadsBacktrack(reader) &&
         TestInitNativeTablesBacktrack(reader) &&
         TestNegativeRip(reader);
