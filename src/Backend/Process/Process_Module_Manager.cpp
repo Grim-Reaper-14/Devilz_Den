@@ -1,6 +1,7 @@
 #include "Process_Module_Manager.hpp"
 
 #include <Windows.h>
+#include <Psapi.h>
 #include <TlHelp32.h>
 
 #include <algorithm>
@@ -70,6 +71,45 @@ Result<std::vector<Process_Module_Info>> Process_Module_Manager::Enumerate() con
 
 Result<Process_Module_Info> Process_Module_Manager::Find(std::string_view moduleName) const
 {
+    if (m_pid == 0 || moduleName.empty())
+        return Result<Process_Module_Info>::Failure(
+            Error(ErrorCode::InvalidArgument, ErrorCategory::Runtime, "Module lookup requires a valid PID and module name"));
+
+    if (m_pid == ::GetCurrentProcessId()) {
+        const std::string localName(moduleName);
+        HMODULE module = ::GetModuleHandleA(localName.c_str());
+        if (!module)
+            return Result<Process_Module_Info>::Failure(
+                Error::FromWin32(ErrorCode::NotFound, ErrorCategory::Runtime, ::GetLastError(),
+                    "Requested module is not loaded in the current process")
+                    .With("Module", localName));
+
+        MODULEINFO nativeInfo{};
+        if (!::GetModuleInformation(::GetCurrentProcess(), module, &nativeInfo, sizeof(nativeInfo)))
+            return Result<Process_Module_Info>::Failure(
+                Error::FromWin32(ErrorCode::RuntimeFailure, ErrorCategory::Runtime, ::GetLastError(),
+                    "Unable to query current-process module information")
+                    .With("Module", localName));
+
+        wchar_t pathBuffer[32768]{};
+        const DWORD pathLength = ::GetModuleFileNameW(module, pathBuffer, static_cast<DWORD>(std::size(pathBuffer)));
+
+        Process_Module_Info info{};
+        info.name = localName;
+        if (pathLength > 0 && pathLength < std::size(pathBuffer))
+            info.path = std::filesystem::path(pathBuffer);
+        info.baseAddress = reinterpret_cast<std::uintptr_t>(nativeInfo.lpBaseOfDll);
+        info.imageSize = static_cast<std::size_t>(nativeInfo.SizeOfImage);
+
+        if (!info.Valid())
+            return Result<Process_Module_Info>::Failure(
+                Error(ErrorCode::RuntimeFailure, ErrorCategory::Runtime,
+                    "Current-process module information is incomplete")
+                    .With("Module", localName));
+
+        return Result<Process_Module_Info>::Success(std::move(info));
+    }
+
     auto modules = Enumerate();
     if (!modules) return Result<Process_Module_Info>::Failure(modules.Failure());
 
