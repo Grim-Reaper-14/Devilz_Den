@@ -12,6 +12,8 @@ namespace Devilz::Integrations::GTA5_Enhanced
 using namespace Devilz::Backend;
 
 std::atomic<D3D12_Present_Hook*> D3D12_Present_Hook::s_active{nullptr};
+D3D12_Present_Hook::PresentFn D3D12_Present_Hook::s_fallbackPresent = nullptr;
+D3D12_Present_Hook::ResizeBuffersFn D3D12_Present_Hook::s_fallbackResizeBuffers = nullptr;
 
 D3D12_Present_Hook::D3D12_Present_Hook(
     IDXGISwapChain3* swapChain,
@@ -75,6 +77,9 @@ Result<void> D3D12_Present_Hook::Install()
             "DXGI swap chain virtual table does not expose Present/ResizeBuffers"));
     }
 
+    s_fallbackPresent = m_originalPresent;
+    s_fallbackResizeBuffers = m_originalResizeBuffers;
+
     m_hookVTable[PresentIndex] = reinterpret_cast<void*>(&PresentThunk);
     m_hookVTable[ResizeBuffersIndex] = reinterpret_cast<void*>(&ResizeBuffersThunk);
 
@@ -103,11 +108,11 @@ Result<void> D3D12_Present_Hook::Remove()
             m_hookVTable.data());
     }
 
-    D3D12_Present_Hook* expected = this;
-    s_active.compare_exchange_strong(expected, nullptr);
-
     while (m_activeCalls.load(std::memory_order_acquire) != 0)
         ::Sleep(0);
+
+    D3D12_Present_Hook* expected = this;
+    s_active.compare_exchange_strong(expected, nullptr);
 
     m_state.store(Hook_State::Removed);
     return Result<void>::Success();
@@ -119,14 +124,20 @@ HRESULT STDMETHODCALLTYPE D3D12_Present_Hook::PresentThunk(
     UINT flags)
 {
     auto* hook = s_active.load(std::memory_order_acquire);
-    if (!hook || !hook->m_originalPresent)
-        return DXGI_ERROR_INVALID_CALL;
+    if (!hook) {
+        return s_fallbackPresent
+            ? s_fallbackPresent(swapChain, syncInterval, flags)
+            : DXGI_ERROR_INVALID_CALL;
+    }
 
     hook->m_activeCalls.fetch_add(1, std::memory_order_acq_rel);
     if (hook->m_state.load(std::memory_order_acquire) == Hook_State::Installed && hook->m_renderer)
         hook->m_renderer->OnPresent();
 
-    const auto result = hook->m_originalPresent(swapChain, syncInterval, flags);
+    const auto original = hook->m_originalPresent ? hook->m_originalPresent : s_fallbackPresent;
+    const auto result = original
+        ? original(swapChain, syncInterval, flags)
+        : DXGI_ERROR_INVALID_CALL;
     hook->m_activeCalls.fetch_sub(1, std::memory_order_acq_rel);
     return result;
 }
@@ -140,20 +151,20 @@ HRESULT STDMETHODCALLTYPE D3D12_Present_Hook::ResizeBuffersThunk(
     UINT flags)
 {
     auto* hook = s_active.load(std::memory_order_acquire);
-    if (!hook || !hook->m_originalResizeBuffers)
-        return DXGI_ERROR_INVALID_CALL;
+    if (!hook) {
+        return s_fallbackResizeBuffers
+            ? s_fallbackResizeBuffers(swapChain, bufferCount, width, height, format, flags)
+            : DXGI_ERROR_INVALID_CALL;
+    }
 
     hook->m_activeCalls.fetch_add(1, std::memory_order_acq_rel);
     if (hook->m_state.load(std::memory_order_acquire) == Hook_State::Installed && hook->m_renderer)
         hook->m_renderer->BeforeResize();
 
-    const auto result = hook->m_originalResizeBuffers(
-        swapChain,
-        bufferCount,
-        width,
-        height,
-        format,
-        flags);
+    const auto original = hook->m_originalResizeBuffers ? hook->m_originalResizeBuffers : s_fallbackResizeBuffers;
+    const auto result = original
+        ? original(swapChain, bufferCount, width, height, format, flags)
+        : DXGI_ERROR_INVALID_CALL;
 
     if (SUCCEEDED(result) &&
         hook->m_state.load(std::memory_order_acquire) == Hook_State::Installed &&
