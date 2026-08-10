@@ -44,6 +44,17 @@ GTA_Build_Target_Registry::GTA_Build_Target_Registry()
             GTA_Target_Candidate_Kind::PointerStorage
         },
         {
+            GTA_Runtime_Target_Id::RunScriptThreads,
+            "RunScriptThreads",
+            "GTA5_Enhanced.exe",
+            "BE 40 5D C6 00",
+            {
+                {GTA_Address_Resolve_Op_Type::Add, -0xA}
+            },
+            false,
+            GTA_Target_Candidate_Kind::CodeSite
+        },
+        {
             GTA_Runtime_Target_Id::InitNativeTables,
             "InitNativeTables",
             "GTA5_Enhanced.exe",
