@@ -4,8 +4,11 @@
 
 #include <Windows.h>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstring>
+#include <iomanip>
 #include <sstream>
 
 namespace Devilz::Integrations::GTA5_Enhanced
@@ -19,6 +22,9 @@ struct Region_Info
     bool writable = false;
     bool executable = false;
     DWORD protection = 0;
+    DWORD type = 0;
+    std::uintptr_t base = 0;
+    std::size_t size = 0;
 };
 
 bool HasAny(DWORD value, DWORD mask) noexcept
@@ -38,6 +44,9 @@ Region_Info QueryRegion(std::uintptr_t address) noexcept
 
     info.committed = region.State == MEM_COMMIT;
     info.protection = region.Protect;
+    info.type = region.Type;
+    info.base = reinterpret_cast<std::uintptr_t>(region.BaseAddress);
+    info.size = region.RegionSize;
 
     if (!info.committed || HasAny(region.Protect, PAGE_GUARD | PAGE_NOACCESS))
         return info;
@@ -64,6 +73,59 @@ const char* KindName(GTA_Target_Candidate_Kind kind) noexcept
     default: return "Unknown";
     }
 }
+
+std::string HexValue(std::uint64_t value)
+{
+    std::ostringstream stream;
+    stream << "0x" << std::uppercase << std::hex << value;
+    return stream.str();
+}
+
+std::string HexBytes(const std::byte* data, std::size_t size)
+{
+    std::ostringstream stream;
+    stream << std::uppercase << std::hex << std::setfill('0');
+    for (std::size_t i = 0; i < size; ++i) {
+        if (i != 0)
+            stream << ' ';
+        stream << std::setw(2) << static_cast<unsigned>(std::to_integer<std::uint8_t>(data[i]));
+    }
+    return stream.str();
+}
+
+std::string QwordPreview(
+    const std::byte* data,
+    std::size_t size,
+    std::size_t& nonZero,
+    std::size_t& readablePointers)
+{
+    std::ostringstream stream;
+    const auto count = size / sizeof(std::uint64_t);
+    for (std::size_t i = 0; i < count; ++i) {
+        std::uint64_t value = 0;
+        std::memcpy(&value, data + (i * sizeof(value)), sizeof(value));
+        if (value != 0)
+            ++nonZero;
+        if (QueryRegion(static_cast<std::uintptr_t>(value)).readable)
+            ++readablePointers;
+        if (i != 0)
+            stream << ',';
+        stream << HexValue(value);
+    }
+    return stream.str();
+}
+
+void CaptureRegion(const Region_Info& region, GTA_Target_Evidence& evidence)
+{
+    evidence.candidateCommitted = region.committed;
+    evidence.candidateReadable = region.readable;
+    evidence.candidateWritable = region.writable;
+    evidence.candidateExecutable = region.executable;
+    evidence.candidateProtection = region.protection;
+    evidence.candidateType = region.type;
+    evidence.candidateRegionBase = region.base;
+    evidence.candidateRegionSize = region.size;
+}
 }
 
 GTA_Target_Evidence GTA_Target_Evidence_Probe::Probe(
@@ -73,14 +135,31 @@ GTA_Target_Evidence GTA_Target_Evidence_Probe::Probe(
 {
     GTA_Target_Evidence evidence{};
     const auto region = QueryRegion(address);
-    evidence.candidateCommitted = region.committed;
-    evidence.candidateReadable = region.readable;
-    evidence.candidateWritable = region.writable;
-    evidence.candidateExecutable = region.executable;
-    evidence.candidateProtection = region.protection;
+    CaptureRegion(region, evidence);
+
+    Backend::Process_Memory_Reader reader(pid);
+
+    if (address != 0 && pid != 0 && region.readable) {
+        if (kind == GTA_Target_Candidate_Kind::CodeSite) {
+            auto bytes = reader.Read(address, 16);
+            if (bytes) {
+                evidence.sampleRead = true;
+                evidence.samplePreview = HexBytes(bytes.Value().data(), bytes.Value().size());
+            }
+        } else if (kind == GTA_Target_Candidate_Kind::DirectData) {
+            auto bytes = reader.Read(address, 64);
+            if (bytes) {
+                evidence.sampleRead = true;
+                evidence.samplePreview = QwordPreview(
+                    bytes.Value().data(),
+                    bytes.Value().size(),
+                    evidence.sampleNonZeroQwords,
+                    evidence.sampleReadablePointers);
+            }
+        }
+    }
 
     if (kind == GTA_Target_Candidate_Kind::PointerStorage && address != 0 && pid != 0) {
-        Backend::Process_Memory_Reader reader(pid);
         auto bytes = reader.Read(address, sizeof(std::uintptr_t));
         if (bytes) {
             std::uintptr_t pointee = 0;
@@ -91,7 +170,24 @@ GTA_Target_Evidence GTA_Target_Evidence_Probe::Probe(
             const auto pointeeRegion = QueryRegion(pointee);
             evidence.pointeeCommitted = pointeeRegion.committed;
             evidence.pointeeReadable = pointeeRegion.readable;
+            evidence.pointeeWritable = pointeeRegion.writable;
+            evidence.pointeeExecutable = pointeeRegion.executable;
             evidence.pointeeProtection = pointeeRegion.protection;
+            evidence.pointeeType = pointeeRegion.type;
+            evidence.pointeeRegionBase = pointeeRegion.base;
+            evidence.pointeeRegionSize = pointeeRegion.size;
+
+            if (pointee != 0 && pointeeRegion.readable) {
+                auto sample = reader.Read(pointee, 64);
+                if (sample) {
+                    evidence.pointeeSampleRead = true;
+                    evidence.pointeeSamplePreview = QwordPreview(
+                        sample.Value().data(),
+                        sample.Value().size(),
+                        evidence.pointeeSampleNonZeroQwords,
+                        evidence.pointeeSampleReadablePointers);
+                }
+            }
         }
     }
 
@@ -100,14 +196,40 @@ GTA_Target_Evidence GTA_Target_Evidence_Probe::Probe(
             << " | CandidateCommitted=" << (evidence.candidateCommitted ? "yes" : "no")
             << " | Readable=" << (evidence.candidateReadable ? "yes" : "no")
             << " | Writable=" << (evidence.candidateWritable ? "yes" : "no")
-            << " | Executable=" << (evidence.candidateExecutable ? "yes" : "no");
+            << " | Executable=" << (evidence.candidateExecutable ? "yes" : "no")
+            << " | Protect=" << HexValue(evidence.candidateProtection)
+            << " | Type=" << HexValue(evidence.candidateType)
+            << " | Region=" << HexValue(evidence.candidateRegionBase)
+            << "+" << HexValue(evidence.candidateRegionSize);
+
+    if (evidence.sampleRead) {
+        if (kind == GTA_Target_Candidate_Kind::CodeSite) {
+            summary << " | Bytes=" << evidence.samplePreview;
+        } else {
+            summary << " | Qwords=" << evidence.samplePreview
+                    << " | NonZero=" << evidence.sampleNonZeroQwords
+                    << " | ReadablePtrLike=" << evidence.sampleReadablePointers;
+        }
+    }
 
     if (kind == GTA_Target_Candidate_Kind::PointerStorage) {
         summary << " | PointerDecoded=" << (evidence.pointerDecoded ? "yes" : "no");
         if (evidence.pointerDecoded) {
-            summary << " | Pointee=0x" << std::hex << std::uppercase << evidence.pointeeAddress << std::dec
+            summary << " | Pointee=" << HexValue(evidence.pointeeAddress)
                     << " | PointeeCommitted=" << (evidence.pointeeCommitted ? "yes" : "no")
-                    << " | PointeeReadable=" << (evidence.pointeeReadable ? "yes" : "no");
+                    << " | PointeeReadable=" << (evidence.pointeeReadable ? "yes" : "no")
+                    << " | PointeeWritable=" << (evidence.pointeeWritable ? "yes" : "no")
+                    << " | PointeeExecutable=" << (evidence.pointeeExecutable ? "yes" : "no")
+                    << " | PointeeProtect=" << HexValue(evidence.pointeeProtection)
+                    << " | PointeeType=" << HexValue(evidence.pointeeType)
+                    << " | PointeeRegion=" << HexValue(evidence.pointeeRegionBase)
+                    << "+" << HexValue(evidence.pointeeRegionSize);
+
+            if (evidence.pointeeSampleRead) {
+                summary << " | PointeeQwords=" << evidence.pointeeSamplePreview
+                        << " | PointeeNonZero=" << evidence.pointeeSampleNonZeroQwords
+                        << " | PointeeReadablePtrLike=" << evidence.pointeeSampleReadablePointers;
+            }
         }
     }
 
