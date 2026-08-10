@@ -3,6 +3,7 @@
 #include "GTA_Target_Definition.hpp"
 #include "GTA_Target_Evidence.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <sstream>
