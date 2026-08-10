@@ -27,6 +27,7 @@ private:
         ResolveGround
     };
 
+    void TickMenuInputSuppression() noexcept;
     void TickGodMode() noexcept;
     void TickNeverWanted() noexcept;
     void TickTeleportToWaypoint() noexcept;
