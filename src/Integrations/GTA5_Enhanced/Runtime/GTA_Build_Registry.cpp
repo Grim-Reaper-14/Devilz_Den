@@ -16,6 +16,7 @@ std::size_t GTA_Build_Profile::LocatedRequiredTargetCount() const noexcept
 {
     return static_cast<std::size_t>(std::count_if(targets.begin(), targets.end(), [](const auto& target) {
         return target.required && (target.state == GTA_Runtime_Target_State::Located ||
+                                   target.state == GTA_Runtime_Target_State::StructurallyValidated ||
                                    target.state == GTA_Runtime_Target_State::Validated);
     }));
 }
