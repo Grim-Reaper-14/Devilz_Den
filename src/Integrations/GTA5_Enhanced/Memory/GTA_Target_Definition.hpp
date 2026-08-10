@@ -9,6 +9,14 @@
 
 namespace Devilz::Integrations::GTA5_Enhanced
 {
+enum class GTA_Target_Candidate_Kind : std::uint8_t
+{
+    Unknown,
+    DirectData,
+    PointerStorage,
+    CodeSite
+};
+
 struct GTA_Target_Definition
 {
     GTA_Runtime_Target_Id id = GTA_Runtime_Target_Id::GameState;
@@ -17,6 +25,7 @@ struct GTA_Target_Definition
     std::string pattern;
     GTA_Address_Resolve_Chain resolve;
     bool required = true;
+    GTA_Target_Candidate_Kind candidateKind = GTA_Target_Candidate_Kind::Unknown;
 };
 
 struct GTA_Build_Target_Set
