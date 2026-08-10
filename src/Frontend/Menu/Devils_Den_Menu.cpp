@@ -1,0 +1,227 @@
+#include "Devils_Den_Menu.hpp"
+
+#include <imgui.h>
+
+#include <array>
+
+namespace Devilz::Frontend
+{
+namespace
+{
+constexpr ImVec4 EmberRed{0.88F, 0.10F, 0.045F, 1.00F};
+constexpr ImVec4 Bronze{0.78F, 0.66F, 0.44F, 1.00F};
+constexpr ImVec4 Iron{0.13F, 0.11F, 0.10F, 1.00F};
+constexpr ImVec4 DeepStone{0.055F, 0.045F, 0.040F, 1.00F};
+
+void MedievalDivider()
+{
+    const auto start = ImGui::GetCursorScreenPos();
+    const auto width = ImGui::GetContentRegionAvail().x;
+    auto* draw = ImGui::GetWindowDrawList();
+    draw->AddLine(
+        ImVec2(start.x, start.y + 4.0F),
+        ImVec2(start.x + width, start.y + 4.0F),
+        ImGui::GetColorU32(ImVec4(0.42F, 0.08F, 0.05F, 0.95F)),
+        2.0F);
+    draw->AddCircleFilled(
+        ImVec2(start.x + width * 0.5F, start.y + 4.0F),
+        4.0F,
+        ImGui::GetColorU32(EmberRed));
+    ImGui::Dummy(ImVec2(0.0F, 11.0F));
+}
+}
+
+void Devils_Den_Menu::Draw(bool& open)
+{
+    if (!open)
+        return;
+
+    ImGui::SetNextWindowSize(ImVec2(920.0F, 620.0F), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowBgAlpha(0.985F);
+
+    constexpr ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoScrollWithMouse;
+
+    if (!ImGui::Begin("##DevilsDenRoot", &open, flags)) {
+        ImGui::End();
+        return;
+    }
+
+    DrawBanner();
+    MedievalDivider();
+
+    const float navWidth = 180.0F;
+    if (ImGui::BeginChild("##DevilsDenNavigation", ImVec2(navWidth, 0.0F), ImGuiChildFlags_Borders)) {
+        DrawNavigation();
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    if (ImGui::BeginChild("##DevilsDenContent", ImVec2(0.0F, 0.0F), ImGuiChildFlags_Borders)) {
+        switch (m_page) {
+        case Page::Self:
+            DrawSelfPage();
+            break;
+        case Page::Weapons:
+            DrawPlaceholderPage("WEAPONS", "The armory page will inherit this same medieval frame.");
+            break;
+        case Page::Vehicle:
+            DrawPlaceholderPage("VEHICLE", "The stable and vehicle page is queued for the next pass.");
+            break;
+        case Page::Teleport:
+            DrawPlaceholderPage("TELEPORT", "Waypoints and location controls will live here.");
+            break;
+        case Page::World:
+            DrawPlaceholderPage("WORLD", "World and environment controls will live here.");
+            break;
+        case Page::Settings:
+            DrawPlaceholderPage("SETTINGS", "Theme, hotkeys, configuration, and diagnostics will live here.");
+            break;
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::End();
+}
+
+void Devils_Den_Menu::DrawBanner()
+{
+    const auto origin = ImGui::GetCursorScreenPos();
+    const auto width = ImGui::GetContentRegionAvail().x;
+    constexpr float height = 94.0F;
+    auto* draw = ImGui::GetWindowDrawList();
+
+    draw->AddRectFilled(
+        origin,
+        ImVec2(origin.x + width, origin.y + height),
+        ImGui::GetColorU32(ImVec4(0.055F, 0.020F, 0.018F, 1.00F)),
+        2.0F);
+    draw->AddRect(
+        origin,
+        ImVec2(origin.x + width, origin.y + height),
+        ImGui::GetColorU32(ImVec4(0.48F, 0.09F, 0.055F, 1.00F)),
+        2.0F,
+        0,
+        2.0F);
+
+    for (int i = 0; i < 5; ++i) {
+        const float inset = 7.0F + static_cast<float>(i) * 6.0F;
+        draw->AddLine(
+            ImVec2(origin.x + inset, origin.y + 14.0F),
+            ImVec2(origin.x + inset + 24.0F, origin.y + height - 14.0F),
+            ImGui::GetColorU32(ImVec4(0.22F, 0.055F, 0.038F, 0.45F)),
+            1.0F);
+        draw->AddLine(
+            ImVec2(origin.x + width - inset, origin.y + 14.0F),
+            ImVec2(origin.x + width - inset - 24.0F, origin.y + height - 14.0F),
+            ImGui::GetColorU32(ImVec4(0.22F, 0.055F, 0.038F, 0.45F)),
+            1.0F);
+    }
+
+    const char* title = "DEVILS DEN MENU";
+    const auto titleSize = ImGui::CalcTextSize(title);
+    const auto titlePos = ImVec2(
+        origin.x + (width - titleSize.x) * 0.5F,
+        origin.y + 27.0F);
+    draw->AddText(
+        ImVec2(titlePos.x + 2.0F, titlePos.y + 2.0F),
+        ImGui::GetColorU32(ImVec4(0.0F, 0.0F, 0.0F, 0.85F)),
+        title);
+    draw->AddText(titlePos, ImGui::GetColorU32(EmberRed), title);
+
+    const char* subtitle = "GTA V ENHANCED  |  RUNTIME READY";
+    const auto subtitleSize = ImGui::CalcTextSize(subtitle);
+    draw->AddText(
+        ImVec2(origin.x + (width - subtitleSize.x) * 0.5F, origin.y + 56.0F),
+        ImGui::GetColorU32(Bronze),
+        subtitle);
+
+    ImGui::Dummy(ImVec2(width, height));
+}
+
+void Devils_Den_Menu::DrawNavigation()
+{
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, DeepStone);
+    ImGui::TextColored(Bronze, "CATEGORIES");
+    MedievalDivider();
+
+    struct NavigationEntry
+    {
+        const char* label;
+        Page page;
+    };
+
+    constexpr std::array entries{
+        NavigationEntry{"SELF", Page::Self},
+        NavigationEntry{"WEAPONS", Page::Weapons},
+        NavigationEntry{"VEHICLE", Page::Vehicle},
+        NavigationEntry{"TELEPORT", Page::Teleport},
+        NavigationEntry{"WORLD", Page::World},
+        NavigationEntry{"SETTINGS", Page::Settings}
+    };
+
+    for (const auto& entry : entries) {
+        const bool selected = m_page == entry.page;
+        if (selected) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.38F, 0.055F, 0.035F, 1.00F));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.52F, 0.075F, 0.045F, 1.00F));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, Iron);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24F, 0.055F, 0.040F, 1.00F));
+        }
+
+        if (ImGui::Button(entry.label, ImVec2(-1.0F, 42.0F)))
+            m_page = entry.page;
+
+        ImGui::PopStyleColor(2);
+    }
+
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 48.0F);
+    ImGui::TextDisabled("INSERT  -  toggle menu");
+    ImGui::PopStyleColor();
+}
+
+void Devils_Den_Menu::DrawSelfPage()
+{
+    ImGui::TextColored(EmberRed, "SELF");
+    ImGui::SameLine();
+    ImGui::TextDisabled("- first live frontend page");
+    MedievalDivider();
+
+    ImGui::TextColored(Bronze, "PLAYER OPTIONS");
+    ImGui::Spacing();
+
+    ImGui::Checkbox("God Mode", &m_godMode);
+    ImGui::Checkbox("Never Wanted", &m_neverWanted);
+    ImGui::Checkbox("Fast Run", &m_fastRun);
+    ImGui::Checkbox("Super Jump", &m_superJump);
+    ImGui::SliderFloat("Health", &m_health, 0.0F, 100.0F, "%.0f");
+
+    ImGui::Spacing();
+    MedievalDivider();
+    ImGui::TextColored(Bronze, "QUICK ACTIONS");
+    ImGui::Spacing();
+
+    ImGui::Button("HEAL PLAYER", ImVec2(150.0F, 38.0F));
+    ImGui::SameLine();
+    ImGui::Button("REFILL HEALTH", ImVec2(150.0F, 38.0F));
+    ImGui::SameLine();
+    ImGui::Button("RESET SELF", ImVec2(150.0F, 38.0F));
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Frontend milestone: controls are visual only until renderer/input stability is verified.");
+}
+
+void Devils_Den_Menu::DrawPlaceholderPage(const char* title, const char* detail)
+{
+    ImGui::TextColored(EmberRed, "%s", title);
+    MedievalDivider();
+    ImGui::TextWrapped("%s", detail);
+    ImGui::Spacing();
+    ImGui::TextDisabled("This page will use the same Devil's Den medieval frame and control language.");
+}
+}
