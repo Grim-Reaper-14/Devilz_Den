@@ -54,5 +54,7 @@ private:
     std::atomic_uint32_t m_activeCalls{0};
 
     static std::atomic<D3D12_Present_Hook*> s_active;
+    static PresentFn s_fallbackPresent;
+    static ResizeBuffersFn s_fallbackResizeBuffers;
 };
 }
