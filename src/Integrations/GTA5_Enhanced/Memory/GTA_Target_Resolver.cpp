@@ -13,6 +13,7 @@ Result<GTA_Target_Resolution> GTA_Target_Resolver::Resolve(const GTA_Target_Defi
     output.status.id = definition.id;
     output.status.name = definition.name;
     output.status.required = definition.required;
+    output.candidateKind = definition.candidateKind;
 
     if (m_pid == 0 || definition.pattern.empty()) {
         output.status.state = GTA_Runtime_Target_State::Unknown;
