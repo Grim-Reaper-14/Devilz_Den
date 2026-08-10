@@ -23,7 +23,10 @@ class GTA_Target_Semantic_Validator final
 public:
     static constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
     static constexpr std::uintptr_t ScriptThreadsDispatchTableRva = 0x2679270ULL;
+    static constexpr std::uintptr_t RunScriptThreadsEntryRva = 0x920A40ULL;
     static constexpr std::uintptr_t InitNativeTablesEntryRva = 0x91BF20ULL;
+    static constexpr const char* RunScriptThreadsEntryBytes =
+        "56 57 55 53 48 83 EC 28 85 C9 BE 40 5D C6 00 0F";
 
     [[nodiscard]] static GTA_Target_Semantic_Validation Validate(
         const GTA_Target_Definition& definition,
@@ -81,6 +84,48 @@ public:
                    << " sampled objects share dispatch-table RVA 0x"
                    << std::uppercase << std::hex << ScriptThreadsDispatchTableRva
                    << " and 8/8 sampled dispatch entries target executable GTA image memory";
+
+            result.passed = true;
+            result.detail = detail.str();
+            return result;
+        }
+
+        if (definition.id == GTA_Runtime_Target_Id::RunScriptThreads &&
+            definition.candidateKind == GTA_Target_Candidate_Kind::CodeSite) {
+            result.applicable = true;
+
+            if (fingerprint != SupportedFingerprint) {
+                result.detail = "No RunScriptThreads semantic identity is registered for this GTA build fingerprint";
+                return result;
+            }
+
+            if (moduleBase == 0 ||
+                moduleBase > (std::numeric_limits<std::uintptr_t>::max)() - RunScriptThreadsEntryRva) {
+                result.detail = "GTA module base is unavailable for RunScriptThreads semantic validation";
+                return result;
+            }
+
+            const auto expectedEntry = moduleBase + RunScriptThreadsEntryRva;
+            if (candidateAddress != expectedEntry) {
+                result.detail = "RunScriptThreads callable-entry RVA does not match the verified build identity";
+                return result;
+            }
+
+            if (!evidence.candidateCommitted || !evidence.candidateReadable || !evidence.candidateExecutable ||
+                evidence.candidateType != 0x01000000U) {
+                result.detail = "RunScriptThreads candidate is not committed readable executable image memory";
+                return result;
+            }
+
+            if (!evidence.sampleRead || evidence.samplePreview != RunScriptThreadsEntryBytes) {
+                result.detail = "RunScriptThreads callable-entry bytes do not match the verified build identity";
+                return result;
+            }
+
+            std::ostringstream detail;
+            detail << "RunScriptThreads callable entry validated for fingerprint 0x"
+                   << std::uppercase << std::hex << fingerprint
+                   << " at RVA 0x" << RunScriptThreadsEntryRva;
 
             result.passed = true;
             result.detail = detail.str();
