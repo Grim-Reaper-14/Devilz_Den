@@ -48,14 +48,15 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
     }
 
     constexpr std::size_t namedNativeCount = 2;
-    std::array<GTA_Native_Hash, BootstrapProbeHashes.size() + namedNativeCount> requestedHashes{};
+    constexpr std::size_t requestedHandlerCount = BootstrapProbeHashes.size() + namedNativeCount;
+    std::array<GTA_Native_Hash, requestedHandlerCount> requestedHashes{};
     std::copy(BootstrapProbeHashes.begin(), BootstrapProbeHashes.end(), requestedHashes.begin());
     requestedHashes[BootstrapProbeHashes.size()] = getGameTimer->enhancedHash;
     requestedHashes[BootstrapProbeHashes.size() + 1] = getHashKey->enhancedHash;
 
     status.requestedHandlers = requestedHashes.size();
 
-    std::array<GTA_Native_Handler, requestedHashes.size()> entries{};
+    std::array<GTA_Native_Handler, requestedHandlerCount> entries{};
     for (std::size_t i = 0; i < requestedHashes.size(); ++i) {
         entries[i] = reinterpret_cast<GTA_Native_Handler>(
             static_cast<std::uintptr_t>(requestedHashes[i]));
