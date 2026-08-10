@@ -172,6 +172,11 @@ public:
         m_spawnStatus.store(GTA_Vehicle_Spawn_Status::Idle, std::memory_order_release);
         m_lastSpawnedVehicle.store(0, std::memory_order_release);
         m_forgeCommand.store(GTA_Vehicle_Forge_Command_Type::None, std::memory_order_release);
+        {
+            std::scoped_lock lock(m_catalogMutex);
+            m_catalog.clear();
+        }
+        m_catalogGeneration.fetch_add(1, std::memory_order_release);
     }
 
 private:
