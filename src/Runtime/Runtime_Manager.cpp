@@ -1,5 +1,6 @@
 #include "Runtime_Manager.hpp"
 
+#include "Backend/Logging/Sinks/ConsoleSink.hpp"
 #include "Backend/Logging/Sinks/DebuggerSink.hpp"
 #include "Backend/Logging/Sinks/FileSink.hpp"
 #include "Backend/Process/Process_Module_Manager.hpp"
@@ -89,6 +90,7 @@ bool Runtime_Manager::Start(const std::filesystem::path& logPath)
         return true;
 
     try {
+        m_logger.AddSink(std::make_unique<Backend::ConsoleSink>());
         m_logger.AddSink(std::make_unique<Backend::DebuggerSink>());
         m_logger.AddSink(std::make_unique<Backend::FileSink>(logPath));
         m_logger.Start();
