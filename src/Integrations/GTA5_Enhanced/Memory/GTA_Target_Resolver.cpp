@@ -71,29 +71,36 @@ Result<GTA_Target_Resolution> GTA_Target_Resolver::Resolve(const GTA_Target_Defi
     output.address = output.candidates.front();
     output.evidence = GTA_Target_Evidence_Probe::Probe(m_pid, output.candidateKind, output.address);
 
+    const auto semantic = GTA_Target_Semantic_Validator::Validate(
+        definition,
+        output.evidence,
+        m_fingerprint,
+        module.Value().baseAddress,
+        output.address);
+
+    if (semantic.applicable && semantic.passed) {
+        output.status.state = GTA_Runtime_Target_State::Validated;
+        output.status.detail = semantic.detail;
+        return Result<GTA_Target_Resolution>::Success(std::move(output));
+    }
+
     const auto structural = GTA_Target_Structural_Validator::Validate(definition, output.evidence);
     if (structural.applicable && structural.passed) {
-        const auto semantic = GTA_Target_Semantic_Validator::Validate(
-            definition,
-            output.evidence,
-            m_fingerprint,
-            module.Value().baseAddress);
-
-        if (semantic.applicable && semantic.passed) {
-            output.status.state = GTA_Runtime_Target_State::Validated;
-            output.status.detail = semantic.detail;
-        } else {
-            output.status.state = GTA_Runtime_Target_State::StructurallyValidated;
-            output.status.detail = semantic.applicable
-                ? structural.detail + "; semantic validation is not yet satisfied: " + semantic.detail
-                : structural.detail;
-        }
+        output.status.state = GTA_Runtime_Target_State::StructurallyValidated;
+        output.status.detail = semantic.applicable
+            ? structural.detail + "; semantic validation is not yet satisfied: " + semantic.detail
+            : structural.detail;
     } else {
         output.status.state = GTA_Runtime_Target_State::Located;
-        output.status.detail = structural.applicable
-            ? "Unique candidate address resolved; structural validation is not yet satisfied: " + structural.detail
-            : "Unique candidate address resolved; semantic validation is still required";
+        if (semantic.applicable) {
+            output.status.detail = "Unique candidate address resolved; semantic validation is not yet satisfied: " + semantic.detail;
+        } else {
+            output.status.detail = structural.applicable
+                ? "Unique candidate address resolved; structural validation is not yet satisfied: " + structural.detail
+                : "Unique candidate address resolved; semantic validation is still required";
+        }
     }
+
     return Result<GTA_Target_Resolution>::Success(std::move(output));
 }
 }
