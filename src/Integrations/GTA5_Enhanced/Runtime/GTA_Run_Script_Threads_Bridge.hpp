@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Backend/Logging/LoggerService.hpp"
+#include "GTA_Gameplay_Feature_Runner.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 
 #include <Windows.h>
@@ -42,6 +43,7 @@ private:
     static bool HookThunk(int opsToExecute);
     bool OnRunScriptThreads(int opsToExecute) noexcept;
     void TryNativeSmoke() noexcept;
+    void RunGameplayTick() noexcept;
     [[nodiscard]] void* FindValidatedScriptThread() const noexcept;
 
     std::atomic_bool m_installed{false};
@@ -57,6 +59,7 @@ private:
     RunScriptThreads m_original = nullptr;
     GTA_Native_Manager* m_natives = nullptr;
     Backend::LoggerService* m_logger = nullptr;
+    GTA_Gameplay_Feature_Runner m_gameplay;
 
     static GTA_Run_Script_Threads_Bridge* s_active;
 };
