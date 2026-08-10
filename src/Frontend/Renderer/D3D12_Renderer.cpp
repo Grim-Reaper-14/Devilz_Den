@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <string>
+#include <utility>
 
 namespace Devilz::Frontend
 {
@@ -67,6 +68,7 @@ bool D3D12_Renderer::Initialize(D3D12_Targets targets, Backend::LoggerService& l
         Shutdown();
         return false;
     }
+    m_win32BackendInitialized = true;
 
     ImGui_ImplDX12_InitInfo initInfo{};
     initInfo.Device = m_device.Get();
@@ -83,6 +85,7 @@ bool D3D12_Renderer::Initialize(D3D12_Targets targets, Backend::LoggerService& l
         Shutdown();
         return false;
     }
+    m_dx12BackendInitialized = true;
 
     ::SetLastError(ERROR_SUCCESS);
     const auto previous = reinterpret_cast<WNDPROC>(::SetWindowLongPtrW(
@@ -96,6 +99,7 @@ bool D3D12_Renderer::Initialize(D3D12_Targets targets, Backend::LoggerService& l
     m_originalWndProc = previous;
 
     m_menuOpen.store(true);
+    m_resizing.store(false);
     io.MouseDrawCursor = true;
     m_initialized.store(true);
 
@@ -125,8 +129,14 @@ void D3D12_Renderer::Shutdown() noexcept
 
     if (ImGui::GetCurrentContext()) {
         WaitForAllFrames();
-        ImGui_ImplDX12_Shutdown();
-        ImGui_ImplWin32_Shutdown();
+        if (m_dx12BackendInitialized) {
+            ImGui_ImplDX12_Shutdown();
+            m_dx12BackendInitialized = false;
+        }
+        if (m_win32BackendInitialized) {
+            ImGui_ImplWin32_Shutdown();
+            m_win32BackendInitialized = false;
+        }
         ImGui::DestroyContext();
     }
 
@@ -333,7 +343,7 @@ void D3D12_Renderer::BeforeResize() noexcept
 
     m_resizing.store(true);
     WaitForAllFrames();
-    if (ImGui::GetCurrentContext())
+    if (ImGui::GetCurrentContext() && m_dx12BackendInitialized)
         ImGui_ImplDX12_InvalidateDeviceObjects();
     ReleaseRenderTargets();
 }
@@ -358,7 +368,7 @@ void D3D12_Renderer::AfterResize() noexcept
     if (!CreateRenderTargets())
         return;
 
-    if (ImGui::GetCurrentContext() && !ImGui_ImplDX12_CreateDeviceObjects())
+    if (m_dx12BackendInitialized && !ImGui_ImplDX12_CreateDeviceObjects())
         return;
 
     m_resizing.store(false);
