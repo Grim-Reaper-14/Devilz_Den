@@ -86,12 +86,12 @@ Result<GTA_Module_Status> GTA_Module_Manager::Refresh()
 
     switch (m_status.profile->verification) {
     case GTA_Build_Verification_State::Supported:
-        m_status.state = GTA_Module_Manager_State::Supported;
+        m_status.state = GTA_Module_Manager_State::RuntimeReady;
         m_status.detail = "All required GTA runtime targets are semantically validated";
         break;
     case GTA_Build_Verification_State::PartiallyVerified:
         m_status.state = GTA_Module_Manager_State::RuntimeUnverified;
-        m_status.detail = "Some GTA runtime targets are located or structurally validated; semantic verification is still pending";
+        m_status.detail = "Some required GTA runtime targets are located or structurally validated; semantic verification is still pending";
         break;
     default:
         m_status.state = GTA_Module_Manager_State::RuntimeUnverified;
