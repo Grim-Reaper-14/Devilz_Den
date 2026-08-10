@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Devilz::Integrations::GTA5_Enhanced
@@ -38,7 +39,10 @@ enum class GTA_Vehicle_Forge_Command_Type : std::uint8_t
     SetWheelType,
     SetPrimaryPaint,
     SetSecondaryPaint,
-    RepairAndClean
+    SetExtraColours,
+    SetCustomPrimaryRgb,
+    SetCustomSecondaryRgb,
+    CleanVehicle
 };
 
 struct GTA_Vehicle_Forge_Command
