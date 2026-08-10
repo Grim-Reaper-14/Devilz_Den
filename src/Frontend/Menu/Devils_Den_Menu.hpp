@@ -30,8 +30,12 @@ private:
     Page m_page = Page::Self;
     bool m_godMode = false;
     bool m_neverWanted = false;
-    bool m_fastRun = false;
     bool m_superJump = false;
+    bool m_infiniteOxygen = false;
+    bool m_noRagdoll = false;
+    bool m_keepPlayerClean = false;
+    bool m_infiniteAmmo = false;
+    bool m_fastRun = false;
     float m_health = 100.0F;
 };
 }
