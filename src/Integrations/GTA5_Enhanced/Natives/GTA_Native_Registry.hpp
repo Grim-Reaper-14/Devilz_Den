@@ -25,6 +25,8 @@ enum class GTA_Native_Id : std::uint8_t
     GetBlipCoords,
     RequestCollisionAtCoord,
     GetGroundZFor3DCoord,
+    GetWaterHeight,
+    GetApproxHeightForPoint,
     SetEntityCoordsNoOffset,
     DisableAllControlActions
 };
@@ -41,7 +43,7 @@ class GTA_Native_Registry final
 {
 public:
     static constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
-    static constexpr std::array<GTA_Native_Id, 16> NamedIds{
+    static constexpr std::array<GTA_Native_Id, 18> NamedIds{
         GTA_Native_Id::GetGameTimer,
         GTA_Native_Id::GetHashKey,
         GTA_Native_Id::PlayerPedId,
@@ -56,6 +58,8 @@ public:
         GTA_Native_Id::GetBlipCoords,
         GTA_Native_Id::RequestCollisionAtCoord,
         GTA_Native_Id::GetGroundZFor3DCoord,
+        GTA_Native_Id::GetWaterHeight,
+        GTA_Native_Id::GetApproxHeightForPoint,
         GTA_Native_Id::SetEntityCoordsNoOffset,
         GTA_Native_Id::DisableAllControlActions
     };
@@ -96,6 +100,10 @@ public:
             return GTA_Native_Definition{id, "REQUEST_COLLISION_AT_COORD", 0x07503F7948F491A7ULL, 0xEA2D52183C7EA9CFULL};
         case GTA_Native_Id::GetGroundZFor3DCoord:
             return GTA_Native_Definition{id, "GET_GROUND_Z_FOR_3D_COORD", 0xC906A7DAB05C8D2BULL, 0xB1EAADCB692D69CEULL};
+        case GTA_Native_Id::GetWaterHeight:
+            return GTA_Native_Definition{id, "GET_WATER_HEIGHT", 0xF6829842C06AE524ULL, 0xF85C2BE613AD7903ULL};
+        case GTA_Native_Id::GetApproxHeightForPoint:
+            return GTA_Native_Definition{id, "GET_APPROX_HEIGHT_FOR_POINT", 0x29C24BFBED8AB8FBULL, 0x54D01A0F98391D5BULL};
         case GTA_Native_Id::SetEntityCoordsNoOffset:
             return GTA_Native_Definition{id, "SET_ENTITY_COORDS_NO_OFFSET", 0x239A3351AC1DA385ULL, 0x62C438C53BB57AFDULL};
         case GTA_Native_Id::DisableAllControlActions:
