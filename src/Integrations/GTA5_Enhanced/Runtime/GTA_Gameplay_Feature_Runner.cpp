@@ -25,9 +25,81 @@ constexpr std::uint32_t MaxVehicleStreamAttempts = 180;
 constexpr float GroundProbeZ = 1000.0F;
 constexpr float Pi = 3.14159265358979323846F;
 
+[[nodiscard]] std::string FallbackModSlotName(int slot)
+{
+    switch (slot) {
+    case 0: return "Spoilers";
+    case 1: return "Front Bumper";
+    case 2: return "Rear Bumper";
+    case 3: return "Side Skirts";
+    case 4: return "Exhaust";
+    case 5: return "Frame";
+    case 6: return "Grille";
+    case 7: return "Hood";
+    case 8: return "Left Fender";
+    case 9: return "Right Fender";
+    case 10: return "Roof";
+    case 11: return "Engine";
+    case 12: return "Brakes";
+    case 13: return "Transmission";
+    case 14: return "Horns";
+    case 15: return "Suspension";
+    case 16: return "Armor";
+    case 17: return "Nitrous";
+    case 18: return "Turbo";
+    case 19: return "Subwoofer";
+    case 20: return "Tire Smoke";
+    case 21: return "Hydraulics";
+    case 22: return "Xenon";
+    case 23: return "Front Wheels";
+    case 24: return "Rear Wheels";
+    case 25: return "Plate Holder";
+    case 26: return "Vanity Plate";
+    case 27: return "Trim Design";
+    case 28: return "Ornaments";
+    case 29: return "Dashboard";
+    case 30: return "Dials";
+    case 31: return "Door Speakers";
+    case 32: return "Seats";
+    case 33: return "Steering Wheel";
+    case 34: return "Shifter";
+    case 35: return "Plaques";
+    case 36: return "Speakers";
+    case 37: return "Trunk";
+    case 38: return "Hydraulics";
+    case 39: return "Engine Block";
+    case 40: return "Air Filter";
+    case 41: return "Struts";
+    case 42: return "Arch Covers";
+    case 43: return "Aerials";
+    case 44: return "Interior Trim";
+    case 45: return "Tank";
+    case 46: return "Windows";
+    case 47: return "Doors";
+    case 48: return "Livery";
+    case 49: return "Lightbar";
+    default: return "Modification";
+    }
+}
+
+[[nodiscard]] std::string FallbackModOptionName(int slot, int mod)
+{
+    const int level = mod + 1;
+    switch (slot) {
+    case 11: return "Engine Upgrade " + std::to_string(level);
+    case 12: return "Brake Upgrade " + std::to_string(level);
+    case 13: return "Transmission Upgrade " + std::to_string(level);
+    case 15: return "Suspension Upgrade " + std::to_string(level);
+    case 16: return "Armor Upgrade " + std::to_string(level);
+    case 23:
+    case 24: return "Wheel " + std::to_string(level);
+    default: return "Option " + std::to_string(level);
+    }
+}
+
 [[nodiscard]] std::string CopyLocalized(GTA_Native_Manager& natives, const char* label, std::string fallback)
 {
-    if (!label || *label == '\0')
+    if (!label || *label == '\0' || std::string_view(label) == "NULL")
         return fallback;
     const auto localized = natives.Invoke<const char*>(GTA_Native_Id::GetFilenameForAudioConversation, label);
     if (localized && *localized && **localized != '\0' && std::string_view(*localized) != "NULL")
@@ -59,6 +131,8 @@ void GTA_Gameplay_Feature_Runner::Reset() noexcept
     m_vehicleSpawnHeading = 0.0F;
     m_vehicleSpawnHandle = 0;
     m_vehicleStreamAttempts = 0;
+    m_forgeSnapshotVehicle = 0;
+    m_vehicleGodModeAppliedVehicle = 0;
     GTA_Vehicle_State::Instance().Reset();
     m_teleportPhase = Teleport_Phase::Idle;
     m_waypoint = {};
@@ -81,6 +155,8 @@ void GTA_Gameplay_Feature_Runner::Tick() noexcept
     TickVehicleCatalog();
     TickVehicleSpawner();
     TickVehicleForge();
+    TickVehicleMaintenance();
+    TickVehicleForgeSnapshot();
     TickPresetTeleport();
     TickTeleportToWaypoint();
 }
@@ -233,10 +309,15 @@ void GTA_Gameplay_Feature_Runner::TickVehicleCatalog() noexcept
 {
     if (m_vehicleCatalogIndex >= GTA_Vehicle_Model_Names.size())
         return;
-    const auto modelName = GTA_Vehicle_Model_Names[m_vehicleCatalogIndex++];
+
+    const auto modelName = GTA_Vehicle_Model_Names[m_vehicleCatalogIndex];
     const auto modelHash = GTA_Model_Hash(modelName);
     const auto valid = m_natives->Invoke<bool>(GTA_Native_Id::IsModelInCdimage, modelHash);
-    if (!valid || !*valid)
+    if (!valid)
+        return;
+
+    ++m_vehicleCatalogIndex;
+    if (!*valid)
         return;
 
     GTA_Vehicle_Metadata metadata{};
@@ -361,6 +442,7 @@ void GTA_Gameplay_Feature_Runner::TickVehicleSpawner() noexcept
         success = ped && *ped != 0 && m_natives->Invoke<void>(GTA_Native_Id::SetPedIntoVehicle, *ped, m_vehicleSpawnHandle, -1) && success;
     }
     state.SetLastSpawnedVehicle(m_vehicleSpawnHandle);
+    state.RequestForgeSnapshotRefresh();
     FinishVehicleSpawn(success, success ? "Vehicle spawned successfully" : "Vehicle spawned with one or more option failures");
 }
 
@@ -437,6 +519,19 @@ void GTA_Gameplay_Feature_Runner::TickVehicleForge() noexcept
     case GTA_Vehicle_Forge_Command_Type::SetLoweredStance:
         success = m_natives->Invoke<void>(GTA_Native_Id::SetReducedSuspensionForce, vehicle, command.arg0 != 0);
         break;
+    case GTA_Vehicle_Forge_Command_Type::SetWindowTint:
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleWindowTint, vehicle, command.arg0);
+        break;
+    case GTA_Vehicle_Forge_Command_Type::SetPlateStyle:
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleNumberPlateTextIndex, vehicle, command.arg0);
+        break;
+    case GTA_Vehicle_Forge_Command_Type::RepairVehicle:
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleFixed, vehicle) && success;
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleDeformationFixed, vehicle) && success;
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleEngineHealth, vehicle, 1000.0F) && success;
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleBodyHealth, vehicle, 1000.0F) && success;
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleDirtLevel, vehicle, 0.0F) && success;
+        break;
     case GTA_Vehicle_Forge_Command_Type::CleanVehicle:
         success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleDirtLevel, vehicle, 0.0F);
         break;
@@ -445,6 +540,105 @@ void GTA_Gameplay_Feature_Runner::TickVehicleForge() noexcept
     }
     if (!success && m_logger)
         m_logger->Log(Backend::LogLevel::Warning, "Devils Forge native command failed", "GTA5_Enhanced.Features");
+}
+
+void GTA_Gameplay_Feature_Runner::TickVehicleMaintenance() noexcept
+{
+    auto& state = GTA_Vehicle_State::Instance();
+    const int vehicle = CurrentVehicle();
+    const bool godMode = state.VehicleGodMode();
+
+    if (m_vehicleGodModeAppliedVehicle != 0 &&
+        (!godMode || vehicle != m_vehicleGodModeAppliedVehicle)) {
+        (void)m_natives->Invoke<void>(GTA_Native_Id::SetEntityInvincible, m_vehicleGodModeAppliedVehicle, false, true);
+        m_vehicleGodModeAppliedVehicle = 0;
+    }
+
+    if (godMode && vehicle != 0) {
+        (void)m_natives->Invoke<void>(GTA_Native_Id::SetEntityInvincible, vehicle, true, true);
+        m_vehicleGodModeAppliedVehicle = vehicle;
+    }
+
+    if (vehicle == 0 || !state.KeepVehiclePerfect())
+        return;
+
+    (void)m_natives->Invoke<void>(GTA_Native_Id::SetVehicleFixed, vehicle);
+    (void)m_natives->Invoke<void>(GTA_Native_Id::SetVehicleDeformationFixed, vehicle);
+    (void)m_natives->Invoke<void>(GTA_Native_Id::SetVehicleEngineHealth, vehicle, 1000.0F);
+    (void)m_natives->Invoke<void>(GTA_Native_Id::SetVehicleBodyHealth, vehicle, 1000.0F);
+    (void)m_natives->Invoke<void>(GTA_Native_Id::SetVehicleDirtLevel, vehicle, 0.0F);
+}
+
+void GTA_Gameplay_Feature_Runner::TickVehicleForgeSnapshot() noexcept
+{
+    auto& state = GTA_Vehicle_State::Instance();
+    const int vehicle = CurrentVehicle();
+    const bool refreshRequested = state.ConsumeForgeSnapshotRefreshRequest();
+    if (vehicle == m_forgeSnapshotVehicle && !refreshRequested)
+        return;
+
+    m_forgeSnapshotVehicle = vehicle;
+    BuildVehicleForgeSnapshot(vehicle);
+}
+
+void GTA_Gameplay_Feature_Runner::BuildVehicleForgeSnapshot(int vehicle) noexcept
+{
+    auto& state = GTA_Vehicle_State::Instance();
+    GTA_Vehicle_Forge_Snapshot snapshot{};
+    snapshot.vehicle = vehicle;
+
+    if (vehicle == 0) {
+        state.PublishForgeSnapshot(std::move(snapshot));
+        return;
+    }
+
+    (void)m_natives->Invoke<void>(GTA_Native_Id::SetVehicleModKit, vehicle, 0);
+
+    const auto model = m_natives->Invoke<std::uint32_t>(GTA_Native_Id::GetEntityModel, vehicle);
+    if (model)
+        snapshot.modelHash = *model;
+    const auto wheelType = m_natives->Invoke<int>(GTA_Native_Id::GetVehicleWheelType, vehicle);
+    if (wheelType)
+        snapshot.wheelType = *wheelType;
+    const auto tint = m_natives->Invoke<int>(GTA_Native_Id::GetVehicleWindowTint, vehicle);
+    if (tint)
+        snapshot.windowTint = *tint;
+    const auto plateStyle = m_natives->Invoke<int>(GTA_Native_Id::GetVehicleNumberPlateTextIndex, vehicle);
+    if (plateStyle)
+        snapshot.plateStyle = *plateStyle;
+
+    snapshot.categories.reserve(32);
+    for (int slot = 0; slot < 50; ++slot) {
+        const auto count = m_natives->Invoke<int>(GTA_Native_Id::GetNumVehicleMods, vehicle, slot);
+        if (!count || *count <= 0)
+            continue;
+
+        GTA_Vehicle_Forge_Category category{};
+        category.slot = slot;
+        const auto slotLabel = m_natives->Invoke<const char*>(GTA_Native_Id::GetModSlotName, vehicle, slot);
+        category.name = CopyLocalized(*m_natives,
+            slotLabel && *slotLabel ? *slotLabel : nullptr,
+            FallbackModSlotName(slot));
+
+        const auto installed = m_natives->Invoke<int>(GTA_Native_Id::GetVehicleMod, vehicle, slot);
+        if (installed)
+            category.installedIndex = *installed;
+
+        category.options.reserve(static_cast<std::size_t>(*count) + 1U);
+        category.options.push_back(GTA_Vehicle_Forge_Option{-1, "Stock"});
+        for (int mod = 0; mod < *count; ++mod) {
+            const auto optionLabel = m_natives->Invoke<const char*>(GTA_Native_Id::GetModTextLabel, vehicle, slot, mod);
+            category.options.push_back(GTA_Vehicle_Forge_Option{
+                mod,
+                CopyLocalized(*m_natives,
+                    optionLabel && *optionLabel ? *optionLabel : nullptr,
+                    FallbackModOptionName(slot, mod))
+            });
+        }
+        snapshot.categories.push_back(std::move(category));
+    }
+
+    state.PublishForgeSnapshot(std::move(snapshot));
 }
 
 void GTA_Gameplay_Feature_Runner::TickPresetTeleport() noexcept
