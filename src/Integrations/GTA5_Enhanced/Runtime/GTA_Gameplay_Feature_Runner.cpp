@@ -38,9 +38,18 @@ void GTA_Gameplay_Feature_Runner::Tick() noexcept
     if (!m_natives || !m_natives->Ready())
         return;
 
+    TickMenuInputSuppression();
     TickGodMode();
     TickNeverWanted();
     TickTeleportToWaypoint();
+}
+
+void GTA_Gameplay_Feature_Runner::TickMenuInputSuppression() noexcept
+{
+    if (!GTA_Gameplay_State::Instance().MenuInputCaptured())
+        return;
+
+    (void)m_natives->Invoke<void>(GTA_Native_Id::DisableAllControlActions, 0);
 }
 
 void GTA_Gameplay_Feature_Runner::TickGodMode() noexcept
@@ -128,7 +137,7 @@ void GTA_Gameplay_Feature_Runner::TickTeleportToWaypoint() noexcept
     state.SetTeleportStatus(GTA_Teleport_Waypoint_Status::Resolving);
 
     constexpr float probeZ = 1000.0F;
-    m_natives->Invoke<void>(
+    (void)m_natives->Invoke<void>(
         GTA_Native_Id::RequestCollisionAtCoord,
         m_waypoint.x,
         m_waypoint.y,
