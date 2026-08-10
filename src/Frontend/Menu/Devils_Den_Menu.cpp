@@ -518,17 +518,19 @@ void Devils_Den_Menu::DrawVehiclePage()
             ImGui::TextDisabled("Refreshing rim names for %s...", wheelPreview);
         } else if (frontWheels == forge.categories.end()) {
             ImGui::TextDisabled("This vehicle does not expose front-wheel modifications for this category.");
-        } else if (ImGui::BeginChild("##ForgeRims", ImVec2(0.0F, 165.0F), ImGuiChildFlags_Borders)) {
-            ImGui::TextColored(Bronze, "%s RIMS", wheelPreview);
-            for (const auto& option : frontWheels->options) {
-                const bool installed = option.index == frontWheels->installedIndex;
-                ImGui::PushID(option.index);
-                if (ImGui::Selectable(option.name.c_str(), installed)) {
-                    m_forgeWheelIndex = option.index;
-                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetMod,
-                        23, option.index, m_forgeCustomTires ? 1 : 0});
+        } else {
+            if (ImGui::BeginChild("##ForgeRims", ImVec2(0.0F, 165.0F), ImGuiChildFlags_Borders)) {
+                ImGui::TextColored(Bronze, "%s RIMS", wheelPreview);
+                for (const auto& option : frontWheels->options) {
+                    const bool installed = option.index == frontWheels->installedIndex;
+                    ImGui::PushID(option.index);
+                    if (ImGui::Selectable(option.name.c_str(), installed)) {
+                        m_forgeWheelIndex = option.index;
+                        vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetMod,
+                            23, option.index, m_forgeCustomTires ? 1 : 0});
+                    }
+                    ImGui::PopID();
                 }
-                ImGui::PopID();
             }
             ImGui::EndChild();
         }
