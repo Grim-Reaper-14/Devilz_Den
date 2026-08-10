@@ -12,6 +12,8 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <string_view>
+#include <utility>
 
 namespace Devilz::Integrations::GTA5_Enhanced
 {
@@ -33,7 +35,6 @@ constexpr float Pi = 3.14159265358979323846F;
     const auto localized = natives.Invoke<const char*>(GTA_Native_Id::GetFilenameForAudioConversation, label);
     if (localized && *localized && **localized != '\0' && std::string_view(*localized) != "NULL")
         return std::string(*localized);
-
     return std::string(label);
 }
 }
@@ -92,9 +93,8 @@ void GTA_Gameplay_Feature_Runner::Tick() noexcept
 
 void GTA_Gameplay_Feature_Runner::TickMenuInputSuppression() noexcept
 {
-    if (!GTA_Gameplay_State::Instance().MenuInputCaptured())
-        return;
-    (void)m_natives->Invoke<void>(GTA_Native_Id::DisableAllControlActions, 0);
+    if (GTA_Gameplay_State::Instance().MenuInputCaptured())
+        (void)m_natives->Invoke<void>(GTA_Native_Id::DisableAllControlActions, 0);
 }
 
 void GTA_Gameplay_Feature_Runner::TickGodMode() noexcept
@@ -107,13 +107,11 @@ void GTA_Gameplay_Feature_Runner::TickGodMode() noexcept
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
-
     if (!m_natives->Invoke<void>(GTA_Native_Id::SetEntityInvincible, *ped, desired, true))
         return;
 
     if (desired != m_godModeApplied && m_logger) {
-        m_logger->Log(
-            Backend::LogLevel::Info,
+        m_logger->Log(Backend::LogLevel::Info,
             std::string("God Mode ") + (desired ? "enabled" : "disabled") + " on the game thread",
             "GTA5_Enhanced.Features");
     }
@@ -124,29 +122,23 @@ void GTA_Gameplay_Feature_Runner::TickNeverWanted() noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
     const bool desired = state.NeverWanted();
-
     if (desired) {
         const auto player = m_natives->Invoke<int>(GTA_Native_Id::PlayerId);
         if (!player)
             return;
-
         const bool setLevel = m_natives->Invoke<void>(GTA_Native_Id::SetPlayerWantedLevel, *player, 0, false);
         const bool applyNow = m_natives->Invoke<void>(GTA_Native_Id::SetPlayerWantedLevelNow, *player, false);
         const bool clampMax = m_natives->Invoke<void>(GTA_Native_Id::SetMaxWantedLevel, 0);
         if (!setLevel || !applyNow || !clampMax)
             return;
-
         if (!m_neverWantedApplied && m_logger)
             m_logger->Log(Backend::LogLevel::Info, "Never Wanted enabled on the game thread", "GTA5_Enhanced.Features");
         m_neverWantedApplied = true;
         return;
     }
 
-    if (!m_neverWantedApplied)
+    if (!m_neverWantedApplied || !m_natives->Invoke<void>(GTA_Native_Id::SetMaxWantedLevel, 6))
         return;
-    if (!m_natives->Invoke<void>(GTA_Native_Id::SetMaxWantedLevel, 6))
-        return;
-
     m_neverWantedApplied = false;
     if (m_logger)
         m_logger->Log(Backend::LogLevel::Info, "Never Wanted disabled; max wanted level restored", "GTA5_Enhanced.Features");
@@ -167,21 +159,16 @@ void GTA_Gameplay_Feature_Runner::TickInfiniteOxygen() noexcept
     const bool desired = state.InfiniteOxygen();
     if (!desired && !m_infiniteOxygenApplied)
         return;
-
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
-
     const float maxTime = desired ? static_cast<float>((std::numeric_limits<int>::max)()) : -1.0F;
     if (!m_natives->Invoke<void>(GTA_Native_Id::SetPedMaxTimeUnderwater, *ped, maxTime))
         return;
-
-    if (desired != m_infiniteOxygenApplied && m_logger) {
-        m_logger->Log(
-            Backend::LogLevel::Info,
+    if (desired != m_infiniteOxygenApplied && m_logger)
+        m_logger->Log(Backend::LogLevel::Info,
             desired ? "Infinite Oxygen enabled" : "Infinite Oxygen disabled; underwater timer restored",
             "GTA5_Enhanced.Features");
-    }
     m_infiniteOxygenApplied = desired;
 }
 
@@ -191,20 +178,15 @@ void GTA_Gameplay_Feature_Runner::TickNoRagdoll() noexcept
     const bool desired = state.NoRagdoll();
     if (!desired && !m_noRagdollApplied)
         return;
-
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
-
     if (!m_natives->Invoke<void>(GTA_Native_Id::SetPedCanRagdoll, *ped, !desired))
         return;
-
-    if (desired != m_noRagdollApplied && m_logger) {
-        m_logger->Log(
-            Backend::LogLevel::Info,
+    if (desired != m_noRagdollApplied && m_logger)
+        m_logger->Log(Backend::LogLevel::Info,
             desired ? "No Ragdoll enabled" : "No Ragdoll disabled; ragdoll restored",
             "GTA5_Enhanced.Features");
-    }
     m_noRagdollApplied = desired;
 }
 
@@ -212,11 +194,9 @@ void GTA_Gameplay_Feature_Runner::TickKeepPlayerClean() noexcept
 {
     if (!GTA_Gameplay_State::Instance().KeepPlayerClean())
         return;
-
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
-
     (void)m_natives->Invoke<void>(GTA_Native_Id::ClearPedBloodDamage, *ped);
     (void)m_natives->Invoke<void>(GTA_Native_Id::ClearPedWetness, *ped);
     (void)m_natives->Invoke<void>(GTA_Native_Id::ClearPedEnvDirt, *ped);
@@ -229,20 +209,15 @@ void GTA_Gameplay_Feature_Runner::TickInfiniteAmmo() noexcept
     const bool desired = state.InfiniteAmmo();
     if (!desired && !m_infiniteAmmoApplied)
         return;
-
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
-
     if (!m_natives->Invoke<void>(GTA_Native_Id::SetPedInfiniteAmmo, *ped, desired, 0U))
         return;
-
-    if (desired != m_infiniteAmmoApplied && m_logger) {
-        m_logger->Log(
-            Backend::LogLevel::Info,
+    if (desired != m_infiniteAmmoApplied && m_logger)
+        m_logger->Log(Backend::LogLevel::Info,
             desired ? "Infinite Ammo enabled" : "Infinite Ammo disabled",
             "GTA5_Enhanced.Features");
-    }
     m_infiniteAmmoApplied = desired;
 }
 
@@ -253,7 +228,6 @@ void GTA_Gameplay_Feature_Runner::TickWeaponActions() noexcept
     const bool giveAmmo = state.ConsumeGiveMaxAmmoRequest();
     if (!giveAll && !giveAmmo)
         return;
-
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
@@ -266,16 +240,15 @@ void GTA_Gameplay_Feature_Runner::TickWeaponActions() noexcept
         if (giveAmmo)
             success = m_natives->Invoke<void>(GTA_Native_Id::SetPedAmmo, *ped, hash, 9999, false) && success;
     }
-
     if (m_logger) {
         if (giveAll)
             m_logger->Log(success ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
-                          success ? "Give All Weapons completed" : "Give All Weapons completed with native failures",
-                          "GTA5_Enhanced.Features");
+                success ? "Give All Weapons completed" : "Give All Weapons completed with native failures",
+                "GTA5_Enhanced.Features");
         if (giveAmmo)
             m_logger->Log(success ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
-                          success ? "Give Max Ammo completed" : "Give Max Ammo completed with native failures",
-                          "GTA5_Enhanced.Features");
+                success ? "Give Max Ammo completed" : "Give Max Ammo completed with native failures",
+                "GTA5_Enhanced.Features");
     }
 }
 
@@ -327,14 +300,12 @@ void GTA_Gameplay_Feature_Runner::BeginVehicleSpawn(
 void GTA_Gameplay_Feature_Runner::TickVehicleSpawner() noexcept
 {
     auto& state = GTA_Vehicle_State::Instance();
-
     if (m_vehicleSpawnPhase == Vehicle_Spawn_Phase::Idle) {
         std::uint32_t modelHash = 0;
         GTA_Vehicle_Spawn_Options options{};
         if (state.ConsumeSpawnRequest(modelHash, options))
             BeginVehicleSpawn(modelHash, options);
     }
-
     if (m_vehicleSpawnPhase == Vehicle_Spawn_Phase::Idle)
         return;
 
@@ -344,20 +315,17 @@ void GTA_Gameplay_Feature_Runner::TickVehicleSpawner() noexcept
             FinishVehicleSpawn(false, "Vehicle spawn failed: model is not present in the Enhanced streaming image");
             return;
         }
-
         const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
         if (!ped || *ped == 0) {
             FinishVehicleSpawn(false, "Vehicle spawn failed: player ped unavailable");
             return;
         }
-
         const auto coords = m_natives->Invoke<GTA_Native_Script_Vector>(GTA_Native_Id::GetEntityCoords, *ped, false);
         const auto heading = m_natives->Invoke<float>(GTA_Native_Id::GetEntityHeading, *ped);
         if (!coords || !heading) {
             FinishVehicleSpawn(false, "Vehicle spawn failed: player transform unavailable");
             return;
         }
-
         m_vehicleSpawnCoords = *coords;
         m_vehicleSpawnHeading = *heading;
         const float radians = m_vehicleSpawnHeading * (Pi / 180.0F);
@@ -383,22 +351,14 @@ void GTA_Gameplay_Feature_Runner::TickVehicleSpawner() noexcept
     }
 
     if (m_vehicleSpawnPhase == Vehicle_Spawn_Phase::Create) {
-        const auto vehicle = m_natives->Invoke<int>(
-            GTA_Native_Id::CreateVehicle,
+        const auto vehicle = m_natives->Invoke<int>(GTA_Native_Id::CreateVehicle,
             m_vehicleSpawnModel,
-            m_vehicleSpawnCoords.x,
-            m_vehicleSpawnCoords.y,
-            m_vehicleSpawnCoords.z,
-            m_vehicleSpawnHeading,
-            false,
-            false,
-            false);
-
+            m_vehicleSpawnCoords.x, m_vehicleSpawnCoords.y, m_vehicleSpawnCoords.z,
+            m_vehicleSpawnHeading, false, false, false);
         if (!vehicle || *vehicle == 0) {
             FinishVehicleSpawn(false, "Vehicle spawn failed: CREATE_VEHICLE returned no handle");
             return;
         }
-
         m_vehicleSpawnHandle = *vehicle;
         m_vehicleSpawnPhase = Vehicle_Spawn_Phase::Apply;
         state.SetSpawnStatus(GTA_Vehicle_Spawn_Status::Applying);
@@ -408,9 +368,10 @@ void GTA_Gameplay_Feature_Runner::TickVehicleSpawner() noexcept
         return;
 
     bool success = true;
-    if (m_vehicleSpawnOptions.placeOnGround)
-        success = m_natives->Invoke<bool>(GTA_Native_Id::SetVehicleOnGroundProperly, m_vehicleSpawnHandle, 5.0F).has_value() && success;
-
+    if (m_vehicleSpawnOptions.placeOnGround) {
+        const auto grounded = m_natives->Invoke<bool>(GTA_Native_Id::SetVehicleOnGroundProperly, m_vehicleSpawnHandle, 5.0F);
+        success = grounded && *grounded && success;
+    }
     if (m_vehicleSpawnOptions.spawnMaxed) {
         success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleModKit, m_vehicleSpawnHandle, 0) && success;
         for (int slot = 0; slot < 50; ++slot) {
@@ -421,23 +382,18 @@ void GTA_Gameplay_Feature_Runner::TickVehicleSpawner() noexcept
         success = m_natives->Invoke<void>(GTA_Native_Id::ToggleVehicleMod, m_vehicleSpawnHandle, 18, true) && success;
         success = m_natives->Invoke<void>(GTA_Native_Id::ToggleVehicleMod, m_vehicleSpawnHandle, 22, true) && success;
     }
-
     if (m_vehicleSpawnOptions.engineRunning)
         success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleEngineOn, m_vehicleSpawnHandle, true, true, false) && success;
     if (m_vehicleSpawnOptions.clean)
         success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleDirtLevel, m_vehicleSpawnHandle, 0.0F) && success;
     if (m_vehicleSpawnOptions.invincible)
         success = m_natives->Invoke<void>(GTA_Native_Id::SetEntityInvincible, m_vehicleSpawnHandle, true, true) && success;
-
     if (m_vehicleSpawnOptions.spawnInside) {
         const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
-        if (ped && *ped != 0)
-            success = m_natives->Invoke<void>(GTA_Native_Id::SetPedIntoVehicle, *ped, m_vehicleSpawnHandle, -1) && success;
-        else
-            success = false;
+        success = ped && *ped != 0 &&
+                  m_natives->Invoke<void>(GTA_Native_Id::SetPedIntoVehicle, *ped, m_vehicleSpawnHandle, -1) && success;
     }
 
-    (void)m_natives->Invoke<void>(GTA_Native_Id::SetModelAsNoLongerNeeded, m_vehicleSpawnModel);
     state.SetLastSpawnedVehicle(m_vehicleSpawnHandle);
     FinishVehicleSpawn(success, success ? "Vehicle spawned successfully" : "Vehicle spawned with one or more option failures");
 }
@@ -446,21 +402,15 @@ void GTA_Gameplay_Feature_Runner::FinishVehicleSpawn(bool success, const char* d
 {
     if (m_vehicleSpawnModel != 0)
         (void)m_natives->Invoke<void>(GTA_Native_Id::SetModelAsNoLongerNeeded, m_vehicleSpawnModel);
-
-    GTA_Vehicle_State::Instance().SetSpawnStatus(
-        success ? GTA_Vehicle_Spawn_Status::Succeeded : GTA_Vehicle_Spawn_Status::Failed);
-
+    GTA_Vehicle_State::Instance().SetSpawnStatus(success ? GTA_Vehicle_Spawn_Status::Succeeded : GTA_Vehicle_Spawn_Status::Failed);
     m_vehicleSpawnPhase = Vehicle_Spawn_Phase::Idle;
     m_vehicleSpawnModel = 0;
     m_vehicleSpawnHandle = 0;
     m_vehicleStreamAttempts = 0;
-
-    if (m_logger) {
-        m_logger->Log(
-            success ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
+    if (m_logger)
+        m_logger->Log(success ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
             detail ? detail : (success ? "Vehicle spawn succeeded" : "Vehicle spawn failed"),
             "GTA5_Enhanced.Features");
-    }
 }
 
 int GTA_Gameplay_Feature_Runner::CurrentVehicle() noexcept
@@ -504,7 +454,18 @@ void GTA_Gameplay_Feature_Runner::TickVehicleForge() noexcept
     case GTA_Vehicle_Forge_Command_Type::SetSecondaryPaint:
         success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleModColor2, vehicle, command.arg0, command.arg1);
         break;
-    case GTA_Vehicle_Forge_Command_Type::RepairAndClean:
+    case GTA_Vehicle_Forge_Command_Type::SetExtraColours:
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleExtraColours, vehicle, command.arg0, command.arg1);
+        break;
+    case GTA_Vehicle_Forge_Command_Type::SetCustomPrimaryRgb:
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleCustomPrimaryColour, vehicle,
+            std::clamp(command.arg0, 0, 255), std::clamp(command.arg1, 0, 255), std::clamp(command.arg2, 0, 255));
+        break;
+    case GTA_Vehicle_Forge_Command_Type::SetCustomSecondaryRgb:
+        success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleCustomSecondaryColour, vehicle,
+            std::clamp(command.arg0, 0, 255), std::clamp(command.arg1, 0, 255), std::clamp(command.arg2, 0, 255));
+        break;
+    case GTA_Vehicle_Forge_Command_Type::CleanVehicle:
         success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleDirtLevel, vehicle, 0.0F);
         break;
     default:
@@ -521,46 +482,32 @@ void GTA_Gameplay_Feature_Runner::TickPresetTeleport() noexcept
     const auto id = state.ConsumeTeleportToLocationRequest();
     if (id == GTA_Teleport_Location_Id::None)
         return;
-
     const auto* location = FindTeleportLocation(id);
     if (!location) {
         if (m_logger)
             m_logger->Log(Backend::LogLevel::Warning, "Preset teleport ignored: unknown location id", "GTA5_Enhanced.Features");
         return;
     }
-
     const bool moved = TeleportPlayer(location->x, location->y, location->z);
-    if (m_logger) {
-        m_logger->Log(
-            moved ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
+    if (m_logger)
+        m_logger->Log(moved ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
             std::string("Preset teleport ") + (moved ? "succeeded: " : "failed: ") + std::string(location->label),
             "GTA5_Enhanced.Features");
-    }
 }
 
 void GTA_Gameplay_Feature_Runner::TickTeleportToWaypoint() noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
-
     if (m_teleportPhase == Teleport_Phase::Idle && state.ConsumeTeleportToWaypointRequest())
         BeginTeleportToWaypoint();
-
     if (m_teleportPhase != Teleport_Phase::ResolveGround)
         return;
 
     state.SetTeleportStatus(GTA_Teleport_Waypoint_Status::Resolving);
     (void)m_natives->Invoke<void>(GTA_Native_Id::RequestCollisionAtCoord, m_waypoint.x, m_waypoint.y, m_waypoint.z);
-
     float groundZ = m_waypoint.z;
-    const auto foundGround = m_natives->Invoke<bool>(
-        GTA_Native_Id::GetGroundZFor3DCoord,
-        m_waypoint.x,
-        m_waypoint.y,
-        GroundProbeZ,
-        &groundZ,
-        false,
-        false);
-
+    const auto foundGround = m_natives->Invoke<bool>(GTA_Native_Id::GetGroundZFor3DCoord,
+        m_waypoint.x, m_waypoint.y, GroundProbeZ, &groundZ, false, false);
     if (foundGround && *foundGround) {
         const bool moved = TeleportPlayer(m_waypoint.x, m_waypoint.y, groundZ + 1.0F);
         FinishTeleport(moved, moved ? "Teleport to waypoint succeeded using exact ground height" : "Teleport failed: entity move invocation failed");
@@ -572,7 +519,8 @@ void GTA_Gameplay_Feature_Runner::TickTeleportToWaypoint() noexcept
         return;
 
     float waterHeight = 0.0F;
-    const auto foundWater = m_natives->Invoke<bool>(GTA_Native_Id::GetWaterHeight, m_waypoint.x, m_waypoint.y, m_waypoint.z, &waterHeight);
+    const auto foundWater = m_natives->Invoke<bool>(GTA_Native_Id::GetWaterHeight,
+        m_waypoint.x, m_waypoint.y, m_waypoint.z, &waterHeight);
     if (foundWater && *foundWater) {
         const bool moved = TeleportPlayer(m_waypoint.x, m_waypoint.y, waterHeight + 1.0F);
         FinishTeleport(moved, moved ? "Teleport to waypoint succeeded using water height fallback" : "Teleport failed: water fallback move failed");
@@ -585,7 +533,6 @@ void GTA_Gameplay_Feature_Runner::TickTeleportToWaypoint() noexcept
         FinishTeleport(moved, moved ? "Teleport to waypoint succeeded using approximate terrain fallback" : "Teleport failed: approximate terrain fallback move failed");
         return;
     }
-
     FinishTeleport(false, "Teleport failed: no exact ground, water, or approximate terrain height was available");
 }
 
@@ -599,25 +546,21 @@ void GTA_Gameplay_Feature_Runner::BeginTeleportToWaypoint() noexcept
             m_logger->Log(Backend::LogLevel::Warning, "Teleport to waypoint ignored: no active waypoint", "GTA5_Enhanced.Features");
         return;
     }
-
     const auto waypointSprite = m_natives->Invoke<int>(GTA_Native_Id::GetWaypointBlipEnumId);
     if (!waypointSprite) {
         FinishTeleport(false, "Teleport failed: waypoint blip sprite could not be resolved");
         return;
     }
-
     const auto blip = m_natives->Invoke<int>(GTA_Native_Id::GetClosestBlipInfoId, *waypointSprite);
     if (!blip || *blip == 0) {
         FinishTeleport(false, "Teleport failed: waypoint blip handle could not be resolved");
         return;
     }
-
     const auto coords = m_natives->Invoke<GTA_Native_Script_Vector>(GTA_Native_Id::GetBlipCoords, *blip);
     if (!coords) {
         FinishTeleport(false, "Teleport failed: waypoint coordinates could not be read");
         return;
     }
-
     m_waypoint = *coords;
     m_groundAttempts = 0;
     m_teleportPhase = Teleport_Phase::ResolveGround;
@@ -631,12 +574,10 @@ bool GTA_Gameplay_Feature_Runner::TeleportPlayer(float x, float y, float z) noex
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return false;
-
     int entity = *ped;
     const auto vehicle = m_natives->Invoke<int>(GTA_Native_Id::GetVehiclePedIsIn, *ped, false);
     if (vehicle && *vehicle != 0)
         entity = *vehicle;
-
     return m_natives->Invoke<void>(GTA_Native_Id::SetEntityCoordsNoOffset, entity, x, y, z, true, true, true);
 }
 
@@ -647,12 +588,8 @@ void GTA_Gameplay_Feature_Runner::FinishTeleport(bool success, const char* detai
     m_teleportPhase = Teleport_Phase::Idle;
     m_waypoint = {};
     m_groundAttempts = 0;
-
-    if (m_logger) {
-        m_logger->Log(
-            success ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
-            detail ? detail : (success ? "Teleport succeeded" : "Teleport failed"),
-            "GTA5_Enhanced.Features");
-    }
+    if (m_logger)
+        m_logger->Log(success ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
+            detail ? detail : (success ? "Teleport succeeded" : "Teleport failed"), "GTA5_Enhanced.Features");
 }
 }
