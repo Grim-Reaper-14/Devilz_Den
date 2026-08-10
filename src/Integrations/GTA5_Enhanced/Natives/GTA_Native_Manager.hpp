@@ -23,6 +23,18 @@ struct GTA_Native_Manager_Status
     std::string detail;
 };
 
+template <typename T>
+struct GTA_Native_Invoke_Result
+{
+    using Type = std::optional<T>;
+};
+
+template <>
+struct GTA_Native_Invoke_Result<void>
+{
+    using Type = bool;
+};
+
 class GTA_Native_Manager final
 {
 public:
@@ -49,7 +61,7 @@ public:
 
     template <typename Ret, typename... Args>
     [[nodiscard]] auto Invoke(GTA_Native_Id id, Args&&... args) noexcept
-        -> std::conditional_t<std::is_void_v<Ret>, bool, std::optional<Ret>>
+        -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
         const auto handler = Find(id);
         if (!m_ready || !handler) {
