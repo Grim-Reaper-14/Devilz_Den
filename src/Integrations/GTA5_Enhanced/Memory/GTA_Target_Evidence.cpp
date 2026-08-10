@@ -115,6 +115,33 @@ std::string QwordPreview(
     return stream.str();
 }
 
+std::string PointerTablePreview(
+    const std::byte* data,
+    std::size_t size,
+    std::size_t& readablePointers,
+    std::size_t& executableImagePointers)
+{
+    std::ostringstream stream;
+    const auto count = size / sizeof(std::uintptr_t);
+
+    for (std::size_t i = 0; i < count; ++i) {
+        std::uintptr_t value = 0;
+        std::memcpy(&value, data + (i * sizeof(value)), sizeof(value));
+
+        const auto region = QueryRegion(value);
+        if (region.readable)
+            ++readablePointers;
+        if (region.type == MEM_IMAGE && region.executable)
+            ++executableImagePointers;
+
+        if (i != 0)
+            stream << ',';
+        stream << HexValue(value);
+    }
+
+    return stream.str();
+}
+
 void CaptureRegion(const Region_Info& region, GTA_Target_Evidence& evidence)
 {
     evidence.candidateCommitted = region.committed;
@@ -135,6 +162,9 @@ void ProbeObjectSlots(
     constexpr std::size_t maxSlots = 8;
     const auto availableSlots = sample.size() / sizeof(std::uintptr_t);
     const auto slotCount = std::min(maxSlots, availableSlots);
+
+    std::array<std::uintptr_t, maxSlots> decodedTargets{};
+    std::size_t decodedTargetCount = 0;
 
     std::ostringstream preview;
     for (std::size_t i = 0; i < slotCount; ++i) {
@@ -164,6 +194,9 @@ void ProbeObjectSlots(
                     ++evidence.objectFirstQwordImagePointers;
                 if (firstQwordRegion.type == MEM_IMAGE && firstQwordRegion.executable)
                     ++evidence.objectFirstQwordExecutableImagePointers;
+
+                if (firstQword != 0 && decodedTargetCount < decodedTargets.size())
+                    decodedTargets[decodedTargetCount++] = firstQword;
             }
         }
 
@@ -176,6 +209,43 @@ void ProbeObjectSlots(
                     << ",P=" << HexValue(firstQwordRegion.protection) << ']';
         else
             preview << "->unreadable";
+    }
+
+    std::uintptr_t dominantAddress = 0;
+    std::size_t dominantCount = 0;
+    for (std::size_t i = 0; i < decodedTargetCount; ++i) {
+        std::size_t count = 0;
+        for (std::size_t j = 0; j < decodedTargetCount; ++j) {
+            if (decodedTargets[j] == decodedTargets[i])
+                ++count;
+        }
+
+        if (count > dominantCount) {
+            dominantAddress = decodedTargets[i];
+            dominantCount = count;
+        }
+    }
+
+    evidence.objectDominantFirstQwordAddress = dominantAddress;
+    evidence.objectDominantFirstQwordCount = dominantCount;
+
+    const auto dominantRegion = QueryRegion(dominantAddress);
+    if (dominantAddress != 0 && dominantRegion.readable) {
+        auto dominantSample = reader.Read(dominantAddress, 64);
+        if (dominantSample) {
+            evidence.objectDominantFirstQwordSampleRead = true;
+
+            const auto bytePreviewSize = std::min<std::size_t>(16, dominantSample.Value().size());
+            evidence.objectDominantFirstQwordBytes = HexBytes(
+                dominantSample.Value().data(),
+                bytePreviewSize);
+
+            evidence.objectDominantFirstQwordQwordPreview = PointerTablePreview(
+                dominantSample.Value().data(),
+                dominantSample.Value().size(),
+                evidence.objectDominantFirstQwordReadablePointers,
+                evidence.objectDominantFirstQwordExecutableImagePointers);
+        }
     }
 
     evidence.objectSamplePreview = preview.str();
@@ -290,6 +360,20 @@ GTA_Target_Evidence GTA_Target_Evidence_Probe::Probe(
                         << " | FirstQwordImagePtrs=" << evidence.objectFirstQwordImagePointers
                         << " | FirstQwordExecImagePtrs=" << evidence.objectFirstQwordExecutableImagePointers
                         << " | Objects=" << evidence.objectSamplePreview;
+
+                if (evidence.objectDominantFirstQwordAddress != 0) {
+                    summary << " | DominantFirstQword=" << HexValue(evidence.objectDominantFirstQwordAddress)
+                            << " | DominantCount=" << evidence.objectDominantFirstQwordCount
+                            << "/" << evidence.objectFirstQwordsDecoded;
+
+                    if (evidence.objectDominantFirstQwordSampleRead) {
+                        summary << " | DominantBytes=" << evidence.objectDominantFirstQwordBytes
+                                << " | DominantQwords=" << evidence.objectDominantFirstQwordQwordPreview
+                                << " | DominantReadablePtrs=" << evidence.objectDominantFirstQwordReadablePointers
+                                << " | DominantExecImagePtrs="
+                                << evidence.objectDominantFirstQwordExecutableImagePointers;
+                    }
+                }
             }
         }
     }
