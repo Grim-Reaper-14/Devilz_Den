@@ -145,6 +145,8 @@ bool TestRegistry()
     const auto playerPed = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::PlayerPedId);
     const auto invincible = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::SetEntityInvincible);
     const auto waypoint = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::IsWaypointActive);
+    const auto waterHeight = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::GetWaterHeight);
+    const auto approxHeight = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::GetApproxHeightForPoint);
     const auto setCoords = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::SetEntityCoordsNoOffset);
     const auto disableControls = GTA_Native_Registry::Find(Fingerprint, GTA_Native_Id::DisableAllControlActions);
 
@@ -163,6 +165,8 @@ bool TestRegistry()
     if (!playerPed || playerPed->enhancedHash != 0x4A8C381C258A124DULL ||
         !invincible || invincible->enhancedHash != 0x935364B4448CD584ULL ||
         !waypoint || waypoint->enhancedHash != 0x02213DC34A224533ULL ||
+        !waterHeight || waterHeight->enhancedHash != 0xF85C2BE613AD7903ULL ||
+        !approxHeight || approxHeight->enhancedHash != 0x54D01A0F98391D5BULL ||
         !setCoords || setCoords->enhancedHash != 0x62C438C53BB57AFDULL ||
         !disableControls || disableControls->enhancedHash != 0xD4510218399ED105ULL) {
         std::cerr << "Gameplay native registry mapping is incorrect\n";
