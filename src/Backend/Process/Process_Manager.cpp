@@ -50,6 +50,36 @@ Process_Architecture DetectArchitecture(HANDLE process) noexcept
 }
 }
 
+Result<Process_Info> Process_Manager::Current() const
+{
+    wchar_t pathBuffer[32768]{};
+    const DWORD pathLength = ::GetModuleFileNameW(nullptr, pathBuffer, static_cast<DWORD>(std::size(pathBuffer)));
+    if (pathLength == 0 || pathLength >= std::size(pathBuffer))
+        return Result<Process_Info>::Failure(Error::FromWin32(
+            ErrorCode::RuntimeFailure,
+            ErrorCategory::Runtime,
+            ::GetLastError(),
+            "Unable to resolve current process executable path"));
+
+    std::filesystem::path path(pathBuffer);
+    const auto filename = path.filename().wstring();
+
+    Process_Info info{};
+    info.pid = ::GetCurrentProcessId();
+    info.executableName = WideToUtf8(filename.c_str());
+    info.executablePath = std::move(path);
+    info.architecture = DetectArchitecture(::GetCurrentProcess());
+    info.running = true;
+
+    if (!info.Valid())
+        return Result<Process_Info>::Failure(Error(
+            ErrorCode::RuntimeFailure,
+            ErrorCategory::Runtime,
+            "Current process information is incomplete"));
+
+    return Result<Process_Info>::Success(std::move(info));
+}
+
 Result<Process_Info> Process_Manager::Inspect(std::uint32_t pid, std::string executableName) const
 {
     HANDLE process = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
