@@ -27,6 +27,25 @@ if(WIN32)
 
     add_executable(Devilz_Den_Smoke_Test tests/Runtime_Smoke_Test.cpp)
     target_compile_definitions(Devilz_Den_Smoke_Test PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+
+    set(DEVILZ_RUNTIME_DIR "${CMAKE_BINARY_DIR}/runtime/$<CONFIG>")
+    add_custom_command(TARGET Devilz_Den POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${DEVILZ_RUNTIME_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Devilz_Den>"
+            "${DEVILZ_RUNTIME_DIR}/Devilz_Den.dll"
+        COMMENT "Copying Devilz_Den.dll to injectable runtime directory"
+        VERBATIM
+    )
+
+    if(MSVC)
+        add_custom_command(TARGET Devilz_Den POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_PDB_FILE:Devilz_Den>"
+                "${DEVILZ_RUNTIME_DIR}/Devilz_Den.pdb"
+            VERBATIM
+        )
+    endif()
 endif()
 
 if(MSVC)
