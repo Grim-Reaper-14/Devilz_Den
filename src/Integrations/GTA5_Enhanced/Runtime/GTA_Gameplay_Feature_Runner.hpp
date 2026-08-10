@@ -30,6 +30,12 @@ private:
     void TickMenuInputSuppression() noexcept;
     void TickGodMode() noexcept;
     void TickNeverWanted() noexcept;
+    void TickSuperJump() noexcept;
+    void TickInfiniteOxygen() noexcept;
+    void TickNoRagdoll() noexcept;
+    void TickKeepPlayerClean() noexcept;
+    void TickInfiniteAmmo() noexcept;
+    void TickWeaponActions() noexcept;
     void TickTeleportToWaypoint() noexcept;
     void TickPresetTeleport() noexcept;
     void BeginTeleportToWaypoint() noexcept;
@@ -40,6 +46,9 @@ private:
     Backend::LoggerService* m_logger = nullptr;
     bool m_godModeApplied = false;
     bool m_neverWantedApplied = false;
+    bool m_infiniteOxygenApplied = false;
+    bool m_noRagdollApplied = false;
+    bool m_infiniteAmmoApplied = false;
 
     Teleport_Phase m_teleportPhase = Teleport_Phase::Idle;
     GTA_Native_Script_Vector m_waypoint{};
