@@ -31,7 +31,9 @@ private:
     void TickGodMode() noexcept;
     void TickNeverWanted() noexcept;
     void TickTeleportToWaypoint() noexcept;
+    void TickPresetTeleport() noexcept;
     void BeginTeleportToWaypoint() noexcept;
+    [[nodiscard]] bool TeleportPlayer(float x, float y, float z) noexcept;
     void FinishTeleport(bool success, const char* detail) noexcept;
 
     GTA_Native_Manager* m_natives = nullptr;
