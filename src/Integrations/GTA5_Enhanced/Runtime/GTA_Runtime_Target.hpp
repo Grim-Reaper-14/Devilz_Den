@@ -21,6 +21,7 @@ enum class GTA_Runtime_Target_State : std::uint8_t
     Unknown,
     Missing,
     Located,
+    StructurallyValidated,
     Validated,
     Failed
 };
