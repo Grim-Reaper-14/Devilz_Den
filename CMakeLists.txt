@@ -43,6 +43,7 @@ if(WIN32)
 
     add_executable(Devilz_Den_Target_Semantic_Validator_Test
         tests/GTA_Target_Semantic_Validator_Test.cpp
+        src/Integrations/GTA5_Enhanced/Runtime/GTA_Build_Registry.cpp
     )
     target_include_directories(Devilz_Den_Target_Semantic_Validator_Test PRIVATE src)
     target_compile_definitions(Devilz_Den_Target_Semantic_Validator_Test PRIVATE
