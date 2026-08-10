@@ -115,6 +115,15 @@ bool Runtime_Manager::Start(const std::filesystem::path& logPath)
             LogGTAStatus(refreshed.Value());
             InitializeNativeManager(refreshed.Value());
             InitializeGameThreadBridge(refreshed.Value());
+
+            if (refreshed.Value().state == GTA_Module_Manager_State::RuntimeReady) {
+                m_frontend.Start(refreshed.Value(), m_logger);
+            } else {
+                m_logger.Log(
+                    Backend::LogLevel::Warning,
+                    "Frontend bootstrap skipped: GTA runtime is not RuntimeReady",
+                    "GTA5_Enhanced.Frontend");
+            }
         }
 
         m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL bootstrap completed", "Runtime");
@@ -139,6 +148,7 @@ void Runtime_Manager::Stop() noexcept
         return;
 
     try {
+        m_frontend.Stop();
         m_gameThreadBridge.Uninstall();
         m_natives.Reset();
         m_threads.Stop();
