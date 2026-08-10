@@ -15,7 +15,7 @@ enum class GTA_Native_Id : std::uint8_t
     SetPlayerWantedLevel, SetPlayerWantedLevelNow, SetMaxWantedLevel,
     SetSuperJumpThisFrame, SetPedMaxTimeUnderwater, SetPedCanRagdoll,
     ClearPedBloodDamage, ClearPedWetness, ClearPedEnvDirt, ResetPedVisibleDamage,
-    SetPedInfiniteAmmo, GiveWeaponToPed, SetPedAmmo, GetVehiclePedIsIn,
+    SetPedInfiniteAmmo, GiveWeaponToPed, SetPedAmmo, GetVehiclePedIsIn, IsPedInAnyVehicle,
     IsWaypointActive, GetWaypointBlipEnumId, GetClosestBlipInfoId, GetBlipCoords,
     RequestCollisionAtCoord, GetGroundZFor3DCoord, GetWaterHeight, GetApproxHeightForPoint,
     SetEntityCoordsNoOffset, DisableAllControlActions,
@@ -41,7 +41,7 @@ class GTA_Native_Registry final
 {
 public:
     static constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
-    static constexpr std::array<GTA_Native_Id, 58> NamedIds{
+    static constexpr std::array<GTA_Native_Id, 59> NamedIds{
         GTA_Native_Id::GetGameTimer, GTA_Native_Id::GetHashKey, GTA_Native_Id::PlayerPedId,
         GTA_Native_Id::SetEntityInvincible, GTA_Native_Id::PlayerId,
         GTA_Native_Id::SetPlayerWantedLevel, GTA_Native_Id::SetPlayerWantedLevelNow,
@@ -51,6 +51,7 @@ public:
         GTA_Native_Id::ClearPedEnvDirt, GTA_Native_Id::ResetPedVisibleDamage,
         GTA_Native_Id::SetPedInfiniteAmmo, GTA_Native_Id::GiveWeaponToPed,
         GTA_Native_Id::SetPedAmmo, GTA_Native_Id::GetVehiclePedIsIn,
+        GTA_Native_Id::IsPedInAnyVehicle,
         GTA_Native_Id::IsWaypointActive, GTA_Native_Id::GetWaypointBlipEnumId,
         GTA_Native_Id::GetClosestBlipInfoId, GTA_Native_Id::GetBlipCoords,
         GTA_Native_Id::RequestCollisionAtCoord, GTA_Native_Id::GetGroundZFor3DCoord,
@@ -99,6 +100,7 @@ public:
         case GTA_Native_Id::GiveWeaponToPed: return GTA_Native_Definition{id, "GIVE_WEAPON_TO_PED", 0xBF0FD6E56C964FCBULL, 0xB41DEC3AAC1AA107ULL};
         case GTA_Native_Id::SetPedAmmo: return GTA_Native_Definition{id, "SET_PED_AMMO", 0x14E56BC5B5DB6A19ULL, 0x45FC566246B3511BULL};
         case GTA_Native_Id::GetVehiclePedIsIn: return GTA_Native_Definition{id, "GET_VEHICLE_PED_IS_IN", 0x9A9112A0FE9A4713ULL, 0x6EF03BE64E058E2FULL};
+        case GTA_Native_Id::IsPedInAnyVehicle: return GTA_Native_Definition{id, "IS_PED_IN_ANY_VEHICLE", 0x997ABD671D25CA0BULL, 0x7F420695E3F776FBULL};
         case GTA_Native_Id::IsWaypointActive: return GTA_Native_Definition{id, "IS_WAYPOINT_ACTIVE", 0x1DD1F58F493F1DA5ULL, 0x02213DC34A224533ULL};
         case GTA_Native_Id::GetWaypointBlipEnumId: return GTA_Native_Definition{id, "GET_WAYPOINT_BLIP_ENUM_ID", 0x186E5D252FA50E7DULL, 0x2A3612A4B836469EULL};
         case GTA_Native_Id::GetClosestBlipInfoId: return GTA_Native_Definition{id, "GET_CLOSEST_BLIP_INFO_ID", 0xD484BF71050CA1EEULL, 0xB981254932E1095EULL};
