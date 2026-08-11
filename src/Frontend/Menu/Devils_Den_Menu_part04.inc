@@ -14,7 +14,7 @@ void Devils_Den_Menu::DrawTeleportPage()
     const auto status = gameplay.TeleportStatus();
     const bool busy = status == GTA_Teleport_Waypoint_Status::Queued || status == GTA_Teleport_Waypoint_Status::Resolving;
     ImGui::BeginDisabled(busy);
-    if (ImGui::Button("TELEPORT TO WAYPOINT", ImVec2(240.0F, 44.0F)))) gameplay.RequestTeleportToWaypoint();
+    if (ImGui::Button("TELEPORT TO WAYPOINT", ImVec2(240.0F, 44.0F))) gameplay.RequestTeleportToWaypoint();
     ImGui::EndDisabled();
     ImGui::TextColored(Bronze, "STATUS");
     ImGui::SameLine();
