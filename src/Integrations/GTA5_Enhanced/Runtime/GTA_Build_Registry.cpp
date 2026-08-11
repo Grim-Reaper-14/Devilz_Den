@@ -47,6 +47,7 @@ GTA_Build_Registry::GTA_Build_Registry()
         {GTA_Runtime_Target_Id::ScriptThreads, GTA_Runtime_Target_State::Unknown, true, "ScriptThreads", "Required game-thread script context locator"},
         {GTA_Runtime_Target_Id::RunScriptThreads, GTA_Runtime_Target_State::Unknown, true, "RunScriptThreads", "Required game-thread execution bridge entry"},
         {GTA_Runtime_Target_Id::InitNativeTables, GTA_Runtime_Target_State::Unknown, true, "InitNativeTables", "Required Enhanced native bootstrap entry"},
+        {GTA_Runtime_Target_Id::ScriptVM, GTA_Runtime_Target_State::Unknown, false, "ScriptVM", "Optional script bytecode execution capability used by network session transitions"},
         {GTA_Runtime_Target_Id::NativeTable, GTA_Runtime_Target_State::Unknown, false, "NativeTable", "Standalone native table is not required by the Enhanced bootstrap path"}
     };
     Register(std::move(current));
