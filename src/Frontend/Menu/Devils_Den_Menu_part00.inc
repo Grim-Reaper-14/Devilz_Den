@@ -1,6 +1,9 @@
 #include "Devils_Den_Menu.hpp"
 
 #include "Devils_Den_Config.hpp"
+#include "Frontend/Menu/Lua/Lua_Page.hpp"
+#include "Frontend/Menu/Network/Network_Page.hpp"
+#include "Frontend/Menu/Themes/Menu_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Locations.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Catalog.hpp"
@@ -147,14 +150,7 @@ bool ContainsInsensitive(std::string_view haystack, std::string_view needle)
 
 void MedievalDivider()
 {
-    const auto start = ImGui::GetCursorScreenPos();
-    const auto width = ImGui::GetContentRegionAvail().x;
-    auto* draw = ImGui::GetWindowDrawList();
-    draw->AddLine(ImVec2(start.x, start.y + 4.0F), ImVec2(start.x + width, start.y + 4.0F),
-        ImGui::GetColorU32(ImVec4(0.42F, 0.08F, 0.05F, 0.95F)), 2.0F);
-    draw->AddCircleFilled(ImVec2(start.x + width * 0.5F, start.y + 4.0F), 4.0F,
-        ImGui::GetColorU32(EmberRed));
-    ImGui::Dummy(ImVec2(0.0F, 11.0F));
+    Themes::Menu_Theme_Manager::Instance().DrawDivider();
 }
 }
 
@@ -162,6 +158,8 @@ void Devils_Den_Menu::Draw(bool& open)
 {
     if (!open)
         return;
+
+    Themes::Menu_Theme_Manager::Instance().Apply();
 
     ImGui::SetNextWindowSize(ImVec2(980.0F, 680.0F), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.985F);
@@ -188,6 +186,8 @@ void Devils_Den_Menu::Draw(bool& open)
         case Page::Vehicle: DrawVehiclePage(); break;
         case Page::Teleport: DrawTeleportPage(); break;
         case Page::World: DrawPlaceholderPage("WORLD", "World and environment controls will live here."); break;
+        case Page::Network: Network::DrawNetworkPage(); break;
+        case Page::Lua: Lua::DrawLuaPage(); break;
         case Page::Settings: DrawSettingsPage(); break;
         }
     }
@@ -197,54 +197,27 @@ void Devils_Den_Menu::Draw(bool& open)
 
 void Devils_Den_Menu::DrawBanner()
 {
-    const auto origin = ImGui::GetCursorScreenPos();
-    const auto width = ImGui::GetContentRegionAvail().x;
-    constexpr float height = 94.0F;
-    auto* draw = ImGui::GetWindowDrawList();
-
-    draw->AddRectFilled(origin, ImVec2(origin.x + width, origin.y + height),
-        ImGui::GetColorU32(ImVec4(0.055F, 0.020F, 0.018F, 1.00F)), 2.0F);
-    draw->AddRect(origin, ImVec2(origin.x + width, origin.y + height),
-        ImGui::GetColorU32(ImVec4(0.48F, 0.09F, 0.055F, 1.00F)), 2.0F, 0, 2.0F);
-
-    for (int i = 0; i < 5; ++i) {
-        const float inset = 7.0F + static_cast<float>(i) * 6.0F;
-        draw->AddLine(ImVec2(origin.x + inset, origin.y + 14.0F),
-            ImVec2(origin.x + inset + 24.0F, origin.y + height - 14.0F),
-            ImGui::GetColorU32(ImVec4(0.22F, 0.055F, 0.038F, 0.45F)), 1.0F);
-        draw->AddLine(ImVec2(origin.x + width - inset, origin.y + 14.0F),
-            ImVec2(origin.x + width - inset - 24.0F, origin.y + height - 14.0F),
-            ImGui::GetColorU32(ImVec4(0.22F, 0.055F, 0.038F, 0.45F)), 1.0F);
-    }
-
-    const char* title = "DEVILS DEN MENU";
-    const auto titleSize = ImGui::CalcTextSize(title);
-    const auto titlePos = ImVec2(origin.x + (width - titleSize.x) * 0.5F, origin.y + 27.0F);
-    draw->AddText(ImVec2(titlePos.x + 2.0F, titlePos.y + 2.0F),
-        ImGui::GetColorU32(ImVec4(0, 0, 0, 0.85F)), title);
-    draw->AddText(titlePos, ImGui::GetColorU32(EmberRed), title);
-
-    const char* subtitle = "GTA V ENHANCED  |  RUNTIME READY";
-    const auto subtitleSize = ImGui::CalcTextSize(subtitle);
-    draw->AddText(ImVec2(origin.x + (width - subtitleSize.x) * 0.5F, origin.y + 56.0F),
-        ImGui::GetColorU32(Bronze), subtitle);
-    ImGui::Dummy(ImVec2(width, height));
+    Themes::Menu_Theme_Manager::Instance().DrawHeader(
+        "DEVIL'S DEN MENU",
+        "GTA V ENHANCED  |  RUNTIME READY");
 }
 
 void Devils_Den_Menu::DrawNavigation()
 {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, DeepStone);
-    ImGui::TextColored(Bronze, "CATEGORIES");
+    const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, palette.deepStone);
+    ImGui::TextColored(palette.bronze, "CATEGORIES");
     MedievalDivider();
 
     struct NavigationEntry { const char* label; Page page; };
     constexpr std::array entries{
         NavigationEntry{"SELF", Page::Self}, NavigationEntry{"WEAPONS", Page::Weapons},
         NavigationEntry{"VEHICLE", Page::Vehicle}, NavigationEntry{"TELEPORT", Page::Teleport},
-        NavigationEntry{"WORLD", Page::World}, NavigationEntry{"SETTINGS", Page::Settings}
+        NavigationEntry{"WORLD", Page::World}, NavigationEntry{"NETWORK", Page::Network},
+        NavigationEntry{"LUA", Page::Lua}, NavigationEntry{"SETTINGS", Page::Settings}
     };
 
     for (const auto& entry : entries) {
         const bool selected = m_page == entry.page;
-        ImGui::PushStyleColor(ImGuiCol_Button, selected ? ImVec4(0.38F, 0.055F, 0.035F, 1.00F) : Iron);
+        ImGui::PushStyleColor(ImGuiCol_Button, selected ? ImVec4(0.38F, 0.055F, 0.035F, 1.00F) : palette.iron);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
