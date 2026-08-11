@@ -44,6 +44,8 @@ public:
     [[nodiscard]] static std::vector<GTA_Vehicle_Saved_Build> LoadAll();
     [[nodiscard]] static bool Save(const GTA_Vehicle_Saved_Build& build, std::string* error = nullptr);
     [[nodiscard]] static bool Remove(const GTA_Vehicle_Saved_Build& build, std::string* error = nullptr);
-    static void QueueApply(const GTA_Vehicle_Saved_Build& build, GTA_Vehicle_State& state) noexcept;
+    [[nodiscard]] static std::vector<GTA_Vehicle_Forge_Command> BuildCommands(
+        const GTA_Vehicle_Saved_Build& build);
+    static void QueueApply(const GTA_Vehicle_Saved_Build& build, GTA_Vehicle_State& state);
 };
 }
