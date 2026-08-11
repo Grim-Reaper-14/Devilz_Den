@@ -20,7 +20,7 @@ enum class GTA_Native_Id : std::uint8_t
     RequestCollisionAtCoord, GetGroundZFor3DCoord, GetWaterHeight, GetApproxHeightForPoint,
     SetEntityCoordsNoOffset, DisableAllControlActions,
     IsModelInCdimage, RequestModel, HasModelLoaded, SetModelAsNoLongerNeeded,
-    GetEntityCoords, GetEntityHeading, GetEntityModel, CreateVehicle, SetPedIntoVehicle,
+    GetEntityCoords, GetEntityHeading, DoesEntityExist, GetEntityModel, CreateVehicle, SetPedIntoVehicle,
     SetVehicleOnGroundProperly, SetVehicleEngineOn, SetVehicleDirtLevel,
     SetVehicleFixed, SetVehicleDeformationFixed, SetVehicleEngineHealth, SetVehicleBodyHealth,
     GetDisplayNameFromVehicleModel, GetMakeNameFromVehicleModel, GetVehicleClassFromName,
@@ -45,7 +45,7 @@ class GTA_Native_Registry final
 {
 public:
     static constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
-    static constexpr std::array<GTA_Native_Id, 71> NamedIds{
+    static constexpr std::array<GTA_Native_Id, 72> NamedIds{
         GTA_Native_Id::GetGameTimer, GTA_Native_Id::GetHashKey, GTA_Native_Id::PlayerPedId,
         GTA_Native_Id::SetEntityInvincible, GTA_Native_Id::PlayerId,
         GTA_Native_Id::SetPlayerWantedLevel, GTA_Native_Id::SetPlayerWantedLevelNow,
@@ -63,8 +63,8 @@ public:
         GTA_Native_Id::SetEntityCoordsNoOffset, GTA_Native_Id::DisableAllControlActions,
         GTA_Native_Id::IsModelInCdimage, GTA_Native_Id::RequestModel,
         GTA_Native_Id::HasModelLoaded, GTA_Native_Id::SetModelAsNoLongerNeeded,
-        GTA_Native_Id::GetEntityCoords, GTA_Native_Id::GetEntityHeading, GTA_Native_Id::GetEntityModel,
-        GTA_Native_Id::CreateVehicle, GTA_Native_Id::SetPedIntoVehicle,
+        GTA_Native_Id::GetEntityCoords, GTA_Native_Id::GetEntityHeading, GTA_Native_Id::DoesEntityExist,
+        GTA_Native_Id::GetEntityModel, GTA_Native_Id::CreateVehicle, GTA_Native_Id::SetPedIntoVehicle,
         GTA_Native_Id::SetVehicleOnGroundProperly, GTA_Native_Id::SetVehicleEngineOn,
         GTA_Native_Id::SetVehicleDirtLevel, GTA_Native_Id::SetVehicleFixed,
         GTA_Native_Id::SetVehicleDeformationFixed, GTA_Native_Id::SetVehicleEngineHealth,
@@ -126,6 +126,7 @@ public:
         case GTA_Native_Id::SetModelAsNoLongerNeeded: return GTA_Native_Definition{id, "SET_MODEL_AS_NO_LONGER_NEEDED", 0xE532F5D78798DAABULL, 0x55098D9E9AD58806ULL};
         case GTA_Native_Id::GetEntityCoords: return GTA_Native_Definition{id, "GET_ENTITY_COORDS", 0x3FEF770D40960D5AULL, 0xD1A6A821F5AC81DBULL};
         case GTA_Native_Id::GetEntityHeading: return GTA_Native_Definition{id, "GET_ENTITY_HEADING", 0xE83D4F9BA2A38914ULL, 0xCFC0C995455A6204ULL};
+        case GTA_Native_Id::DoesEntityExist: return GTA_Native_Definition{id, "DOES_ENTITY_EXIST", 0x7239B21A38F536BAULL, 0xFC8BFE4B41177C22ULL};
         case GTA_Native_Id::GetEntityModel: return GTA_Native_Definition{id, "GET_ENTITY_MODEL", 0x9F47B058362C84B5ULL, 0x4B423FAA24E8ABF0ULL};
         case GTA_Native_Id::CreateVehicle: return GTA_Native_Definition{id, "CREATE_VEHICLE", 0xAF35D0D2583051B0ULL, 0x5779387E956077A6ULL};
         case GTA_Native_Id::SetPedIntoVehicle: return GTA_Native_Definition{id, "SET_PED_INTO_VEHICLE", 0xF75B0D629E1C063DULL, 0x73CAFD2038E812B3ULL};
