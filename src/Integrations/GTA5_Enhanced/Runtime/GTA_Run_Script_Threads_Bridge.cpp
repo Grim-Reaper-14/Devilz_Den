@@ -1,6 +1,7 @@
 #include "GTA_Run_Script_Threads_Bridge.hpp"
 
 #include "GTA_Gameplay_State.hpp"
+#include "GTA_Vehicle_Forge_Extensions.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
 #include <intrin.h>
@@ -324,6 +325,7 @@ void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
     tls->currentScriptThread = scriptThread;
     tls->scriptThreadActive = true;
     m_gameplay.Tick();
+    TickVehicleForgeExtensions(*m_natives);
     tls->scriptThreadActive = previousActive;
     tls->currentScriptThread = previousThread;
 }

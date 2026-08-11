@@ -2,6 +2,7 @@
 
 #include "GTA_Vehicle_State.hpp"
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -20,15 +21,41 @@ struct GTA_Vehicle_Saved_Mod
 
 struct GTA_Vehicle_Saved_Build
 {
-    int version = 1;
+    int version = 2;
     std::string name;
     std::uint32_t modelHash = 0;
     std::string modelName;
     std::string displayName;
     std::string makeName;
+
     int wheelType = -1;
+    std::string wheelTypeName;
     int windowTint = -1;
+    std::string windowTintName;
     int plateStyle = -1;
+    std::string plateStyleName;
+    std::string plateText;
+
+    int primaryPaintType = -1;
+    std::string primaryPaintTypeName;
+    int primaryColor = -1;
+    std::string primaryColorName;
+    int secondaryPaintType = -1;
+    std::string secondaryPaintTypeName;
+    int secondaryColor = -1;
+    std::string secondaryColorName;
+    int pearlescentColor = -1;
+    std::string pearlescentColorName;
+    int wheelColor = -1;
+    std::string wheelColorName;
+    bool primaryCustom = false;
+    bool secondaryCustom = false;
+    std::array<int, 3> primaryRgb{0, 0, 0};
+    std::array<int, 3> secondaryRgb{0, 0, 0};
+
+    bool turboEnabled = false;
+    bool xenonEnabled = false;
+
     std::vector<GTA_Vehicle_Saved_Mod> mods;
     std::filesystem::path sourcePath;
 };

@@ -1,5 +1,7 @@
 #include "GTA_Vehicle_Saved_Builds.hpp"
 
+#include "GTA_Vehicle_Customization_Data.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -123,6 +125,17 @@ bool ReadBool(std::string_view text, std::string_view key, bool& output)
     return false;
 }
 
+std::string NameOf(const auto& values, int value)
+{
+    const auto name = GTA_Vehicle_Value_Name(values, value, "Unknown");
+    return std::string(name);
+}
+
+std::string PaintName(int type, int color)
+{
+    return std::string(GTA_Vehicle_Paint_Color_Name(type, color, "Unknown"));
+}
+
 bool ParseBuild(std::string_view text, GTA_Vehicle_Saved_Build& build)
 {
     if (!ReadString(text, "name", build.name))
@@ -133,8 +146,35 @@ bool ParseBuild(std::string_view text, GTA_Vehicle_Saved_Build& build)
     (void)ReadString(text, "displayName", build.displayName);
     (void)ReadString(text, "makeName", build.makeName);
     (void)ReadInteger(text, "wheelType", build.wheelType);
+    (void)ReadString(text, "wheelTypeName", build.wheelTypeName);
     (void)ReadInteger(text, "windowTint", build.windowTint);
+    (void)ReadString(text, "windowTintName", build.windowTintName);
     (void)ReadInteger(text, "plateStyle", build.plateStyle);
+    (void)ReadString(text, "plateStyleName", build.plateStyleName);
+    (void)ReadString(text, "plateText", build.plateText);
+
+    (void)ReadInteger(text, "primaryPaintType", build.primaryPaintType);
+    (void)ReadString(text, "primaryPaintTypeName", build.primaryPaintTypeName);
+    (void)ReadInteger(text, "primaryColor", build.primaryColor);
+    (void)ReadString(text, "primaryColorName", build.primaryColorName);
+    (void)ReadInteger(text, "secondaryPaintType", build.secondaryPaintType);
+    (void)ReadString(text, "secondaryPaintTypeName", build.secondaryPaintTypeName);
+    (void)ReadInteger(text, "secondaryColor", build.secondaryColor);
+    (void)ReadString(text, "secondaryColorName", build.secondaryColorName);
+    (void)ReadInteger(text, "pearlescentColor", build.pearlescentColor);
+    (void)ReadString(text, "pearlescentColorName", build.pearlescentColorName);
+    (void)ReadInteger(text, "wheelColor", build.wheelColor);
+    (void)ReadString(text, "wheelColorName", build.wheelColorName);
+    (void)ReadBool(text, "primaryCustom", build.primaryCustom);
+    (void)ReadBool(text, "secondaryCustom", build.secondaryCustom);
+    (void)ReadInteger(text, "primaryR", build.primaryRgb[0]);
+    (void)ReadInteger(text, "primaryG", build.primaryRgb[1]);
+    (void)ReadInteger(text, "primaryB", build.primaryRgb[2]);
+    (void)ReadInteger(text, "secondaryR", build.secondaryRgb[0]);
+    (void)ReadInteger(text, "secondaryG", build.secondaryRgb[1]);
+    (void)ReadInteger(text, "secondaryB", build.secondaryRgb[2]);
+    (void)ReadBool(text, "turboEnabled", build.turboEnabled);
+    (void)ReadBool(text, "xenonEnabled", build.xenonEnabled);
 
     const auto modsKey = text.find("\"mods\"");
     if (modsKey == std::string_view::npos)
@@ -183,8 +223,31 @@ GTA_Vehicle_Saved_Build GTA_Vehicle_Saved_Builds::Capture(
     build.name = std::move(name);
     build.modelHash = snapshot.modelHash;
     build.wheelType = snapshot.wheelType;
+    build.wheelTypeName = NameOf(GTA_Vehicle_Wheel_Types, snapshot.wheelType);
     build.windowTint = snapshot.windowTint;
+    build.windowTintName = NameOf(GTA_Vehicle_Window_Tints, snapshot.windowTint);
     build.plateStyle = snapshot.plateStyle;
+    build.plateStyleName = NameOf(GTA_Vehicle_Plate_Styles, snapshot.plateStyle);
+    build.plateText = snapshot.plateText;
+
+    build.primaryPaintType = snapshot.primaryPaintType;
+    build.primaryPaintTypeName = NameOf(GTA_Vehicle_Paint_Types, snapshot.primaryPaintType);
+    build.primaryColor = snapshot.primaryColor;
+    build.primaryColorName = PaintName(snapshot.primaryPaintType, snapshot.primaryColor);
+    build.secondaryPaintType = snapshot.secondaryPaintType;
+    build.secondaryPaintTypeName = NameOf(GTA_Vehicle_Paint_Types, snapshot.secondaryPaintType);
+    build.secondaryColor = snapshot.secondaryColor;
+    build.secondaryColorName = PaintName(snapshot.secondaryPaintType, snapshot.secondaryColor);
+    build.pearlescentColor = snapshot.pearlescentColor;
+    build.pearlescentColorName = PaintName(0, snapshot.pearlescentColor);
+    build.wheelColor = snapshot.wheelColor;
+    build.wheelColorName = PaintName(0, snapshot.wheelColor);
+    build.primaryCustom = snapshot.primaryCustom;
+    build.secondaryCustom = snapshot.secondaryCustom;
+    build.primaryRgb = snapshot.primaryRgb;
+    build.secondaryRgb = snapshot.secondaryRgb;
+    build.turboEnabled = snapshot.turboEnabled;
+    build.xenonEnabled = snapshot.xenonEnabled;
 
     if (metadata) {
         build.modelName = metadata->modelName;
@@ -198,6 +261,8 @@ GTA_Vehicle_Saved_Build GTA_Vehicle_Saved_Builds::Capture(
         GTA_Vehicle_Saved_Mod mod{};
         mod.slot = category.slot;
         mod.index = category.installedIndex;
+        mod.customTires = category.slot == 23 ? snapshot.frontCustomTires :
+                          category.slot == 24 ? snapshot.rearCustomTires : false;
         mod.categoryName = category.name;
         const auto selected = std::find_if(category.options.begin(), category.options.end(),
             [&category](const GTA_Vehicle_Forge_Option& option) {
@@ -272,8 +337,34 @@ bool GTA_Vehicle_Saved_Builds::Save(const GTA_Vehicle_Saved_Build& build, std::s
     stream << "  \"displayName\": \"" << EscapeJson(build.displayName) << "\",\n";
     stream << "  \"makeName\": \"" << EscapeJson(build.makeName) << "\",\n";
     stream << "  \"wheelType\": " << build.wheelType << ",\n";
+    stream << "  \"wheelTypeName\": \"" << EscapeJson(build.wheelTypeName) << "\",\n";
     stream << "  \"windowTint\": " << build.windowTint << ",\n";
+    stream << "  \"windowTintName\": \"" << EscapeJson(build.windowTintName) << "\",\n";
     stream << "  \"plateStyle\": " << build.plateStyle << ",\n";
+    stream << "  \"plateStyleName\": \"" << EscapeJson(build.plateStyleName) << "\",\n";
+    stream << "  \"plateText\": \"" << EscapeJson(build.plateText) << "\",\n";
+    stream << "  \"primaryPaintType\": " << build.primaryPaintType << ",\n";
+    stream << "  \"primaryPaintTypeName\": \"" << EscapeJson(build.primaryPaintTypeName) << "\",\n";
+    stream << "  \"primaryColor\": " << build.primaryColor << ",\n";
+    stream << "  \"primaryColorName\": \"" << EscapeJson(build.primaryColorName) << "\",\n";
+    stream << "  \"secondaryPaintType\": " << build.secondaryPaintType << ",\n";
+    stream << "  \"secondaryPaintTypeName\": \"" << EscapeJson(build.secondaryPaintTypeName) << "\",\n";
+    stream << "  \"secondaryColor\": " << build.secondaryColor << ",\n";
+    stream << "  \"secondaryColorName\": \"" << EscapeJson(build.secondaryColorName) << "\",\n";
+    stream << "  \"pearlescentColor\": " << build.pearlescentColor << ",\n";
+    stream << "  \"pearlescentColorName\": \"" << EscapeJson(build.pearlescentColorName) << "\",\n";
+    stream << "  \"wheelColor\": " << build.wheelColor << ",\n";
+    stream << "  \"wheelColorName\": \"" << EscapeJson(build.wheelColorName) << "\",\n";
+    stream << "  \"primaryCustom\": " << (build.primaryCustom ? "true" : "false") << ",\n";
+    stream << "  \"primaryR\": " << build.primaryRgb[0] << ",\n";
+    stream << "  \"primaryG\": " << build.primaryRgb[1] << ",\n";
+    stream << "  \"primaryB\": " << build.primaryRgb[2] << ",\n";
+    stream << "  \"secondaryCustom\": " << (build.secondaryCustom ? "true" : "false") << ",\n";
+    stream << "  \"secondaryR\": " << build.secondaryRgb[0] << ",\n";
+    stream << "  \"secondaryG\": " << build.secondaryRgb[1] << ",\n";
+    stream << "  \"secondaryB\": " << build.secondaryRgb[2] << ",\n";
+    stream << "  \"turboEnabled\": " << (build.turboEnabled ? "true" : "false") << ",\n";
+    stream << "  \"xenonEnabled\": " << (build.xenonEnabled ? "true" : "false") << ",\n";
     stream << "  \"mods\": [\n";
     for (std::size_t i = 0; i < build.mods.size(); ++i) {
         const auto& mod = build.mods[i];
@@ -315,16 +406,52 @@ std::vector<GTA_Vehicle_Forge_Command> GTA_Vehicle_Saved_Builds::BuildCommands(
     const GTA_Vehicle_Saved_Build& build)
 {
     std::vector<GTA_Vehicle_Forge_Command> commands;
-    commands.reserve(build.mods.size() + 4U);
+    commands.reserve(build.mods.size() + 16U);
+
     if (build.wheelType >= 0)
-        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetWheelType, build.wheelType, 0, 0});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetWheelType, build.wheelType, 0, 0, {}});
+
+    if (build.primaryPaintType >= 0 && build.primaryColor >= 0) {
+        if (!build.primaryCustom)
+            commands.push_back({GTA_Vehicle_Forge_Command_Type::ClearCustomPrimary, 0, 0, 0, {}});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetPrimaryPaint,
+            build.primaryPaintType, build.primaryColor, build.pearlescentColor, {}});
+        if (build.primaryCustom)
+            commands.push_back({GTA_Vehicle_Forge_Command_Type::SetCustomPrimaryRgb,
+                build.primaryRgb[0], build.primaryRgb[1], build.primaryRgb[2], {}});
+    }
+
+    if (build.secondaryPaintType >= 0 && build.secondaryColor >= 0) {
+        if (!build.secondaryCustom)
+            commands.push_back({GTA_Vehicle_Forge_Command_Type::ClearCustomSecondary, 0, 0, 0, {}});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetSecondaryPaint,
+            build.secondaryPaintType, build.secondaryColor, 0, {}});
+        if (build.secondaryCustom)
+            commands.push_back({GTA_Vehicle_Forge_Command_Type::SetCustomSecondaryRgb,
+                build.secondaryRgb[0], build.secondaryRgb[1], build.secondaryRgb[2], {}});
+    }
+
+    if (build.pearlescentColor >= 0 || build.wheelColor >= 0)
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetExtraColours,
+            std::max(build.pearlescentColor, 0), std::max(build.wheelColor, 0), 0, {}});
+
     for (const auto& mod : build.mods)
-        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetMod, mod.slot, mod.index, mod.customTires ? 1 : 0});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetMod,
+            mod.slot, mod.index, mod.customTires ? 1 : 0, {}});
+
+    if (build.version >= 2) {
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::ToggleMod, 18, build.turboEnabled ? 1 : 0, 0, {}});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::ToggleMod, 22, build.xenonEnabled ? 1 : 0, 0, {}});
+    }
+
     if (build.windowTint >= 0)
-        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetWindowTint, build.windowTint, 0, 0});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetWindowTint, build.windowTint, 0, 0, {}});
     if (build.plateStyle >= 0)
-        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetPlateStyle, build.plateStyle, 0, 0});
-    commands.push_back({GTA_Vehicle_Forge_Command_Type::RepairVehicle, 0, 0, 0});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetPlateStyle, build.plateStyle, 0, 0, {}});
+    if (!build.plateText.empty())
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetPlateText, 0, 0, 0, build.plateText.substr(0, 8)});
+
+    commands.push_back({GTA_Vehicle_Forge_Command_Type::RepairVehicle, 0, 0, 0, {}});
     return commands;
 }
 

@@ -59,6 +59,7 @@ private:
     bool m_forgeCustomTires = false;
     int m_forgeWindowTint = 0;
     int m_forgePlateStyle = 0;
+    std::array<char, 9> m_forgePlateText{};
     int m_forgePrimaryPaintType = 1;
     int m_forgePrimaryColor = 0;
     int m_forgeSecondaryPaintType = 1;
