@@ -4,6 +4,7 @@
 #include "Backend/Logging/Sinks/DebuggerSink.hpp"
 #include "Backend/Logging/Sinks/FileSink.hpp"
 #include "Backend/Process/Process_Module_Manager.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Network_Session_Extension.hpp"
 
 #include <exception>
 #include <iomanip>
@@ -68,6 +69,13 @@ const char* CandidateKindName(GTA_Target_Candidate_Kind kind) noexcept
     case GTA_Target_Candidate_Kind::CodeSite: return "CodeSite";
     default: return "Unknown";
     }
+}
+
+bool TargetResolved(GTA_Runtime_Target_State state) noexcept
+{
+    return state == GTA_Runtime_Target_State::Located ||
+           state == GTA_Runtime_Target_State::StructurallyValidated ||
+           state == GTA_Runtime_Target_State::Validated;
 }
 
 std::string Hex(std::uint64_t value)
@@ -213,6 +221,11 @@ void Runtime_Manager::InitializeNativeManager(
 void Runtime_Manager::InitializeGameThreadBridge(
     const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
 {
+    using Integrations::GTA5_Enhanced::ConfigureNetworkSessionExtension;
+    using Integrations::GTA5_Enhanced::ResetNetworkSessionExtension;
+
+    ResetNetworkSessionExtension();
+
     if (!m_natives.Ready() || !status.targetReport) {
         m_logger.Log(Backend::LogLevel::Warning,
                      "Game-thread native bridge unavailable: native manager or target report is not ready",
@@ -223,16 +236,25 @@ void Runtime_Manager::InitializeGameThreadBridge(
     std::uintptr_t runScriptThreads = 0;
     std::uintptr_t scriptThreadsStorage = 0;
     std::uintptr_t expectedDispatch = 0;
+    std::uintptr_t scriptGlobals = 0;
+    std::uintptr_t programTable = 0;
+    std::uintptr_t scriptVm = 0;
 
     for (const auto& target : status.targetReport->targets) {
-        if (target.status.state != GTA_Runtime_Target_State::Validated)
-            continue;
-
-        if (target.status.id == GTA_Runtime_Target_Id::RunScriptThreads)
+        if (target.status.id == GTA_Runtime_Target_Id::RunScriptThreads &&
+            target.status.state == GTA_Runtime_Target_State::Validated) {
             runScriptThreads = target.address;
-        else if (target.status.id == GTA_Runtime_Target_Id::ScriptThreads) {
+        } else if (target.status.id == GTA_Runtime_Target_Id::ScriptThreads &&
+                   target.status.state == GTA_Runtime_Target_State::Validated) {
             scriptThreadsStorage = target.address;
             expectedDispatch = target.evidence.objectDominantFirstQwordAddress;
+        } else if (TargetResolved(target.status.state)) {
+            if (target.status.id == GTA_Runtime_Target_Id::ScriptGlobals)
+                scriptGlobals = target.address;
+            else if (target.status.id == GTA_Runtime_Target_Id::ProgramTable)
+                programTable = target.address;
+            else if (target.status.id == GTA_Runtime_Target_Id::ScriptVM)
+                scriptVm = target.address;
         }
     }
 
@@ -252,7 +274,15 @@ void Runtime_Manager::InitializeGameThreadBridge(
         m_logger.Log(Backend::LogLevel::Warning,
                      "RunScriptThreads bridge installation failed closed",
                      "GTA5_Enhanced.Natives");
+        return;
     }
+
+    ConfigureNetworkSessionExtension(
+        scriptGlobals,
+        programTable,
+        scriptThreadsStorage,
+        scriptVm,
+        &m_logger);
 }
 
 void Runtime_Manager::LogGTAStatus(const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
