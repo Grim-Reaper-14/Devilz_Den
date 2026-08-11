@@ -3,6 +3,7 @@
 #include "Devils_Den_Config.hpp"
 #include "Frontend/Menu/Lua/Lua_Page.hpp"
 #include "Frontend/Menu/Network/Network_Page.hpp"
+#include "Frontend/Menu/Self/Self_Page.hpp"
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Locations.hpp"
@@ -181,7 +182,7 @@ void Devils_Den_Menu::Draw(bool& open)
 
     if (ImGui::BeginChild("##DevilsDenContent", ImVec2(0.0F, 0.0F), ImGuiChildFlags_Borders)) {
         switch (m_page) {
-        case Page::Self: DrawSelfPage(); break;
+        case Page::Self: Self::DrawSelfPage(); break;
         case Page::Weapons: DrawWeaponsPage(); break;
         case Page::Vehicle: DrawVehiclePage(); break;
         case Page::Teleport: DrawTeleportPage(); break;
