@@ -21,7 +21,7 @@ struct GTA_Vehicle_Saved_Mod
 
 struct GTA_Vehicle_Saved_Build
 {
-    int version = 2;
+    int version = 3;
     std::string name;
     std::uint32_t modelHash = 0;
     std::string modelName;
@@ -55,6 +55,20 @@ struct GTA_Vehicle_Saved_Build
 
     bool turboEnabled = false;
     bool xenonEnabled = false;
+    int xenonColor = -1;
+    bool tireSmokeEnabled = false;
+    std::array<int, 3> tyreSmokeRgb{255, 255, 255};
+    bool tyresCanBurst = true;
+    bool driftTyres = false;
+
+    std::array<bool, 4> neonEnabled{false, false, false, false};
+    std::array<int, 3> neonRgb{255, 255, 255};
+
+    std::array<bool, 15> extraExists{};
+    std::array<bool, 15> extrasEnabled{};
+    int livery = -1;
+    int interiorColor = -1;
+    int dashboardColor = -1;
 
     std::vector<GTA_Vehicle_Saved_Mod> mods;
     std::filesystem::path sourcePath;
