@@ -80,7 +80,6 @@ private:
     int m_vehicleSpawnHandle = 0;
     std::uint32_t m_vehicleStreamAttempts = 0;
     int m_forgeSnapshotVehicle = 0;
-    int m_lastOccupiedVehicle = 0;
     int m_vehicleGodModeAppliedVehicle = 0;
 
     Teleport_Phase m_teleportPhase = Teleport_Phase::Idle;
