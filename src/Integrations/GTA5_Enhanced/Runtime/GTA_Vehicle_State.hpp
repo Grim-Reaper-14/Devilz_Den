@@ -353,6 +353,8 @@ private:
     [[nodiscard]] static bool IsExtensionCommand(GTA_Vehicle_Forge_Command_Type type) noexcept
     {
         switch (type) {
+        case GTA_Vehicle_Forge_Command_Type::SetPrimaryPaint:
+        case GTA_Vehicle_Forge_Command_Type::SetSecondaryPaint:
         case GTA_Vehicle_Forge_Command_Type::SetPlateText:
         case GTA_Vehicle_Forge_Command_Type::ClearCustomPrimary:
         case GTA_Vehicle_Forge_Command_Type::ClearCustomSecondary:
