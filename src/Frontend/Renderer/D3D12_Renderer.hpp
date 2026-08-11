@@ -6,6 +6,7 @@
 #include <Windows.h>
 #include <d3d12.h>
 #include <wrl/client.h>
+#include <imgui.h>
 
 #include <atomic>
 #include <cstddef>
@@ -22,6 +23,34 @@ class LoggerService;
 
 namespace Devilz::Frontend
 {
+class Viewport_Devils_Den_Menu final
+{
+public:
+    void Draw(bool& open)
+    {
+        if (open && !m_wasOpen) {
+            if (const auto* viewport = ImGui::GetMainViewport()) {
+                constexpr float desiredMenuWidth = 1320.0F;
+                constexpr float topMargin = 12.0F;
+                float xOffset = (viewport->WorkSize.x - desiredMenuWidth) * 0.5F;
+                if (xOffset < topMargin)
+                    xOffset = topMargin;
+
+                ImGui::SetNextWindowPos(
+                    ImVec2{viewport->WorkPos.x + xOffset, viewport->WorkPos.y + topMargin},
+                    ImGuiCond_Always);
+            }
+        }
+
+        m_menu.Draw(open);
+        m_wasOpen = open;
+    }
+
+private:
+    Devils_Den_Menu m_menu;
+    bool m_wasOpen = false;
+};
+
 class D3D12_Renderer final
 {
 public:
@@ -85,7 +114,7 @@ private:
     UINT m_rtvDescriptorSize = 0;
     UINT m_srvDescriptorSize = 0;
     std::uint64_t m_nextFenceValue = 1;
-    Devils_Den_Menu m_menu;
+    Viewport_Devils_Den_Menu m_menu;
     bool m_win32BackendInitialized = false;
     bool m_dx12BackendInitialized = false;
     std::atomic_bool m_initialized{false};
