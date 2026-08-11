@@ -12,6 +12,18 @@ file(GLOB_RECURSE DEVILZ_DEN_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
+# Domain modules added during the menu refactor are also listed explicitly.
+# This avoids an MSBuild edge case where CONFIGURE_DEPENDS discovers a new
+# source during the build but the already-loaded .vcxproj reaches link before
+# that source is compiled. list(REMOVE_DUPLICATES) keeps clean fresh builds
+# from compiling these files twice when the glob already contains them.
+list(APPEND DEVILZ_DEN_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Lua/Lua_Page.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Network/Network_Page.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Themes/Menu_Theme.cpp"
+)
+list(REMOVE_DUPLICATES DEVILZ_DEN_SOURCES)
+
 # Keep the old executable harness in-tree for diagnostics, but it is not part
 # of the injected runtime DLL.
 list(FILTER DEVILZ_DEN_SOURCES EXCLUDE REGEX ".*/main\\.cpp$")
