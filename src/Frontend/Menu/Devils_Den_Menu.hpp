@@ -19,6 +19,8 @@ private:
         Vehicle,
         Teleport,
         World,
+        Network,
+        Lua,
         Settings
     };
 
