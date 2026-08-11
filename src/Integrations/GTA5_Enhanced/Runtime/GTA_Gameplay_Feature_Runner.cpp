@@ -22,6 +22,8 @@ namespace
 {
 constexpr std::uint32_t MaxGroundAttempts = 40;
 constexpr std::uint32_t MaxVehicleStreamAttempts = 180;
+constexpr std::size_t VehicleCatalogBatchSize = 8;
+constexpr std::size_t ForgeCommandBatchSize = 8;
 constexpr float GroundProbeZ = 1000.0F;
 constexpr float Pi = 3.14159265358979323846F;
 
@@ -307,33 +309,30 @@ void GTA_Gameplay_Feature_Runner::TickWeaponActions() noexcept
 
 void GTA_Gameplay_Feature_Runner::TickVehicleCatalog() noexcept
 {
-    if (m_vehicleCatalogIndex >= GTA_Vehicle_Model_Names.size())
-        return;
+    for (std::size_t processed = 0;
+         processed < VehicleCatalogBatchSize && m_vehicleCatalogIndex < GTA_Vehicle_Model_Names.size();
+         ++processed, ++m_vehicleCatalogIndex) {
+        const auto modelName = GTA_Vehicle_Model_Names[m_vehicleCatalogIndex];
+        const auto modelHash = GTA_Model_Hash(modelName);
+        const auto valid = m_natives->Invoke<bool>(GTA_Native_Id::IsModelInCdimage, modelHash);
+        if (!valid || !*valid)
+            continue;
 
-    const auto modelName = GTA_Vehicle_Model_Names[m_vehicleCatalogIndex];
-    const auto modelHash = GTA_Model_Hash(modelName);
-    const auto valid = m_natives->Invoke<bool>(GTA_Native_Id::IsModelInCdimage, modelHash);
-    if (!valid)
-        return;
-
-    ++m_vehicleCatalogIndex;
-    if (!*valid)
-        return;
-
-    GTA_Vehicle_Metadata metadata{};
-    metadata.modelHash = modelHash;
-    metadata.modelName = std::string(modelName);
-    metadata.displayName = metadata.modelName;
-    const auto displayLabel = m_natives->Invoke<const char*>(GTA_Native_Id::GetDisplayNameFromVehicleModel, modelHash);
-    if (displayLabel && *displayLabel)
-        metadata.displayName = CopyLocalized(*m_natives, *displayLabel, metadata.modelName);
-    const auto makeLabel = m_natives->Invoke<const char*>(GTA_Native_Id::GetMakeNameFromVehicleModel, modelHash);
-    if (makeLabel && *makeLabel)
-        metadata.makeName = CopyLocalized(*m_natives, *makeLabel, {});
-    const auto vehicleClass = m_natives->Invoke<int>(GTA_Native_Id::GetVehicleClassFromName, modelHash);
-    if (vehicleClass)
-        metadata.vehicleClass = *vehicleClass;
-    GTA_Vehicle_State::Instance().PublishMetadata(std::move(metadata));
+        GTA_Vehicle_Metadata metadata{};
+        metadata.modelHash = modelHash;
+        metadata.modelName = std::string(modelName);
+        metadata.displayName = metadata.modelName;
+        const auto displayLabel = m_natives->Invoke<const char*>(GTA_Native_Id::GetDisplayNameFromVehicleModel, modelHash);
+        if (displayLabel && *displayLabel)
+            metadata.displayName = CopyLocalized(*m_natives, *displayLabel, metadata.modelName);
+        const auto makeLabel = m_natives->Invoke<const char*>(GTA_Native_Id::GetMakeNameFromVehicleModel, modelHash);
+        if (makeLabel && *makeLabel)
+            metadata.makeName = CopyLocalized(*m_natives, *makeLabel, {});
+        const auto vehicleClass = m_natives->Invoke<int>(GTA_Native_Id::GetVehicleClassFromName, modelHash);
+        if (vehicleClass)
+            metadata.vehicleClass = *vehicleClass;
+        GTA_Vehicle_State::Instance().PublishMetadata(std::move(metadata));
+    }
 }
 
 void GTA_Gameplay_Feature_Runner::BeginVehicleSpawn(std::uint32_t modelHash, const GTA_Vehicle_Spawn_Options& options) noexcept
@@ -431,6 +430,10 @@ void GTA_Gameplay_Feature_Runner::TickVehicleSpawner() noexcept
         success = m_natives->Invoke<void>(GTA_Native_Id::ToggleVehicleMod, m_vehicleSpawnHandle, 18, true) && success;
         success = m_natives->Invoke<void>(GTA_Native_Id::ToggleVehicleMod, m_vehicleSpawnHandle, 22, true) && success;
     }
+
+    for (const auto& command : state.ConsumePostSpawnForgeCommands())
+        success = ApplyForgeCommandToVehicle(m_vehicleSpawnHandle, command) && success;
+
     if (m_vehicleSpawnOptions.engineRunning)
         success = m_natives->Invoke<void>(GTA_Native_Id::SetVehicleEngineOn, m_vehicleSpawnHandle, true, true, false) && success;
     if (m_vehicleSpawnOptions.clean)
@@ -448,6 +451,8 @@ void GTA_Gameplay_Feature_Runner::TickVehicleSpawner() noexcept
 
 void GTA_Gameplay_Feature_Runner::FinishVehicleSpawn(bool success, const char* detail) noexcept
 {
+    if (!success)
+        (void)GTA_Vehicle_State::Instance().ConsumePostSpawnForgeCommands();
     if (m_vehicleSpawnModel != 0)
         (void)m_natives->Invoke<void>(GTA_Native_Id::SetModelAsNoLongerNeeded, m_vehicleSpawnModel);
     GTA_Vehicle_State::Instance().SetSpawnStatus(success ? GTA_Vehicle_Spawn_Status::Succeeded : GTA_Vehicle_Spawn_Status::Failed);
@@ -474,17 +479,12 @@ int GTA_Gameplay_Feature_Runner::CurrentVehicle() noexcept
     return vehicle && *vehicle != 0 ? *vehicle : 0;
 }
 
-void GTA_Gameplay_Feature_Runner::TickVehicleForge() noexcept
+bool GTA_Gameplay_Feature_Runner::ApplyForgeCommandToVehicle(
+    int vehicle,
+    const GTA_Vehicle_Forge_Command& command) noexcept
 {
-    const auto command = GTA_Vehicle_State::Instance().ConsumeForgeCommand();
-    if (command.type == GTA_Vehicle_Forge_Command_Type::None)
-        return;
-    const int vehicle = CurrentVehicle();
-    if (vehicle == 0) {
-        if (m_logger)
-            m_logger->Log(Backend::LogLevel::Warning, "Devils Forge ignored: player is not inside a vehicle", "GTA5_Enhanced.Features");
-        return;
-    }
+    if (vehicle == 0 || command.type == GTA_Vehicle_Forge_Command_Type::None)
+        return false;
 
     bool success = true;
     switch (command.type) {
@@ -538,8 +538,24 @@ void GTA_Gameplay_Feature_Runner::TickVehicleForge() noexcept
     default:
         break;
     }
-    if (!success && m_logger)
-        m_logger->Log(Backend::LogLevel::Warning, "Devils Forge native command failed", "GTA5_Enhanced.Features");
+    return success;
+}
+
+void GTA_Gameplay_Feature_Runner::TickVehicleForge() noexcept
+{
+    for (std::size_t processed = 0; processed < ForgeCommandBatchSize; ++processed) {
+        const auto command = GTA_Vehicle_State::Instance().ConsumeForgeCommand();
+        if (command.type == GTA_Vehicle_Forge_Command_Type::None)
+            return;
+        const int vehicle = CurrentVehicle();
+        if (vehicle == 0) {
+            if (m_logger)
+                m_logger->Log(Backend::LogLevel::Warning, "Devils Forge ignored: player is not inside a vehicle", "GTA5_Enhanced.Features");
+            return;
+        }
+        if (!ApplyForgeCommandToVehicle(vehicle, command) && m_logger)
+            m_logger->Log(Backend::LogLevel::Warning, "Devils Forge native command failed", "GTA5_Enhanced.Features");
+    }
 }
 
 void GTA_Gameplay_Feature_Runner::TickVehicleMaintenance() noexcept
