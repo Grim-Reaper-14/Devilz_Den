@@ -25,8 +25,10 @@ private:
     void DrawBanner();
     void DrawNavigation();
     void DrawSelfPage();
+    void DrawWeaponsPage();
     void DrawVehiclePage();
     void DrawTeleportPage();
+    void DrawSettingsPage();
     void DrawPlaceholderPage(const char* title, const char* detail);
 
     Page m_page = Page::Self;
