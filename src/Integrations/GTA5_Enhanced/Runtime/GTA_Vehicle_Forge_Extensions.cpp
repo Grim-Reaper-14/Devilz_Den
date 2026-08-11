@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -51,6 +52,10 @@ constexpr GTA_Native_Hash SetLiveryHash = 0xA1C03303EC67320BULL;
 constexpr GTA_Native_Hash GetLiveryHash = 0xA089B04A208DBD0BULL;
 constexpr GTA_Native_Hash GetLiveryCountHash = 0xBA3ECE95D3094B0FULL;
 constexpr std::size_t ExtensionCommandBatchSize = 16;
+constexpr int MaxEmptyModScanAttempts = 12;
+
+int g_modScanVehicle = 0;
+int g_emptyModScanAttempts = 0;
 
 [[nodiscard]] int CurrentVehicle(GTA_Native_Manager& natives) noexcept
 {
@@ -146,10 +151,31 @@ void EnrichForgeSnapshot(GTA_Native_Manager& natives, GTA_Vehicle_State& state) 
 {
     const int vehicle = CurrentVehicle(natives);
     auto snapshot = state.ForgeSnapshot();
-    if (vehicle == 0 || snapshot.vehicle != vehicle)
+    if (vehicle == 0 || snapshot.vehicle != vehicle) {
+        g_modScanVehicle = vehicle;
+        g_emptyModScanAttempts = 0;
         return;
+    }
 
     auto enriched = snapshot;
+
+    if (vehicle != g_modScanVehicle) {
+        g_modScanVehicle = vehicle;
+        g_emptyModScanAttempts = 0;
+    }
+
+    if (snapshot.categories.empty()) {
+        enriched.modScanReady = false;
+        if (g_emptyModScanAttempts < MaxEmptyModScanAttempts) {
+            ++g_emptyModScanAttempts;
+            state.RequestForgeSnapshotRefresh();
+        }
+        enriched.modScanAttempts = g_emptyModScanAttempts;
+    } else {
+        g_emptyModScanAttempts = 0;
+        enriched.modScanAttempts = 0;
+        enriched.modScanReady = true;
+    }
 
     const auto modKitCount = natives.InvokeHash<int>(GetNumModKitsHash, vehicle);
     if (modKitCount)
@@ -295,6 +321,8 @@ void EnrichForgeSnapshot(GTA_Native_Manager& natives, GTA_Vehicle_State& state) 
         enriched.plateText = std::string(*plateText).substr(0, 8);
 
     const bool changed = enriched.modKitCount != snapshot.modKitCount ||
+        enriched.modScanAttempts != snapshot.modScanAttempts ||
+        enriched.modScanReady != snapshot.modScanReady ||
         enriched.paintStateReady != snapshot.paintStateReady ||
         enriched.primaryPaintType != snapshot.primaryPaintType ||
         enriched.primaryColor != snapshot.primaryColor ||
