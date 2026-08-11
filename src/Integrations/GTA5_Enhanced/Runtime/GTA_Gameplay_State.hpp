@@ -53,11 +53,44 @@ public:
     [[nodiscard]] bool InfiniteAmmo() const noexcept { return m_infiniteAmmo.load(std::memory_order_acquire); }
     void SetInfiniteAmmo(bool enabled) noexcept { m_infiniteAmmo.store(enabled, std::memory_order_release); }
 
+    [[nodiscard]] bool UnlimitedClip() const noexcept { return m_unlimitedClip.load(std::memory_order_acquire); }
+    void SetUnlimitedClip(bool enabled) noexcept { m_unlimitedClip.store(enabled, std::memory_order_release); }
+
+    [[nodiscard]] bool ExplosiveBullets() const noexcept { return m_explosiveBullets.load(std::memory_order_acquire); }
+    void SetExplosiveBullets(bool enabled) noexcept { m_explosiveBullets.store(enabled, std::memory_order_release); }
+
+    [[nodiscard]] int ExplosionType() const noexcept { return m_explosionType.load(std::memory_order_acquire); }
+    void SetExplosionType(int type) noexcept
+    {
+        if (type < -1) type = -1;
+        if (type > 83) type = 83;
+        m_explosionType.store(type, std::memory_order_release);
+    }
+
+    [[nodiscard]] float ExplosionDamageScale() const noexcept { return m_explosionDamageScale.load(std::memory_order_acquire); }
+    void SetExplosionDamageScale(float scale) noexcept
+    {
+        if (scale < 0.0F) scale = 0.0F;
+        if (scale > 1000.0F) scale = 1000.0F;
+        m_explosionDamageScale.store(scale, std::memory_order_release);
+    }
+
+    [[nodiscard]] float ExplosionCameraShake() const noexcept { return m_explosionCameraShake.load(std::memory_order_acquire); }
+    void SetExplosionCameraShake(float shake) noexcept
+    {
+        if (shake < 0.0F) shake = 0.0F;
+        if (shake > 10.0F) shake = 10.0F;
+        m_explosionCameraShake.store(shake, std::memory_order_release);
+    }
+
     void RequestGiveAllWeapons() noexcept { m_giveAllWeaponsRequested.store(true, std::memory_order_release); }
     [[nodiscard]] bool ConsumeGiveAllWeaponsRequest() noexcept { return m_giveAllWeaponsRequested.exchange(false, std::memory_order_acq_rel); }
 
     void RequestGiveMaxAmmo() noexcept { m_giveMaxAmmoRequested.store(true, std::memory_order_release); }
     [[nodiscard]] bool ConsumeGiveMaxAmmoRequest() noexcept { return m_giveMaxAmmoRequested.exchange(false, std::memory_order_acq_rel); }
+
+    void RequestRemoveAllWeapons() noexcept { m_removeAllWeaponsRequested.store(true, std::memory_order_release); }
+    [[nodiscard]] bool ConsumeRemoveAllWeaponsRequest() noexcept { return m_removeAllWeaponsRequested.exchange(false, std::memory_order_acq_rel); }
 
     void RequestTeleportToWaypoint() noexcept
     {
@@ -100,8 +133,14 @@ public:
         m_noRagdoll.store(false, std::memory_order_release);
         m_keepPlayerClean.store(false, std::memory_order_release);
         m_infiniteAmmo.store(false, std::memory_order_release);
+        m_unlimitedClip.store(false, std::memory_order_release);
+        m_explosiveBullets.store(false, std::memory_order_release);
+        m_explosionType.store(45, std::memory_order_release);
+        m_explosionDamageScale.store(1.0F, std::memory_order_release);
+        m_explosionCameraShake.store(0.1F, std::memory_order_release);
         m_giveAllWeaponsRequested.store(false, std::memory_order_release);
         m_giveMaxAmmoRequested.store(false, std::memory_order_release);
+        m_removeAllWeaponsRequested.store(false, std::memory_order_release);
         m_teleportWaypointRequested.store(false, std::memory_order_release);
         m_requestedTeleportLocation.store(GTA_Teleport_Location_Id::None, std::memory_order_release);
         m_teleportStatus.store(GTA_Teleport_Waypoint_Status::Idle, std::memory_order_release);
@@ -118,8 +157,14 @@ private:
     std::atomic_bool m_noRagdoll{false};
     std::atomic_bool m_keepPlayerClean{false};
     std::atomic_bool m_infiniteAmmo{false};
+    std::atomic_bool m_unlimitedClip{false};
+    std::atomic_bool m_explosiveBullets{false};
+    std::atomic_int m_explosionType{45};
+    std::atomic<float> m_explosionDamageScale{1.0F};
+    std::atomic<float> m_explosionCameraShake{0.1F};
     std::atomic_bool m_giveAllWeaponsRequested{false};
     std::atomic_bool m_giveMaxAmmoRequested{false};
+    std::atomic_bool m_removeAllWeaponsRequested{false};
     std::atomic_bool m_teleportWaypointRequested{false};
     std::atomic<GTA_Teleport_Location_Id> m_requestedTeleportLocation{GTA_Teleport_Location_Id::None};
     std::atomic<GTA_Teleport_Waypoint_Status> m_teleportStatus{GTA_Teleport_Waypoint_Status::Idle};
