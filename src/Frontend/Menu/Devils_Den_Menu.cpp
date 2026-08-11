@@ -3,6 +3,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Locations.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Catalog.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Saved_Builds.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_State.hpp"
 
 #include <imgui.h>
@@ -279,6 +280,50 @@ void Devils_Den_Menu::DrawVehiclePage()
             m_forgeWheelIndex = frontWheels->installedIndex;
     }
 
+    const GTA_Vehicle_Metadata* currentMetadata = nullptr;
+    for (const auto& entry : catalog) {
+        if (entry.modelHash == forge.modelHash) {
+            currentMetadata = &entry;
+            break;
+        }
+    }
+
+    const auto spawnStatus = vehicles.SpawnStatus();
+    const bool spawnBusy = spawnStatus == GTA_Vehicle_Spawn_Status::Queued ||
+        spawnStatus == GTA_Vehicle_Spawn_Status::Validating ||
+        spawnStatus == GTA_Vehicle_Spawn_Status::Streaming ||
+        spawnStatus == GTA_Vehicle_Spawn_Status::Creating ||
+        spawnStatus == GTA_Vehicle_Spawn_Status::Applying;
+
+    static bool savedBuildsLoaded = false;
+    static std::vector<GTA_Vehicle_Saved_Build> savedBuilds;
+    static int selectedSavedBuild = -1;
+    static std::array<char, 64> savedBuildName{};
+    static std::uint32_t savedBuildNameModel = 0;
+    static std::string savedBuildStatus;
+
+    const auto reloadSavedBuilds = [&]() {
+        savedBuilds = GTA_Vehicle_Saved_Builds::LoadAll();
+        if (savedBuilds.empty())
+            selectedSavedBuild = -1;
+        else
+            selectedSavedBuild = std::clamp(selectedSavedBuild, 0, static_cast<int>(savedBuilds.size()) - 1);
+        savedBuildsLoaded = true;
+    };
+
+    if (!savedBuildsLoaded)
+        reloadSavedBuilds();
+
+    if (forge.modelHash != 0 && forge.modelHash != savedBuildNameModel) {
+        savedBuildName.fill('\0');
+        std::string defaultName = currentMetadata && !currentMetadata->displayName.empty()
+            ? currentMetadata->displayName + " Build"
+            : "Vehicle Build";
+        const auto count = (std::min)(defaultName.size(), savedBuildName.size() - 1U);
+        std::copy_n(defaultName.data(), count, savedBuildName.data());
+        savedBuildNameModel = forge.modelHash;
+    }
+
     ImGui::TextColored(EmberRed, "VEHICLE");
     ImGui::SameLine();
     ImGui::TextDisabled("- Devils Forge");
@@ -288,25 +333,45 @@ void Devils_Den_Menu::DrawVehiclePage()
         return;
 
     if (ImGui::BeginTabItem("SPAWNER")) {
+        std::array<std::size_t, GTA_Vehicle_Class_Names.size()> classCounts{};
+        std::size_t unresolvedClasses = 0;
+        for (const auto& entry : catalog) {
+            if (entry.vehicleClass >= 0 && entry.vehicleClass < static_cast<int>(classCounts.size()))
+                ++classCounts[static_cast<std::size_t>(entry.vehicleClass)];
+            else
+                ++unresolvedClasses;
+        }
+
         ImGui::TextColored(Bronze, "ENHANCED VEHICLE CATALOG");
         ImGui::SetNextItemWidth(310.0F);
         ImGui::InputTextWithHint("##VehicleSearch", "Search make, vehicle, or model...", m_vehicleSearch.data(), m_vehicleSearch.size());
         ImGui::SameLine();
 
-        const char* classPreview = m_vehicleClassFilter < 0 ? "All Classes" :
-            GTA_Vehicle_Class_Names[static_cast<std::size_t>(m_vehicleClassFilter)].data();
-        ImGui::SetNextItemWidth(190.0F);
-        if (ImGui::BeginCombo("##VehicleClass", classPreview)) {
-            if (ImGui::Selectable("All Classes", m_vehicleClassFilter < 0)) m_vehicleClassFilter = -1;
+        std::string classPreview = "All Vehicles (" + std::to_string(catalog.size()) + ")";
+        if (m_vehicleClassFilter >= 0 && m_vehicleClassFilter < static_cast<int>(GTA_Vehicle_Class_Names.size())) {
+            const auto index = static_cast<std::size_t>(m_vehicleClassFilter);
+            classPreview = std::string(GTA_Vehicle_Class_Names[index]) + " (" + std::to_string(classCounts[index]) + ")";
+        }
+
+        ImGui::SetNextItemWidth(205.0F);
+        if (ImGui::BeginCombo("##VehicleClass", classPreview.c_str())) {
+            const std::string allLabel = "All Vehicles (" + std::to_string(catalog.size()) + ")";
+            if (ImGui::Selectable(allLabel.c_str(), m_vehicleClassFilter < 0)) m_vehicleClassFilter = -1;
             for (std::size_t i = 0; i < GTA_Vehicle_Class_Names.size(); ++i) {
-                if (ImGui::Selectable(GTA_Vehicle_Class_Names[i].data(), m_vehicleClassFilter == static_cast<int>(i)))
+                const std::string label = std::string(GTA_Vehicle_Class_Names[i]) + " (" + std::to_string(classCounts[i]) + ")";
+                if (ImGui::Selectable(label.c_str(), m_vehicleClassFilter == static_cast<int>(i)))
                     m_vehicleClassFilter = static_cast<int>(i);
             }
             ImGui::EndCombo();
         }
 
+        if (unresolvedClasses > 0) {
+            ImGui::TextDisabled("Class metadata loading: %zu vehicles remaining. All Vehicles stays usable while this finishes.", unresolvedClasses);
+        }
+
         const std::string_view search(m_vehicleSearch.data());
         const GTA_Vehicle_Metadata* selected = nullptr;
+        const GTA_Vehicle_Metadata* firstVisible = nullptr;
         if (ImGui::BeginChild("##VehicleCatalog", ImVec2(390.0F, 245.0F), ImGuiChildFlags_Borders)) {
             for (const auto& entry : catalog) {
                 if (m_vehicleClassFilter >= 0 && entry.vehicleClass != m_vehicleClassFilter)
@@ -315,6 +380,8 @@ void Devils_Den_Menu::DrawVehiclePage()
                     !ContainsInsensitive(entry.modelName, search))
                     continue;
 
+                if (!firstVisible)
+                    firstVisible = &entry;
                 const std::string label = entry.makeName.empty() ? entry.displayName : entry.makeName + "  " + entry.displayName;
                 if (ImGui::Selectable(label.c_str(), m_selectedVehicleModel == entry.modelHash))
                     m_selectedVehicleModel = entry.modelHash;
@@ -323,11 +390,18 @@ void Devils_Den_Menu::DrawVehiclePage()
         ImGui::EndChild();
 
         for (const auto& entry : catalog) {
-            if (entry.modelHash == m_selectedVehicleModel) { selected = &entry; break; }
+            if (entry.modelHash == m_selectedVehicleModel) {
+                const bool classMatches = m_vehicleClassFilter < 0 || entry.vehicleClass == m_vehicleClassFilter;
+                const bool searchMatches = ContainsInsensitive(entry.displayName, search) || ContainsInsensitive(entry.makeName, search) ||
+                    ContainsInsensitive(entry.modelName, search);
+                if (classMatches && searchMatches)
+                    selected = &entry;
+                break;
+            }
         }
-        if (!selected && !catalog.empty()) {
-            m_selectedVehicleModel = catalog.front().modelHash;
-            selected = &catalog.front();
+        if (!selected && firstVisible) {
+            m_selectedVehicleModel = firstVisible->modelHash;
+            selected = firstVisible;
         }
 
         ImGui::SameLine();
@@ -339,9 +413,13 @@ void Devils_Den_Menu::DrawVehiclePage()
                 ImGui::Text("Model: %s", selected->modelName.c_str());
                 if (selected->vehicleClass >= 0 && selected->vehicleClass < static_cast<int>(GTA_Vehicle_Class_Names.size()))
                     ImGui::Text("Class: %s", GTA_Vehicle_Class_Names[static_cast<std::size_t>(selected->vehicleClass)].data());
+                else
+                    ImGui::TextDisabled("Class: loading...");
                 ImGui::Text("Hash: 0x%08X", selected->modelHash);
+            } else if (m_vehicleClassFilter >= 0 && unresolvedClasses > 0) {
+                ImGui::TextDisabled("This category is still being populated on the game thread.");
             } else {
-                ImGui::TextDisabled("Catalog metadata is loading on the game thread...");
+                ImGui::TextDisabled("No vehicles match this filter/search.");
             }
             ImGui::Separator();
             ImGui::Checkbox("Spawn Inside", &m_spawnInsideVehicle);
@@ -353,14 +431,10 @@ void Devils_Den_Menu::DrawVehiclePage()
         }
         ImGui::EndChild();
 
-        const auto status = vehicles.SpawnStatus();
-        const bool busy = status == GTA_Vehicle_Spawn_Status::Queued || status == GTA_Vehicle_Spawn_Status::Validating ||
-            status == GTA_Vehicle_Spawn_Status::Streaming || status == GTA_Vehicle_Spawn_Status::Creating ||
-            status == GTA_Vehicle_Spawn_Status::Applying;
         ImGui::TextColored(Bronze, "STATUS");
         ImGui::SameLine();
-        ImGui::TextUnformatted(VehicleSpawnStatusText(status));
-        ImGui::BeginDisabled(busy || !selected);
+        ImGui::TextUnformatted(VehicleSpawnStatusText(spawnStatus));
+        ImGui::BeginDisabled(spawnBusy || !selected);
         if (ImGui::Button("SPAWN SELECTED VEHICLE", ImVec2(260.0F, 42.0F)) && selected) {
             GTA_Vehicle_Spawn_Options options{};
             options.spawnInside = m_spawnInsideVehicle;
@@ -379,246 +453,416 @@ void Devils_Den_Menu::DrawVehiclePage()
 
     if (ImGui::BeginTabItem("DEVILS FORGE")) {
         ImGui::TextColored(Bronze, "CURRENT VEHICLE");
-        const GTA_Vehicle_Metadata* currentMetadata = nullptr;
-        for (const auto& entry : catalog) {
-            if (entry.modelHash == forge.modelHash) {
-                currentMetadata = &entry;
-                break;
-            }
-        }
 
         if (forge.vehicle == 0) {
             ImGui::TextDisabled("Enter a vehicle to unlock Devils Forge.");
             if (ImGui::Button("REFRESH VEHICLE DATA", ImVec2(210.0F, 34.0F)))
                 vehicles.RequestForgeSnapshotRefresh();
             ImGui::EndTabItem();
-            ImGui::EndTabBar();
-            return;
-        }
-
-        if (currentMetadata) {
-            if (!currentMetadata->makeName.empty()) {
-                ImGui::Text("%s %s", currentMetadata->makeName.c_str(), currentMetadata->displayName.c_str());
-            } else {
-                ImGui::Text("%s", currentMetadata->displayName.c_str());
-            }
-            ImGui::TextDisabled("Model: %s  |  Hash: 0x%08X", currentMetadata->modelName.c_str(), forge.modelHash);
         } else {
-            ImGui::Text("Vehicle 0x%08X", forge.modelHash);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("REFRESH", ImVec2(90.0F, 28.0F)))
-            vehicles.RequestForgeSnapshotRefresh();
-
-        MedievalDivider();
-        ImGui::TextColored(Bronze, "CONDITION / PROTECTION");
-        bool keepPerfect = vehicles.KeepVehiclePerfect();
-        if (ImGui::Checkbox("Always Keep Vehicle Perfect", &keepPerfect))
-            vehicles.SetKeepVehiclePerfect(keepPerfect);
-        ImGui::SameLine();
-        ImGui::TextDisabled("Repairs damage, deformation, engine/body health and dirt continuously");
-
-        bool vehicleGodMode = vehicles.VehicleGodMode();
-        if (ImGui::Checkbox("Vehicle God Mode", &vehicleGodMode))
-            vehicles.SetVehicleGodMode(vehicleGodMode);
-        ImGui::SameLine();
-        ImGui::TextDisabled("Current occupied vehicle only");
-
-        if (ImGui::Button("REPAIR EVERYTHING", ImVec2(170.0F, 34.0F)))
-            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::RepairVehicle, 0, 0, 0});
-        ImGui::SameLine();
-        if (ImGui::Button("CLEAN VEHICLE", ImVec2(150.0F, 34.0F)))
-            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::CleanVehicle, 0, 0, 0});
-        ImGui::SameLine();
-        if (ImGui::Checkbox("Quick Lowered Stance", &m_forgeLoweredStance))
-            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetLoweredStance, m_forgeLoweredStance ? 1 : 0, 0, 0});
-
-        MedievalDivider();
-        ImGui::TextColored(Bronze, "VEHICLE-SPECIFIC MODS");
-        ImGui::TextDisabled("Only categories supported by the current vehicle are shown. Selecting an option applies it immediately.");
-
-        const GTA_Vehicle_Forge_Category* selectedCategory = nullptr;
-        for (const auto& category : forge.categories) {
-            if (category.slot == m_forgeModSlot) {
-                selectedCategory = &category;
-                break;
+            if (currentMetadata) {
+                if (!currentMetadata->makeName.empty())
+                    ImGui::Text("%s %s", currentMetadata->makeName.c_str(), currentMetadata->displayName.c_str());
+                else
+                    ImGui::Text("%s", currentMetadata->displayName.c_str());
+                ImGui::TextDisabled("Model: %s  |  Hash: 0x%08X", currentMetadata->modelName.c_str(), forge.modelHash);
+            } else {
+                ImGui::Text("Vehicle 0x%08X", forge.modelHash);
             }
-        }
+            ImGui::SameLine();
+            if (ImGui::Button("REFRESH", ImVec2(90.0F, 28.0F)))
+                vehicles.RequestForgeSnapshotRefresh();
 
-        if (ImGui::BeginChild("##ForgeCategories", ImVec2(225.0F, 220.0F), ImGuiChildFlags_Borders)) {
-            ImGui::TextColored(Bronze, "CATEGORIES");
+            MedievalDivider();
+            ImGui::TextColored(Bronze, "CONDITION / PROTECTION");
+            bool keepPerfect = vehicles.KeepVehiclePerfect();
+            if (ImGui::Checkbox("Always Keep Vehicle Perfect", &keepPerfect))
+                vehicles.SetKeepVehiclePerfect(keepPerfect);
+            ImGui::SameLine();
+            ImGui::TextDisabled("Repairs damage, deformation, engine/body health and dirt continuously");
+
+            bool vehicleGodMode = vehicles.VehicleGodMode();
+            if (ImGui::Checkbox("Vehicle God Mode", &vehicleGodMode))
+                vehicles.SetVehicleGodMode(vehicleGodMode);
+            ImGui::SameLine();
+            ImGui::TextDisabled("Current occupied vehicle only");
+
+            if (ImGui::Button("REPAIR EVERYTHING", ImVec2(170.0F, 34.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::RepairVehicle, 0, 0, 0});
+            ImGui::SameLine();
+            if (ImGui::Button("CLEAN VEHICLE", ImVec2(150.0F, 34.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::CleanVehicle, 0, 0, 0});
+            ImGui::SameLine();
+            if (ImGui::Checkbox("Quick Lowered Stance", &m_forgeLoweredStance))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetLoweredStance, m_forgeLoweredStance ? 1 : 0, 0, 0});
+
+            MedievalDivider();
+            ImGui::TextColored(Bronze, "VEHICLE-SPECIFIC MODS");
+            ImGui::TextDisabled("Only categories supported by the current vehicle are shown. Selecting an option applies it immediately.");
+
+            const GTA_Vehicle_Forge_Category* selectedCategory = nullptr;
             for (const auto& category : forge.categories) {
-                if (category.slot == 23 || category.slot == 24)
-                    continue;
-                ImGui::PushID(category.slot);
-                if (ImGui::Selectable(category.name.c_str(), m_forgeModSlot == category.slot)) {
-                    m_forgeModSlot = category.slot;
-                    m_forgeModIndex = category.installedIndex;
+                if (category.slot == m_forgeModSlot) {
                     selectedCategory = &category;
-                }
-                ImGui::PopID();
-            }
-        }
-        ImGui::EndChild();
-        ImGui::SameLine();
-        if (ImGui::BeginChild("##ForgeOptions", ImVec2(0.0F, 220.0F), ImGuiChildFlags_Borders)) {
-            ImGui::TextColored(Bronze, "OPTIONS");
-            if (!selectedCategory) {
-                ImGui::TextDisabled("Choose a supported category.");
-            } else {
-                ImGui::Text("%s", selectedCategory->name.c_str());
-                ImGui::Separator();
-                for (const auto& option : selectedCategory->options) {
-                    const bool installed = option.index == selectedCategory->installedIndex;
-                    ImGui::PushID(option.index);
-                    if (ImGui::Selectable(option.name.c_str(), installed)) {
-                        m_forgeModIndex = option.index;
-                        vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetMod,
-                            selectedCategory->slot, option.index, 0});
-                    }
-                    ImGui::PopID();
+                    break;
                 }
             }
-        }
-        ImGui::EndChild();
 
-        if (ImGui::Button("TURBO ON", ImVec2(110.0F, 32.0F)))
-            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 18, 1, 0});
-        ImGui::SameLine();
-        if (ImGui::Button("TURBO OFF", ImVec2(110.0F, 32.0F)))
-            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 18, 0, 0});
-        ImGui::SameLine();
-        if (ImGui::Button("XENON ON", ImVec2(110.0F, 32.0F)))
-            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 22, 1, 0});
-        ImGui::SameLine();
-        if (ImGui::Button("XENON OFF", ImVec2(110.0F, 32.0F)))
-            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 22, 0, 0});
-
-        MedievalDivider();
-        ImGui::TextColored(Bronze, "WHEELS");
-        ImGui::SetNextItemWidth(240.0F);
-        const char* wheelPreview = LookupNamedValue(WheelTypes, m_forgeWheelType, "Unknown");
-        if (ImGui::BeginCombo("Wheel Category", wheelPreview)) {
-            for (const auto& wheelType : WheelTypes) {
-                const bool selected = m_forgeWheelType == wheelType.value;
-                if (ImGui::Selectable(wheelType.name, selected)) {
-                    m_forgeWheelType = wheelType.value;
-                    m_forgeWheelIndex = -1;
-                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetWheelType, wheelType.value, 0, 0});
-                }
-            }
-            ImGui::EndCombo();
-        }
-        ImGui::SameLine();
-        ImGui::Checkbox("Custom Tires", &m_forgeCustomTires);
-
-        const auto frontWheels = std::find_if(forge.categories.begin(), forge.categories.end(),
-            [](const GTA_Vehicle_Forge_Category& category) { return category.slot == 23; });
-        if (forge.wheelType != m_forgeWheelType) {
-            ImGui::TextDisabled("Refreshing rim names for %s...", wheelPreview);
-        } else if (frontWheels == forge.categories.end()) {
-            ImGui::TextDisabled("This vehicle does not expose front-wheel modifications for this category.");
-        } else {
-            if (ImGui::BeginChild("##ForgeRims", ImVec2(0.0F, 165.0F), ImGuiChildFlags_Borders)) {
-                ImGui::TextColored(Bronze, "%s RIMS", wheelPreview);
-                for (const auto& option : frontWheels->options) {
-                    const bool installed = option.index == frontWheels->installedIndex;
-                    ImGui::PushID(option.index);
-                    if (ImGui::Selectable(option.name.c_str(), installed)) {
-                        m_forgeWheelIndex = option.index;
-                        vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetMod,
-                            23, option.index, m_forgeCustomTires ? 1 : 0});
+            if (ImGui::BeginChild("##ForgeCategories", ImVec2(225.0F, 220.0F), ImGuiChildFlags_Borders)) {
+                ImGui::TextColored(Bronze, "CATEGORIES");
+                for (const auto& category : forge.categories) {
+                    if (category.slot == 23 || category.slot == 24)
+                        continue;
+                    ImGui::PushID(category.slot);
+                    if (ImGui::Selectable(category.name.c_str(), m_forgeModSlot == category.slot)) {
+                        m_forgeModSlot = category.slot;
+                        m_forgeModIndex = category.installedIndex;
+                        selectedCategory = &category;
                     }
                     ImGui::PopID();
                 }
             }
             ImGui::EndChild();
-        }
-
-        MedievalDivider();
-        ImGui::TextColored(Bronze, "WINDOWS / PLATES");
-        ImGui::SetNextItemWidth(240.0F);
-        const char* tintPreview = LookupNamedValue(WindowTints, m_forgeWindowTint, "Unknown");
-        if (ImGui::BeginCombo("Window Tint", tintPreview)) {
-            for (const auto& tint : WindowTints) {
-                if (ImGui::Selectable(tint.name, m_forgeWindowTint == tint.value)) {
-                    m_forgeWindowTint = tint.value;
-                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetWindowTint, tint.value, 0, 0});
+            ImGui::SameLine();
+            if (ImGui::BeginChild("##ForgeOptions", ImVec2(0.0F, 220.0F), ImGuiChildFlags_Borders)) {
+                ImGui::TextColored(Bronze, "OPTIONS");
+                if (!selectedCategory) {
+                    ImGui::TextDisabled("Choose a supported category.");
+                } else {
+                    ImGui::Text("%s", selectedCategory->name.c_str());
+                    ImGui::Separator();
+                    for (const auto& option : selectedCategory->options) {
+                        const bool installed = option.index == selectedCategory->installedIndex;
+                        ImGui::PushID(option.index);
+                        if (ImGui::Selectable(option.name.c_str(), installed)) {
+                            m_forgeModIndex = option.index;
+                            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetMod,
+                                selectedCategory->slot, option.index, 0});
+                        }
+                        ImGui::PopID();
+                    }
                 }
             }
-            ImGui::EndCombo();
-        }
+            ImGui::EndChild();
 
-        ImGui::SetNextItemWidth(240.0F);
-        const char* platePreview = LookupNamedValue(PlateStyles, m_forgePlateStyle, "Unknown");
-        if (ImGui::BeginCombo("Plate Style", platePreview)) {
-            for (const auto& plate : PlateStyles) {
-                if (ImGui::Selectable(plate.name, m_forgePlateStyle == plate.value)) {
-                    m_forgePlateStyle = plate.value;
-                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetPlateStyle, plate.value, 0, 0});
+            if (ImGui::Button("TURBO ON", ImVec2(110.0F, 32.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 18, 1, 0});
+            ImGui::SameLine();
+            if (ImGui::Button("TURBO OFF", ImVec2(110.0F, 32.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 18, 0, 0});
+            ImGui::SameLine();
+            if (ImGui::Button("XENON ON", ImVec2(110.0F, 32.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 22, 1, 0});
+            ImGui::SameLine();
+            if (ImGui::Button("XENON OFF", ImVec2(110.0F, 32.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 22, 0, 0});
+
+            MedievalDivider();
+            ImGui::TextColored(Bronze, "WHEELS");
+            ImGui::SetNextItemWidth(240.0F);
+            const char* wheelPreview = LookupNamedValue(WheelTypes, m_forgeWheelType, "Unknown");
+            if (ImGui::BeginCombo("Wheel Category", wheelPreview)) {
+                for (const auto& wheelType : WheelTypes) {
+                    const bool selected = m_forgeWheelType == wheelType.value;
+                    if (ImGui::Selectable(wheelType.name, selected)) {
+                        m_forgeWheelType = wheelType.value;
+                        m_forgeWheelIndex = -1;
+                        vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetWheelType, wheelType.value, 0, 0});
+                    }
                 }
-            }
-            ImGui::EndCombo();
-        }
-
-        MedievalDivider();
-        if (ImGui::CollapsingHeader("ADVANCED PAINT / RAW COLOR INDEXES")) {
-            ImGui::TextDisabled("Named LSC and Chameleon palettes are the next paint pass; raw values remain available here for now.");
-            constexpr std::array paintTypes{"Normal", "Metallic", "Pearl", "Matte", "Metal", "Chrome", "Chameleon"};
-            ImGui::SetNextItemWidth(180.0F);
-            if (ImGui::BeginCombo("Primary Type", paintTypes[static_cast<std::size_t>(std::clamp(m_forgePrimaryPaintType, 0, 6))])) {
-                for (int i = 0; i < static_cast<int>(paintTypes.size()); ++i)
-                    if (ImGui::Selectable(paintTypes[static_cast<std::size_t>(i)], m_forgePrimaryPaintType == i)) m_forgePrimaryPaintType = i;
                 ImGui::EndCombo();
             }
-            ImGui::InputInt("Primary Color Index", &m_forgePrimaryColor);
-            if (ImGui::Button("APPLY PRIMARY", ImVec2(150.0F, 34.0F)))
-                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetPrimaryPaint,
-                    m_forgePrimaryPaintType, m_forgePrimaryColor, m_forgePearlescent});
+            ImGui::SameLine();
+            ImGui::Checkbox("Custom Tires", &m_forgeCustomTires);
 
-            ImGui::SetNextItemWidth(180.0F);
-            if (ImGui::BeginCombo("Secondary Type", paintTypes[static_cast<std::size_t>(std::clamp(m_forgeSecondaryPaintType, 0, 6))])) {
-                for (int i = 0; i < static_cast<int>(paintTypes.size()); ++i)
-                    if (ImGui::Selectable(paintTypes[static_cast<std::size_t>(i)], m_forgeSecondaryPaintType == i)) m_forgeSecondaryPaintType = i;
+            const auto frontWheels = std::find_if(forge.categories.begin(), forge.categories.end(),
+                [](const GTA_Vehicle_Forge_Category& category) { return category.slot == 23; });
+            if (forge.wheelType != m_forgeWheelType) {
+                ImGui::TextDisabled("Refreshing rim names for %s...", wheelPreview);
+            } else if (frontWheels == forge.categories.end()) {
+                ImGui::TextDisabled("This vehicle does not expose front-wheel modifications for this category.");
+            } else {
+                if (ImGui::BeginChild("##ForgeRims", ImVec2(0.0F, 165.0F), ImGuiChildFlags_Borders)) {
+                    ImGui::TextColored(Bronze, "%s RIMS", wheelPreview);
+                    for (const auto& option : frontWheels->options) {
+                        const bool installed = option.index == frontWheels->installedIndex;
+                        ImGui::PushID(option.index);
+                        if (ImGui::Selectable(option.name.c_str(), installed)) {
+                            m_forgeWheelIndex = option.index;
+                            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetMod,
+                                23, option.index, m_forgeCustomTires ? 1 : 0});
+                        }
+                        ImGui::PopID();
+                    }
+                }
+                ImGui::EndChild();
+            }
+
+            MedievalDivider();
+            ImGui::TextColored(Bronze, "WINDOWS / PLATES");
+            ImGui::SetNextItemWidth(240.0F);
+            const char* tintPreview = LookupNamedValue(WindowTints, m_forgeWindowTint, "Unknown");
+            if (ImGui::BeginCombo("Window Tint", tintPreview)) {
+                for (const auto& tint : WindowTints) {
+                    if (ImGui::Selectable(tint.name, m_forgeWindowTint == tint.value)) {
+                        m_forgeWindowTint = tint.value;
+                        vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetWindowTint, tint.value, 0, 0});
+                    }
+                }
                 ImGui::EndCombo();
             }
-            ImGui::InputInt("Secondary Color Index", &m_forgeSecondaryColor);
-            if (ImGui::Button("APPLY SECONDARY", ImVec2(150.0F, 34.0F)))
-                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetSecondaryPaint,
-                    m_forgeSecondaryPaintType, m_forgeSecondaryColor, 0});
 
-            ImGui::InputInt("Pearlescent Index", &m_forgePearlescent);
-            ImGui::InputInt("Wheel Color Index", &m_forgeWheelColor);
-            if (ImGui::Button("APPLY PEARL + WHEEL COLOR", ImVec2(230.0F, 34.0F)))
-                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetExtraColours,
-                    m_forgePearlescent, m_forgeWheelColor, 0});
+            ImGui::SetNextItemWidth(240.0F);
+            const char* platePreview = LookupNamedValue(PlateStyles, m_forgePlateStyle, "Unknown");
+            if (ImGui::BeginCombo("Plate Style", platePreview)) {
+                for (const auto& plate : PlateStyles) {
+                    if (ImGui::Selectable(plate.name, m_forgePlateStyle == plate.value)) {
+                        m_forgePlateStyle = plate.value;
+                        vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetPlateStyle, plate.value, 0, 0});
+                    }
+                }
+                ImGui::EndCombo();
+            }
 
-            ImGui::InputInt3("Primary RGB", m_forgePrimaryRgb.data());
-            if (ImGui::Button("APPLY PRIMARY RGB", ImVec2(180.0F, 34.0F)))
-                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetCustomPrimaryRgb,
-                    m_forgePrimaryRgb[0], m_forgePrimaryRgb[1], m_forgePrimaryRgb[2]});
-            ImGui::InputInt3("Secondary RGB", m_forgeSecondaryRgb.data());
-            if (ImGui::Button("APPLY SECONDARY RGB", ImVec2(190.0F, 34.0F)))
-                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetCustomSecondaryRgb,
-                    m_forgeSecondaryRgb[0], m_forgeSecondaryRgb[1], m_forgeSecondaryRgb[2]});
+            MedievalDivider();
+            if (ImGui::CollapsingHeader("ADVANCED PAINT / RAW COLOR INDEXES")) {
+                ImGui::TextDisabled("Named LSC and Chameleon palettes are the next paint pass; raw values remain available here for now.");
+                constexpr std::array paintTypes{"Normal", "Metallic", "Pearl", "Matte", "Metal", "Chrome", "Chameleon"};
+                ImGui::SetNextItemWidth(180.0F);
+                if (ImGui::BeginCombo("Primary Type", paintTypes[static_cast<std::size_t>(std::clamp(m_forgePrimaryPaintType, 0, 6))])) {
+                    for (int i = 0; i < static_cast<int>(paintTypes.size()); ++i)
+                        if (ImGui::Selectable(paintTypes[static_cast<std::size_t>(i)], m_forgePrimaryPaintType == i)) m_forgePrimaryPaintType = i;
+                    ImGui::EndCombo();
+                }
+                ImGui::InputInt("Primary Color Index", &m_forgePrimaryColor);
+                if (ImGui::Button("APPLY PRIMARY", ImVec2(150.0F, 34.0F)))
+                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetPrimaryPaint,
+                        m_forgePrimaryPaintType, m_forgePrimaryColor, m_forgePearlescent});
+
+                ImGui::SetNextItemWidth(180.0F);
+                if (ImGui::BeginCombo("Secondary Type", paintTypes[static_cast<std::size_t>(std::clamp(m_forgeSecondaryPaintType, 0, 6))])) {
+                    for (int i = 0; i < static_cast<int>(paintTypes.size()); ++i)
+                        if (ImGui::Selectable(paintTypes[static_cast<std::size_t>(i)], m_forgeSecondaryPaintType == i)) m_forgeSecondaryPaintType = i;
+                    ImGui::EndCombo();
+                }
+                ImGui::InputInt("Secondary Color Index", &m_forgeSecondaryColor);
+                if (ImGui::Button("APPLY SECONDARY", ImVec2(150.0F, 34.0F)))
+                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetSecondaryPaint,
+                        m_forgeSecondaryPaintType, m_forgeSecondaryColor, 0});
+
+                ImGui::InputInt("Pearlescent Index", &m_forgePearlescent);
+                ImGui::InputInt("Wheel Color Index", &m_forgeWheelColor);
+                if (ImGui::Button("APPLY PEARL + WHEEL COLOR", ImVec2(230.0F, 34.0F)))
+                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetExtraColours,
+                        m_forgePearlescent, m_forgeWheelColor, 0});
+
+                ImGui::InputInt3("Primary RGB", m_forgePrimaryRgb.data());
+                if (ImGui::Button("APPLY PRIMARY RGB", ImVec2(180.0F, 34.0F)))
+                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetCustomPrimaryRgb,
+                        m_forgePrimaryRgb[0], m_forgePrimaryRgb[1], m_forgePrimaryRgb[2]});
+                ImGui::InputInt3("Secondary RGB", m_forgeSecondaryRgb.data());
+                if (ImGui::Button("APPLY SECONDARY RGB", ImVec2(190.0F, 34.0F)))
+                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetCustomSecondaryRgb,
+                        m_forgeSecondaryRgb[0], m_forgeSecondaryRgb[1], m_forgeSecondaryRgb[2]});
+            }
+
+            ImGui::EndTabItem();
         }
-
-        ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("SAVED BUILDS")) {
         ImGui::TextColored(Bronze, "SAVED VEHICLE BUILDS");
-        ImGui::TextWrapped("The save/clone JSON layer will capture the actual vehicle state after this named Forge layer is validated in-game.");
-        ImGui::Spacing();
-        ImGui::TextDisabled("Target: save, clone, spawn, rename, favorite, and restore complete vehicle builds.");
+        ImGui::SameLine();
+        if (ImGui::Button("RELOAD", ImVec2(90.0F, 28.0F))) {
+            reloadSavedBuilds();
+            savedBuildStatus = "Reloaded saved vehicle JSON files.";
+        }
+        ImGui::TextDisabled("Folder: %s", GTA_Vehicle_Saved_Builds::RootDirectory().string().c_str());
+
+        if (forge.vehicle != 0) {
+            ImGui::SetNextItemWidth(300.0F);
+            ImGui::InputTextWithHint("##SavedBuildName", "Build name...", savedBuildName.data(), savedBuildName.size());
+            ImGui::SameLine();
+            if (ImGui::Button("SAVE CURRENT VEHICLE", ImVec2(205.0F, 34.0F))) {
+                std::string error;
+                auto build = GTA_Vehicle_Saved_Builds::Capture(savedBuildName.data(), currentMetadata, forge);
+                if (GTA_Vehicle_Saved_Builds::Save(build, &error)) {
+                    savedBuildStatus = "Saved current vehicle to JSON.";
+                    reloadSavedBuilds();
+                } else {
+                    savedBuildStatus = error.empty() ? "Saving vehicle failed." : error;
+                }
+            }
+            ImGui::SameLine();
+            ImGui::BeginDisabled(spawnBusy);
+            if (ImGui::Button("CLONE CURRENT", ImVec2(145.0F, 34.0F))) {
+                auto clone = GTA_Vehicle_Saved_Builds::Capture("Current Clone", currentMetadata, forge);
+                GTA_Vehicle_Spawn_Options options{};
+                options.spawnInside = false;
+                options.placeOnGround = true;
+                options.engineRunning = true;
+                options.clean = true;
+                options.invincible = vehicles.VehicleGodMode();
+                vehicles.SetPostSpawnForgeCommands(GTA_Vehicle_Saved_Builds::BuildCommands(clone));
+                vehicles.RequestSpawn(clone.modelHash, options);
+                savedBuildStatus = "Cloning current vehicle beside the player.";
+            }
+            ImGui::EndDisabled();
+        } else {
+            ImGui::TextDisabled("Enter a vehicle to save or clone its current build.");
+        }
+
+        if (!savedBuildStatus.empty())
+            ImGui::TextWrapped("%s", savedBuildStatus.c_str());
+
+        MedievalDivider();
+        if (ImGui::BeginChild("##SavedBuildList", ImVec2(280.0F, 285.0F), ImGuiChildFlags_Borders)) {
+            ImGui::TextColored(Bronze, "BUILDS (%zu)", savedBuilds.size());
+            for (std::size_t index = 0; index < savedBuilds.size(); ++index) {
+                const auto& build = savedBuilds[index];
+                ImGui::PushID(static_cast<int>(index));
+                if (ImGui::Selectable(build.name.c_str(), selectedSavedBuild == static_cast<int>(index)))
+                    selectedSavedBuild = static_cast<int>(index);
+                ImGui::PopID();
+            }
+            if (savedBuilds.empty())
+                ImGui::TextDisabled("No saved vehicle JSON files yet.");
+        }
+        ImGui::EndChild();
+        ImGui::SameLine();
+        if (ImGui::BeginChild("##SavedBuildDetails", ImVec2(0.0F, 285.0F), ImGuiChildFlags_Borders)) {
+            if (selectedSavedBuild >= 0 && selectedSavedBuild < static_cast<int>(savedBuilds.size())) {
+                const auto& build = savedBuilds[static_cast<std::size_t>(selectedSavedBuild)];
+                ImGui::TextColored(Bronze, "%s", build.name.c_str());
+                if (!build.makeName.empty()) ImGui::Text("Make: %s", build.makeName.c_str());
+                ImGui::Text("Vehicle: %s", build.displayName.empty() ? build.modelName.c_str() : build.displayName.c_str());
+                ImGui::Text("Model: %s", build.modelName.empty() ? "unknown" : build.modelName.c_str());
+                ImGui::Text("Wheel Family: %s", LookupNamedValue(WheelTypes, build.wheelType, "Unknown"));
+                ImGui::Text("Window Tint: %s", LookupNamedValue(WindowTints, build.windowTint, "Unknown"));
+                ImGui::Text("Plate: %s", LookupNamedValue(PlateStyles, build.plateStyle, "Unknown"));
+                ImGui::Text("Captured Mods: %zu", build.mods.size());
+                ImGui::Separator();
+
+                ImGui::BeginDisabled(spawnBusy);
+                if (ImGui::Button("SPAWN", ImVec2(100.0F, 34.0F))) {
+                    GTA_Vehicle_Spawn_Options options{};
+                    options.spawnInside = false;
+                    options.placeOnGround = true;
+                    options.engineRunning = true;
+                    options.clean = true;
+                    options.invincible = vehicles.VehicleGodMode();
+                    vehicles.SetPostSpawnForgeCommands(GTA_Vehicle_Saved_Builds::BuildCommands(build));
+                    vehicles.RequestSpawn(build.modelHash, options);
+                    savedBuildStatus = "Spawning saved build.";
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("SPAWN & ENTER", ImVec2(145.0F, 34.0F))) {
+                    GTA_Vehicle_Spawn_Options options{};
+                    options.spawnInside = true;
+                    options.placeOnGround = true;
+                    options.engineRunning = true;
+                    options.clean = true;
+                    options.invincible = vehicles.VehicleGodMode();
+                    vehicles.SetPostSpawnForgeCommands(GTA_Vehicle_Saved_Builds::BuildCommands(build));
+                    vehicles.RequestSpawn(build.modelHash, options);
+                    savedBuildStatus = "Spawning saved build and entering it.";
+                }
+                ImGui::EndDisabled();
+
+                ImGui::BeginDisabled(forge.vehicle == 0);
+                if (ImGui::Button("APPLY TO CURRENT", ImVec2(155.0F, 34.0F))) {
+                    GTA_Vehicle_Saved_Builds::QueueApply(build, vehicles);
+                    savedBuildStatus = "Applying saved build to current vehicle.";
+                }
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                if (ImGui::Button("DELETE JSON", ImVec2(125.0F, 34.0F))) {
+                    std::string error;
+                    if (GTA_Vehicle_Saved_Builds::Remove(build, &error)) {
+                        savedBuildStatus = "Deleted saved vehicle JSON.";
+                        reloadSavedBuilds();
+                    } else {
+                        savedBuildStatus = error.empty() ? "Delete failed." : error;
+                    }
+                }
+            } else {
+                ImGui::TextDisabled("Select a saved build to inspect or spawn it.");
+            }
+        }
+        ImGui::EndChild();
+        ImGui::TextDisabled("Current JSON capture stores model, named indexed mods, wheel family, window tint and plate style. Paint/toggle-state/plate-text capture is the next extension.");
         ImGui::EndTabItem();
     }
 
     if (ImGui::BeginTabItem("HANDLING")) {
-        ImGui::TextColored(Bronze, "HANDLING EDITOR");
-        ImGui::TextWrapped("YimMenu-style live sliders are reserved for the validated handling pass: ride height, suspension, traction, braking, drivetrain, steering and reset-to-factory values.");
-        ImGui::Spacing();
-        ImGui::TextDisabled("No guessed Enhanced handling offsets will be written.");
+        ImGui::TextColored(Bronze, "HANDLING / SUSPENSION");
+        ImGui::TextDisabled("This first pass is live and native-backed; it does not write guessed Enhanced handling offsets.");
+
+        if (forge.vehicle == 0) {
+            ImGui::TextDisabled("Enter a vehicle to edit its suspension.");
+            if (ImGui::Button("REFRESH VEHICLE DATA##Handling", ImVec2(220.0F, 34.0F)))
+                vehicles.RequestForgeSnapshotRefresh();
+        } else {
+            if (currentMetadata) {
+                ImGui::Text("%s%s%s", currentMetadata->makeName.c_str(), currentMetadata->makeName.empty() ? "" : " ",
+                    currentMetadata->displayName.c_str());
+            }
+            MedievalDivider();
+
+            const auto suspension = std::find_if(forge.categories.begin(), forge.categories.end(),
+                [](const GTA_Vehicle_Forge_Category& category) { return category.slot == 15; });
+
+            ImGui::TextColored(Bronze, "SUSPENSION");
+            if (suspension != forge.categories.end() && suspension->options.size() > 1U) {
+                int suspensionIndex = suspension->installedIndex;
+                const int maxIndex = static_cast<int>(suspension->options.size()) - 2;
+                ImGui::SetNextItemWidth(430.0F);
+                if (ImGui::SliderInt("LSC Suspension Level", &suspensionIndex, -1, maxIndex)) {
+                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetMod, 15, suspensionIndex, 0});
+                }
+
+                const auto option = std::find_if(suspension->options.begin(), suspension->options.end(),
+                    [suspensionIndex](const GTA_Vehicle_Forge_Option& value) { return value.index == suspensionIndex; });
+                if (option != suspension->options.end())
+                    ImGui::Text("Selected: %s", option->name.c_str());
+                ImGui::TextDisabled("Move the slider live: -1 is stock; higher supported levels apply the vehicle's suspension mod immediately.");
+            } else {
+                ImGui::TextDisabled("This vehicle does not expose an LSC suspension mod slot.");
+            }
+
+            bool reducedForce = m_forgeLoweredStance;
+            if (ImGui::Checkbox("Reduced Suspension Force", &reducedForce)) {
+                m_forgeLoweredStance = reducedForce;
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetLoweredStance, reducedForce ? 1 : 0, 0, 0});
+            }
+
+            if (ImGui::Button("STOCK SUSPENSION", ImVec2(170.0F, 36.0F))) {
+                m_forgeLoweredStance = false;
+                vehicles.QueueForgeCommands({
+                    {GTA_Vehicle_Forge_Command_Type::SetMod, 15, -1, 0},
+                    {GTA_Vehicle_Forge_Command_Type::SetLoweredStance, 0, 0, 0}
+                });
+            }
+            if (suspension != forge.categories.end() && suspension->options.size() > 1U) {
+                ImGui::SameLine();
+                if (ImGui::Button("LOWEST LSC SETTING", ImVec2(190.0F, 36.0F))) {
+                    const int lowest = static_cast<int>(suspension->options.size()) - 2;
+                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetMod, 15, lowest, 0});
+                }
+            }
+
+            MedievalDivider();
+            ImGui::TextColored(Bronze, "VEHICLE PROTECTION");
+            bool keepPerfect = vehicles.KeepVehiclePerfect();
+            if (ImGui::Checkbox("Always Keep Vehicle Perfect##Handling", &keepPerfect))
+                vehicles.SetKeepVehiclePerfect(keepPerfect);
+            bool vehicleGodMode = vehicles.VehicleGodMode();
+            if (ImGui::Checkbox("Vehicle God Mode##Handling", &vehicleGodMode))
+                vehicles.SetVehicleGodMode(vehicleGodMode);
+
+            ImGui::Spacing();
+            ImGui::TextWrapped("Deep Yim-style handling floats such as traction, drive force, braking, steering and a true raw ride-height field are not exposed yet. Those require the GTA V Enhanced handling layout to be validated before we write them.");
+        }
         ImGui::EndTabItem();
     }
 
