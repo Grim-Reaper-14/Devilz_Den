@@ -1,5 +1,6 @@
 #include "GTA_Run_Script_Threads_Bridge.hpp"
 
+#include "GTA_Explosive_Ammo_Extension.hpp"
 #include "GTA_Gameplay_State.hpp"
 #include "GTA_Vehicle_Forge_Extensions.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
@@ -323,9 +324,8 @@ void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
     tls->currentScriptThread = scriptThread;
     tls->scriptThreadActive = true;
 
-    // Explosive ammo now runs in the extension layer where we can scope the
-    // Yim-style script identity spoof only around ADD_OWNED_EXPLOSION. Keep the
-    // legacy runner from firing a second unspoofed explosion during this tick.
+    // Explosive ammo owns its dedicated Yim-style spoofed extension path. Keep
+    // the legacy gameplay runner from emitting an unspoofed duplicate.
     auto& gameplayState = GTA_Gameplay_State::Instance();
     const bool explosiveAmmo = gameplayState.ExplosiveBullets();
     if (explosiveAmmo)
@@ -334,9 +334,12 @@ void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
     if (explosiveAmmo)
         gameplayState.SetExplosiveBullets(true);
 
-    SetForgeExtensionScriptThread(scriptThread);
+    TickExplosiveAmmoExtension(*m_natives, scriptThread);
+
+    // The vehicle extension no longer receives a script-thread identity here;
+    // this keeps its legacy explosive-ammo helper dormant while preserving the
+    // vehicle/self extension work it also performs.
     TickVehicleForgeExtensions(*m_natives);
-    SetForgeExtensionScriptThread(nullptr);
 
     tls->scriptThreadActive = previousActive;
     tls->currentScriptThread = previousThread;
