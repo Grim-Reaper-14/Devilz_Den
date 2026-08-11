@@ -93,6 +93,14 @@
             MedievalDivider();
             ImGui::TextColored(Bronze, "VEHICLE-SPECIFIC MODS");
             ImGui::TextDisabled("Only categories supported by this vehicle are shown. Options apply immediately.");
+            if (forge.categories.empty()) {
+                ImGui::TextColored(EmberRed, "Preparing vehicle mod data...");
+                ImGui::TextDisabled("Mod kits: %d | scan attempt: %d / 12", forge.modKitCount, forge.modScanAttempts);
+                if (forge.modScanAttempts >= 12)
+                    ImGui::TextWrapped("GTA is still reporting zero supported LSC mod slots for this vehicle. Use RESCAN after entering another LSC-compatible car; the rest of Forge remains available.");
+                if (ImGui::Button("RESCAN MOD CATEGORIES", ImVec2(210.0F, 30.0F)))
+                    vehicles.RequestForgeSnapshotRefresh();
+            }
 
             const GTA_Vehicle_Forge_Category* selectedCategory = nullptr;
             for (const auto& category : forge.categories)
@@ -117,7 +125,7 @@
             if (ImGui::BeginChild("##ForgeOptions", ImVec2(0.0F, 225.0F), ImGuiChildFlags_Borders)) {
                 ImGui::TextColored(Bronze, "OPTIONS");
                 if (!selectedCategory) {
-                    ImGui::TextDisabled("Choose a supported category.");
+                    ImGui::TextDisabled(forge.categories.empty() ? "Waiting for vehicle mod scan." : "Choose a supported category.");
                 } else {
                     ImGui::Text("%s", selectedCategory->name.c_str());
                     ImGui::Separator();
@@ -140,6 +148,144 @@
             ImGui::SameLine();
             if (ImGui::Button(forge.xenonEnabled ? "XENON: ON" : "XENON: OFF", ImVec2(125.0F, 32.0F)))
                 vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 22, forge.xenonEnabled ? 0 : 1});
+            ImGui::SameLine();
+            if (ImGui::Button(forge.tireSmokeEnabled ? "TIRE SMOKE: ON" : "TIRE SMOKE: OFF", ImVec2(150.0F, 32.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::ToggleMod, 20, forge.tireSmokeEnabled ? 0 : 1});
+
+            MedievalDivider();
+            ImGui::TextColored(Bronze, "LIGHTING");
+            ImGui::SetNextItemWidth(280.0F);
+            if (ImGui::BeginCombo("Headlight Color", LookupVehicleValue(GTA_Vehicle_Headlight_Colors, forge.xenonColor, "Default"))) {
+                for (const auto& color : GTA_Vehicle_Headlight_Colors) {
+                    if (ImGui::Selectable(color.name.data(), forge.xenonColor == color.value)) {
+                        vehicles.QueueForgeCommands({
+                            {GTA_Vehicle_Forge_Command_Type::ToggleMod, 22, 1},
+                            {GTA_Vehicle_Forge_Command_Type::SetXenonColor, color.value}
+                        });
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            constexpr std::array<const char*, 4> neonSideNames{"Neon Left", "Neon Right", "Neon Front", "Neon Back"};
+            for (int side = 0; side < 4; ++side) {
+                bool enabled = forge.neonEnabled[static_cast<std::size_t>(side)];
+                ImGui::PushID(3000 + side);
+                if (ImGui::Checkbox(neonSideNames[static_cast<std::size_t>(side)], &enabled))
+                    vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetNeonEnabled, side, enabled ? 1 : 0});
+                ImGui::PopID();
+                if (side != 3) ImGui::SameLine();
+            }
+            if (ImGui::Button("ALL NEON ON", ImVec2(135.0F, 30.0F)))
+                vehicles.QueueForgeCommands({
+                    {GTA_Vehicle_Forge_Command_Type::SetNeonEnabled, 0, 1},
+                    {GTA_Vehicle_Forge_Command_Type::SetNeonEnabled, 1, 1},
+                    {GTA_Vehicle_Forge_Command_Type::SetNeonEnabled, 2, 1},
+                    {GTA_Vehicle_Forge_Command_Type::SetNeonEnabled, 3, 1}
+                });
+            ImGui::SameLine();
+            if (ImGui::Button("ALL NEON OFF", ImVec2(135.0F, 30.0F)))
+                vehicles.QueueForgeCommands({
+                    {GTA_Vehicle_Forge_Command_Type::SetNeonEnabled, 0, 0},
+                    {GTA_Vehicle_Forge_Command_Type::SetNeonEnabled, 1, 0},
+                    {GTA_Vehicle_Forge_Command_Type::SetNeonEnabled, 2, 0},
+                    {GTA_Vehicle_Forge_Command_Type::SetNeonEnabled, 3, 0}
+                });
+
+            const GTA_Vehicle_Named_Rgb* currentNeonPreset = nullptr;
+            for (const auto& preset : GTA_Vehicle_Neon_Colors)
+                if (preset.rgb == forge.neonRgb) currentNeonPreset = &preset;
+            ImGui::SetNextItemWidth(280.0F);
+            if (ImGui::BeginCombo("Neon Color", currentNeonPreset ? currentNeonPreset->name.data() : "Custom RGB")) {
+                for (const auto& preset : GTA_Vehicle_Neon_Colors) {
+                    if (ImGui::Selectable(preset.name.data(), currentNeonPreset == &preset))
+                        vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetNeonColor,
+                            preset.rgb[0], preset.rgb[1], preset.rgb[2]});
+                }
+                ImGui::EndCombo();
+            }
+            static int neonRgbVehicle = 0;
+            static std::array<int, 3> neonRgb{255, 255, 255};
+            if (neonRgbVehicle != forge.vehicle) {
+                neonRgbVehicle = forge.vehicle;
+                neonRgb = forge.neonRgb;
+            }
+            ImGui::InputInt3("Custom Neon RGB", neonRgb.data());
+            if (ImGui::Button("APPLY NEON RGB", ImVec2(165.0F, 30.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetNeonColor, neonRgb[0], neonRgb[1], neonRgb[2]});
+
+            MedievalDivider();
+            ImGui::TextColored(Bronze, "TIRES");
+            bool tyresCanBurst = forge.tyresCanBurst;
+            if (ImGui::Checkbox("Burstable Tires", &tyresCanBurst))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetTyresCanBurst, tyresCanBurst ? 1 : 0});
+            ImGui::SameLine();
+            bool driftTyres = forge.driftTyres;
+            if (ImGui::Checkbox("Low Grip Tires", &driftTyres))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetDriftTyres, driftTyres ? 1 : 0});
+
+            const GTA_Vehicle_Named_Rgb* currentSmokePreset = nullptr;
+            for (const auto& preset : GTA_Vehicle_Tyre_Smoke_Colors)
+                if (preset.rgb == forge.tyreSmokeRgb) currentSmokePreset = &preset;
+            ImGui::SetNextItemWidth(280.0F);
+            if (ImGui::BeginCombo("Tire Smoke Color", currentSmokePreset ? currentSmokePreset->name.data() : "Custom RGB")) {
+                for (const auto& preset : GTA_Vehicle_Tyre_Smoke_Colors) {
+                    if (ImGui::Selectable(preset.name.data(), currentSmokePreset == &preset)) {
+                        vehicles.QueueForgeCommands({
+                            {GTA_Vehicle_Forge_Command_Type::ToggleMod, 20, 1},
+                            {GTA_Vehicle_Forge_Command_Type::SetTyreSmokeColor, preset.rgb[0], preset.rgb[1], preset.rgb[2]}
+                        });
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            if (ImGui::CollapsingHeader("EXTRAS / LIVERY / INTERIOR", ImGuiTreeNodeFlags_DefaultOpen)) {
+                bool anyExtra = false;
+                for (int extra = 1; extra <= 14; ++extra) {
+                    if (!forge.extraExists[static_cast<std::size_t>(extra)])
+                        continue;
+                    anyExtra = true;
+                    bool enabled = forge.extrasEnabled[static_cast<std::size_t>(extra)];
+                    const std::string label = "Extra " + std::to_string(extra);
+                    ImGui::PushID(4000 + extra);
+                    if (ImGui::Checkbox(label.c_str(), &enabled))
+                        vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetExtra, extra, enabled ? 1 : 0});
+                    ImGui::PopID();
+                    if ((extra % 4) != 0) ImGui::SameLine();
+                }
+                if (!anyExtra) ImGui::TextDisabled("This vehicle reports no toggleable extras.");
+
+                if (forge.liveryCount > 0) {
+                    const std::string liveryPreview = forge.livery < 0 ? "Stock" : "Livery " + std::to_string(forge.livery + 1);
+                    ImGui::SetNextItemWidth(260.0F);
+                    if (ImGui::BeginCombo("Livery", liveryPreview.c_str())) {
+                        if (ImGui::Selectable("Stock", forge.livery < 0))
+                            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetLivery, -1});
+                        for (int index = 0; index < forge.liveryCount; ++index) {
+                            const std::string label = "Livery " + std::to_string(index + 1);
+                            if (ImGui::Selectable(label.c_str(), forge.livery == index))
+                                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetLivery, index});
+                        }
+                        ImGui::EndCombo();
+                    }
+                }
+
+                ImGui::SetNextItemWidth(280.0F);
+                if (ImGui::BeginCombo("Interior Color", PaintColorPreview(0, forge.interiorColor))) {
+                    for (const auto& paint : GTA_Vehicle_Paint_Palette(0))
+                        if (ImGui::Selectable(paint.name.data(), forge.interiorColor == paint.value))
+                            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetInteriorColor, paint.value});
+                    ImGui::EndCombo();
+                }
+                ImGui::SetNextItemWidth(280.0F);
+                if (ImGui::BeginCombo("Dashboard Color", PaintColorPreview(0, forge.dashboardColor))) {
+                    for (const auto& paint : GTA_Vehicle_Paint_Palette(0))
+                        if (ImGui::Selectable(paint.name.data(), forge.dashboardColor == paint.value))
+                            vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetDashboardColor, paint.value});
+                    ImGui::EndCombo();
+                }
+            }
 
             MedievalDivider();
             ImGui::TextColored(Bronze, "WHEELS");
