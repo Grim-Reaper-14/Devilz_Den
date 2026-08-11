@@ -3,7 +3,6 @@
 #include "GTA_Native_Call_Context.hpp"
 #include "GTA_Native_Registry.hpp"
 #include "GTA_Native_Types.hpp"
-#include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
 
 #include <array>
 #include <cstddef>
@@ -39,12 +38,10 @@ struct GTA_Native_Invoke_Result<void>
 class GTA_Native_Manager final
 {
 public:
-    static constexpr GTA_Native_Hash ExplosiveAmmoThisFrameHash = 0x35A960C1E2064D55ULL;
-
     // Validated Enhanced handlers which do not need a public named-id yet live
     // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self and
-    // Weapons also use the final entries for movement and explosive-ammo guards.
-    static constexpr std::array<GTA_Native_Hash, 46> BootstrapProbeHashes{
+    // Weapons also use the final five for movement and explosive-ammo guards.
+    static constexpr std::array<GTA_Native_Hash, 45> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -89,8 +86,7 @@ public:
         0x289497A4BA9049E0ULL, // SET_SWIM_MULTIPLIER_FOR_PLAYER
         0xB27B08E34AC92345ULL, // SET_PED_MOVE_RATE_OVERRIDE
         0x11552FA9DCB8E126ULL, // IS_PED_ARMED
-        0xB73833BDAAE31047ULL, // IS_PED_PERFORMING_MELEE_ACTION
-        ExplosiveAmmoThisFrameHash // SET_EXPLOSIVE_AMMO_THIS_FRAME
+        0xB73833BDAAE31047ULL  // IS_PED_PERFORMING_MELEE_ACTION
     };
 
     [[nodiscard]] GTA_Native_Manager_Status Initialize(
@@ -111,30 +107,6 @@ public:
     [[nodiscard]] auto Invoke(GTA_Native_Id id, Args&&... args) noexcept
         -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
-        const auto& gameplay = GTA_Gameplay_State::Instance();
-        const int explosionType = gameplay.ExplosionType();
-        const bool useNativeExplosiveAmmo = gameplay.ExplosiveBullets() &&
-            (explosionType == 45 || explosionType == 61);
-
-        // The EXPLOSIVEAMMO/EXPLOSIVEAMMO_SHOTGUN tags are not ordinary
-        // ADD_OWNED_EXPLOSION effects. GTA exposes a per-frame native for
-        // these ammo modes, so apply it before the impact query each tick.
-        if (id == GTA_Native_Id::GetPedLastWeaponImpactCoord && useNativeExplosiveAmmo) {
-            const auto player = Invoke<int>(GTA_Native_Id::PlayerId);
-            if (player)
-                (void)InvokeHash<void>(ExplosiveAmmoThisFrameHash, *player);
-        }
-
-        // TickExplosiveBullets still reaches ADD_OWNED_EXPLOSION after an
-        // impact. Suppress that legacy/manual path for the native ammo tags
-        // to avoid a second explosion; custom explosion types keep using it.
-        if (id == GTA_Native_Id::AddOwnedExplosion && useNativeExplosiveAmmo) {
-            if constexpr (std::is_void_v<Ret>)
-                return true;
-            else
-                return std::nullopt;
-        }
-
         return InvokeHandler<Ret>(Find(id), std::forward<Args>(args)...);
     }
 
