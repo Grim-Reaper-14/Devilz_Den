@@ -38,11 +38,10 @@ struct GTA_Native_Invoke_Result<void>
 class GTA_Native_Manager final
 {
 public:
-    // The first four are the original bootstrap probes. The remaining hashes are
-    // vehicle-state helpers used by Devils Forge. Keeping them in the validated
-    // bootstrap cache lets the editor read the actual LSC state and apply the
-    // matching Enhanced natives without raw memory offsets.
-    static constexpr std::array<GTA_Native_Hash, 40> BootstrapProbeHashes{
+    // Validated Enhanced handlers which do not need a public named-id yet live
+    // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self and
+    // Weapons also use the final five for movement and explosive-ammo guards.
+    static constexpr std::array<GTA_Native_Hash, 45> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -82,7 +81,12 @@ public:
         0x4C5611B5008205EBULL, // GET_VEHICLE_EXTRA_COLOUR_6
         0xA1C03303EC67320BULL, // SET_VEHICLE_LIVERY
         0xA089B04A208DBD0BULL, // GET_VEHICLE_LIVERY
-        0xBA3ECE95D3094B0FULL  // GET_VEHICLE_LIVERY_COUNT
+        0xBA3ECE95D3094B0FULL, // GET_VEHICLE_LIVERY_COUNT
+        0xA52E1AE3848A506BULL, // SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER
+        0x289497A4BA9049E0ULL, // SET_SWIM_MULTIPLIER_FOR_PLAYER
+        0xB27B08E34AC92345ULL, // SET_PED_MOVE_RATE_OVERRIDE
+        0x11552FA9DCB8E126ULL, // IS_PED_ARMED
+        0xB73833BDAAE31047ULL  // IS_PED_PERFORMING_MELEE_ACTION
     };
 
     [[nodiscard]] GTA_Native_Manager_Status Initialize(
