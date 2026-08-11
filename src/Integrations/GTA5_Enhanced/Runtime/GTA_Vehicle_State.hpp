@@ -53,7 +53,17 @@ enum class GTA_Vehicle_Forge_Command_Type : std::uint8_t
     CleanVehicle,
     SetPlateText,
     ClearCustomPrimary,
-    ClearCustomSecondary
+    ClearCustomSecondary,
+    SetNeonEnabled,
+    SetNeonColor,
+    SetXenonColor,
+    SetExtra,
+    SetTyreSmokeColor,
+    SetTyresCanBurst,
+    SetDriftTyres,
+    SetInteriorColor,
+    SetDashboardColor,
+    SetLivery
 };
 
 struct GTA_Vehicle_Forge_Command
@@ -88,6 +98,10 @@ struct GTA_Vehicle_Forge_Snapshot
     int plateStyle = -1;
     std::string plateText;
 
+    int modKitCount = -1;
+    int modScanAttempts = 0;
+    bool modScanReady = false;
+
     bool paintStateReady = false;
     int primaryPaintType = -1;
     int primaryColor = -1;
@@ -102,8 +116,23 @@ struct GTA_Vehicle_Forge_Snapshot
 
     bool turboEnabled = false;
     bool xenonEnabled = false;
+    int xenonColor = -1;
+    bool tireSmokeEnabled = false;
+    std::array<int, 3> tyreSmokeRgb{255, 255, 255};
     bool frontCustomTires = false;
     bool rearCustomTires = false;
+    bool tyresCanBurst = true;
+    bool driftTyres = false;
+
+    std::array<bool, 4> neonEnabled{false, false, false, false};
+    std::array<int, 3> neonRgb{255, 255, 255};
+
+    std::array<bool, 15> extraExists{};
+    std::array<bool, 15> extrasEnabled{};
+    int livery = -1;
+    int liveryCount = 0;
+    int interiorColor = -1;
+    int dashboardColor = -1;
 
     std::vector<GTA_Vehicle_Forge_Category> categories;
 };
@@ -323,9 +352,24 @@ private:
 
     [[nodiscard]] static bool IsExtensionCommand(GTA_Vehicle_Forge_Command_Type type) noexcept
     {
-        return type == GTA_Vehicle_Forge_Command_Type::SetPlateText ||
-               type == GTA_Vehicle_Forge_Command_Type::ClearCustomPrimary ||
-               type == GTA_Vehicle_Forge_Command_Type::ClearCustomSecondary;
+        switch (type) {
+        case GTA_Vehicle_Forge_Command_Type::SetPlateText:
+        case GTA_Vehicle_Forge_Command_Type::ClearCustomPrimary:
+        case GTA_Vehicle_Forge_Command_Type::ClearCustomSecondary:
+        case GTA_Vehicle_Forge_Command_Type::SetNeonEnabled:
+        case GTA_Vehicle_Forge_Command_Type::SetNeonColor:
+        case GTA_Vehicle_Forge_Command_Type::SetXenonColor:
+        case GTA_Vehicle_Forge_Command_Type::SetExtra:
+        case GTA_Vehicle_Forge_Command_Type::SetTyreSmokeColor:
+        case GTA_Vehicle_Forge_Command_Type::SetTyresCanBurst:
+        case GTA_Vehicle_Forge_Command_Type::SetDriftTyres:
+        case GTA_Vehicle_Forge_Command_Type::SetInteriorColor:
+        case GTA_Vehicle_Forge_Command_Type::SetDashboardColor:
+        case GTA_Vehicle_Forge_Command_Type::SetLivery:
+            return true;
+        default:
+            return false;
+        }
     }
 
     void SeedStaticCatalogLocked()
