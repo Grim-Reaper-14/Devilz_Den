@@ -15,7 +15,9 @@ enum class GTA_Native_Id : std::uint8_t
     SetPlayerWantedLevel, SetPlayerWantedLevelNow, SetMaxWantedLevel,
     SetSuperJumpThisFrame, SetPedMaxTimeUnderwater, SetPedCanRagdoll,
     ClearPedBloodDamage, ClearPedWetness, ClearPedEnvDirt, ResetPedVisibleDamage,
-    SetPedInfiniteAmmo, GiveWeaponToPed, SetPedAmmo, GetVehiclePedIsIn, IsPedInAnyVehicle,
+    SetPedInfiniteAmmo, SetPedInfiniteAmmoClip, GiveWeaponToPed, RemoveWeaponFromPed, SetPedAmmo,
+    GetPedLastWeaponImpactCoord, AddOwnedExplosion,
+    GetVehiclePedIsIn, IsPedInAnyVehicle,
     IsWaypointActive, GetWaypointBlipEnumId, GetClosestBlipInfoId, GetBlipCoords,
     RequestCollisionAtCoord, GetGroundZFor3DCoord, GetWaterHeight, GetApproxHeightForPoint,
     SetEntityCoordsNoOffset, DisableAllControlActions,
@@ -45,7 +47,7 @@ class GTA_Native_Registry final
 {
 public:
     static constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
-    static constexpr std::array<GTA_Native_Id, 71> NamedIds{
+    static constexpr std::array<GTA_Native_Id, 75> NamedIds{
         GTA_Native_Id::GetGameTimer, GTA_Native_Id::GetHashKey, GTA_Native_Id::PlayerPedId,
         GTA_Native_Id::SetEntityInvincible, GTA_Native_Id::PlayerId,
         GTA_Native_Id::SetPlayerWantedLevel, GTA_Native_Id::SetPlayerWantedLevelNow,
@@ -53,9 +55,11 @@ public:
         GTA_Native_Id::SetPedMaxTimeUnderwater, GTA_Native_Id::SetPedCanRagdoll,
         GTA_Native_Id::ClearPedBloodDamage, GTA_Native_Id::ClearPedWetness,
         GTA_Native_Id::ClearPedEnvDirt, GTA_Native_Id::ResetPedVisibleDamage,
-        GTA_Native_Id::SetPedInfiniteAmmo, GTA_Native_Id::GiveWeaponToPed,
-        GTA_Native_Id::SetPedAmmo, GTA_Native_Id::GetVehiclePedIsIn,
-        GTA_Native_Id::IsPedInAnyVehicle,
+        GTA_Native_Id::SetPedInfiniteAmmo, GTA_Native_Id::SetPedInfiniteAmmoClip,
+        GTA_Native_Id::GiveWeaponToPed, GTA_Native_Id::RemoveWeaponFromPed,
+        GTA_Native_Id::SetPedAmmo, GTA_Native_Id::GetPedLastWeaponImpactCoord,
+        GTA_Native_Id::AddOwnedExplosion,
+        GTA_Native_Id::GetVehiclePedIsIn, GTA_Native_Id::IsPedInAnyVehicle,
         GTA_Native_Id::IsWaypointActive, GTA_Native_Id::GetWaypointBlipEnumId,
         GTA_Native_Id::GetClosestBlipInfoId, GTA_Native_Id::GetBlipCoords,
         GTA_Native_Id::RequestCollisionAtCoord, GTA_Native_Id::GetGroundZFor3DCoord,
@@ -106,8 +110,12 @@ public:
         case GTA_Native_Id::ClearPedEnvDirt: return GTA_Native_Definition{id, "CLEAR_PED_ENV_DIRT", 0x6585D955A68452A5ULL, 0xD81F5EA29FD2682EULL};
         case GTA_Native_Id::ResetPedVisibleDamage: return GTA_Native_Definition{id, "RESET_PED_VISIBLE_DAMAGE", 0x3AC1F7B898F30C05ULL, 0x69AE13B08EFD8497ULL};
         case GTA_Native_Id::SetPedInfiniteAmmo: return GTA_Native_Definition{id, "SET_PED_INFINITE_AMMO", 0x3EDCB0505123623BULL, 0xA83DA0A0DF32920CULL};
+        case GTA_Native_Id::SetPedInfiniteAmmoClip: return GTA_Native_Definition{id, "SET_PED_INFINITE_AMMO_CLIP", 0x183DADC6AA953186ULL, 0x53A38286A3AC16C1ULL};
         case GTA_Native_Id::GiveWeaponToPed: return GTA_Native_Definition{id, "GIVE_WEAPON_TO_PED", 0xBF0FD6E56C964FCBULL, 0xB41DEC3AAC1AA107ULL};
+        case GTA_Native_Id::RemoveWeaponFromPed: return GTA_Native_Definition{id, "REMOVE_WEAPON_FROM_PED", 0x4899CB088EDF59B8ULL, 0x4F07124B9C56ED6FULL};
         case GTA_Native_Id::SetPedAmmo: return GTA_Native_Definition{id, "SET_PED_AMMO", 0x14E56BC5B5DB6A19ULL, 0x45FC566246B3511BULL};
+        case GTA_Native_Id::GetPedLastWeaponImpactCoord: return GTA_Native_Definition{id, "GET_PED_LAST_WEAPON_IMPACT_COORD", 0x6C4D0409BA1A2BC2ULL, 0x4800F32F989BED65ULL};
+        case GTA_Native_Id::AddOwnedExplosion: return GTA_Native_Definition{id, "ADD_OWNED_EXPLOSION", 0x172AA1B624FA1013ULL, 0x8F03CD462437C002ULL};
         case GTA_Native_Id::GetVehiclePedIsIn: return GTA_Native_Definition{id, "GET_VEHICLE_PED_IS_IN", 0x9A9112A0FE9A4713ULL, 0x6EF03BE64E058E2FULL};
         case GTA_Native_Id::IsPedInAnyVehicle: return GTA_Native_Definition{id, "IS_PED_IN_ANY_VEHICLE", 0x997ABD671D25CA0BULL, 0x7F420695E3F776FBULL};
         case GTA_Native_Id::IsWaypointActive: return GTA_Native_Definition{id, "IS_WAYPOINT_ACTIVE", 0x1DD1F58F493F1DA5ULL, 0x02213DC34A224533ULL};
