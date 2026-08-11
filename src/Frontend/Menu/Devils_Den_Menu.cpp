@@ -1,5 +1,6 @@
 #include "Devils_Den_Menu.hpp"
 
+#include "Devils_Den_Config.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Locations.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Catalog.hpp"
@@ -50,6 +51,32 @@ constexpr std::array<NamedValue, 7> WindowTints{{
     {0, "None"}, {1, "Pure Black"}, {2, "Dark Smoke"}, {3, "Light Smoke"},
     {4, "Stock"}, {5, "Limo"}, {6, "Green"}
 }};
+
+constexpr NamedValue ExplosionTypes[]{
+    {-1, "Don't Care"}, {0, "Grenade"}, {1, "Grenade Launcher"}, {2, "Sticky Bomb"},
+    {3, "Molotov"}, {4, "Rocket"}, {5, "Tank Shell"}, {6, "Hi Octane"}, {7, "Car"},
+    {8, "Plane"}, {9, "Petrol Pump"}, {10, "Bike"}, {11, "Directional Steam"},
+    {12, "Directional Flame"}, {13, "Directional Water Hydrant"}, {14, "Directional Gas Canister"},
+    {15, "Boat"}, {16, "Ship Destroy"}, {17, "Truck"}, {18, "Bullet"},
+    {19, "Smoke Grenade Launcher"}, {20, "Smoke Grenade"}, {21, "BZ Gas"}, {22, "Flare"},
+    {23, "Gas Canister"}, {24, "Extinguisher"}, {25, "Programmable AR"}, {26, "Train"},
+    {27, "Barrel"}, {28, "Propane"}, {29, "Blimp"}, {30, "Directional Flame Explode"},
+    {31, "Tanker"}, {32, "Plane Rocket"}, {33, "Vehicle Bullet"}, {34, "Gas Tank"},
+    {35, "Bird Crap"}, {36, "Railgun"}, {37, "Blimp 2"}, {38, "Firework"}, {39, "Snowball"},
+    {40, "Proximity Mine"}, {41, "Valkyrie Cannon"}, {42, "Air Defence"}, {43, "Pipe Bomb"},
+    {44, "Vehicle Mine"}, {45, "Explosive Ammo"}, {46, "APC Shell"}, {47, "Cluster Bomb"},
+    {48, "Gas Bomb"}, {49, "Incendiary Bomb"}, {50, "Standard Bomb"}, {51, "Torpedo"},
+    {52, "Underwater Torpedo"}, {53, "Bombushka Cannon"}, {54, "Cluster Bomb (Secondary)"},
+    {55, "Hunter Barrage"}, {56, "Hunter Cannon"}, {57, "Rogue Cannon"}, {58, "Underwater Mine"},
+    {59, "Orbital Cannon"}, {60, "Standard Bomb (Wide)"}, {61, "Explosive Ammo (Shotgun)"},
+    {62, "Oppressor Mk II Cannon"}, {63, "Kinetic Mortar"}, {64, "Vehicle Mine (Kinetic)"},
+    {65, "Vehicle Mine (EMP)"}, {66, "Vehicle Mine (Spike)"}, {67, "Vehicle Mine (Slick)"},
+    {68, "Vehicle Mine (Tar)"}, {69, "Script Drone"}, {70, "Ray Gun"}, {71, "Buried Mine"},
+    {72, "Script Missile"}, {73, "RC Tank Rocket"}, {74, "Water Bomb"}, {75, "Water Bomb (Secondary)"},
+    {76, "Unknown Explosion F728C4A9"}, {77, "Unknown Explosion BAEC056F"}, {78, "Flash Grenade"},
+    {79, "Stun Grenade"}, {80, "Unknown Explosion 763D3B3B"}, {81, "Script Missile (Large)"},
+    {82, "Submarine (Big)"}, {83, "EMP Launcher"}
+};
 
 const char* LookupNamedValue(const auto& values, int value, const char* fallback) noexcept
 {
@@ -137,11 +164,11 @@ void Devils_Den_Menu::Draw(bool& open)
     if (ImGui::BeginChild("##DevilsDenContent", ImVec2(0.0F, 0.0F), ImGuiChildFlags_Borders)) {
         switch (m_page) {
         case Page::Self: DrawSelfPage(); break;
-        case Page::Weapons: DrawPlaceholderPage("WEAPONS", "The armory page will inherit this same medieval frame."); break;
+        case Page::Weapons: DrawWeaponsPage(); break;
         case Page::Vehicle: DrawVehiclePage(); break;
         case Page::Teleport: DrawTeleportPage(); break;
         case Page::World: DrawPlaceholderPage("WORLD", "World and environment controls will live here."); break;
-        case Page::Settings: DrawPlaceholderPage("SETTINGS", "Theme, hotkeys, configuration, and diagnostics will live here."); break;
+        case Page::Settings: DrawSettingsPage(); break;
         }
     }
     ImGui::EndChild();
@@ -226,7 +253,6 @@ void Devils_Den_Menu::DrawSelfPage()
     m_infiniteOxygen = gameplay.InfiniteOxygen(); if (ImGui::Checkbox("Infinite Oxygen", &m_infiniteOxygen)) gameplay.SetInfiniteOxygen(m_infiniteOxygen);
     m_noRagdoll = gameplay.NoRagdoll(); if (ImGui::Checkbox("No Ragdoll", &m_noRagdoll)) gameplay.SetNoRagdoll(m_noRagdoll);
     m_keepPlayerClean = gameplay.KeepPlayerClean(); if (ImGui::Checkbox("Keep Player Clean", &m_keepPlayerClean)) gameplay.SetKeepPlayerClean(m_keepPlayerClean);
-    m_infiniteAmmo = gameplay.InfiniteAmmo(); if (ImGui::Checkbox("Infinite Ammo", &m_infiniteAmmo)) gameplay.SetInfiniteAmmo(m_infiniteAmmo);
 
     ImGui::BeginDisabled();
     ImGui::Checkbox("Fast Run", &m_fastRun);
@@ -234,11 +260,65 @@ void Devils_Den_Menu::DrawSelfPage()
     ImGui::EndDisabled();
 
     MedievalDivider();
-    ImGui::TextColored(Bronze, "WEAPONS / ACTIONS");
-    if (ImGui::Button("GIVE ALL WEAPONS", ImVec2(190.0F, 38.0F))) gameplay.RequestGiveAllWeapons();
-    ImGui::SameLine();
-    if (ImGui::Button("GIVE MAX AMMO", ImVec2(190.0F, 38.0F))) gameplay.RequestGiveMaxAmmo();
+    ImGui::TextDisabled("Weapon controls have moved to the dedicated WEAPONS page.");
     ImGui::TextDisabled("Live Self features execute only from the validated RunScriptThreads game-thread context.");
+}
+
+void Devils_Den_Menu::DrawWeaponsPage()
+{
+    auto& gameplay = GTA_Gameplay_State::Instance();
+    ImGui::TextColored(EmberRed, "WEAPONS");
+    ImGui::SameLine();
+    ImGui::TextDisabled("- Story Mode armory and bullet effects");
+    MedievalDivider();
+
+    ImGui::TextColored(Bronze, "AMMO");
+    m_infiniteAmmo = gameplay.InfiniteAmmo();
+    if (ImGui::Checkbox("Infinite Ammo", &m_infiniteAmmo))
+        gameplay.SetInfiniteAmmo(m_infiniteAmmo);
+    bool unlimitedClip = gameplay.UnlimitedClip();
+    if (ImGui::Checkbox("Unlimited Clip / No Reload", &unlimitedClip))
+        gameplay.SetUnlimitedClip(unlimitedClip);
+
+    MedievalDivider();
+    ImGui::TextColored(Bronze, "LOADOUT");
+    if (ImGui::Button("GIVE ALL WEAPONS", ImVec2(180.0F, 38.0F))) gameplay.RequestGiveAllWeapons();
+    ImGui::SameLine();
+    if (ImGui::Button("GIVE MAX AMMO", ImVec2(170.0F, 38.0F))) gameplay.RequestGiveMaxAmmo();
+    ImGui::SameLine();
+    if (ImGui::Button("REMOVE ALL WEAPONS", ImVec2(190.0F, 38.0F))) gameplay.RequestRemoveAllWeapons();
+
+    MedievalDivider();
+    ImGui::TextColored(Bronze, "BULLET EFFECTS");
+    bool explosiveBullets = gameplay.ExplosiveBullets();
+    if (ImGui::Checkbox("Explosive Bullets", &explosiveBullets))
+        gameplay.SetExplosiveBullets(explosiveBullets);
+    ImGui::SameLine();
+    ImGui::TextDisabled("Creates the selected owned explosion at bullet impact coordinates.");
+
+    int explosionType = gameplay.ExplosionType();
+    ImGui::SetNextItemWidth(300.0F);
+    if (ImGui::BeginCombo("Explosion Type", LookupNamedValue(ExplosionTypes, explosionType, "Unknown"))) {
+        for (const auto& type : ExplosionTypes) {
+            if (ImGui::Selectable(type.name, explosionType == type.value)) {
+                explosionType = type.value;
+                gameplay.SetExplosionType(type.value);
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    float damageScale = gameplay.ExplosionDamageScale();
+    ImGui::SetNextItemWidth(430.0F);
+    if (ImGui::SliderFloat("Explosion Damage Scale", &damageScale, 0.0F, 1000.0F, "%.1f"))
+        gameplay.SetExplosionDamageScale(damageScale);
+
+    float cameraShake = gameplay.ExplosionCameraShake();
+    ImGui::SetNextItemWidth(430.0F);
+    if (ImGui::SliderFloat("Explosion Camera Shake", &cameraShake, 0.0F, 10.0F, "%.2f"))
+        gameplay.SetExplosionCameraShake(cameraShake);
+
+    ImGui::TextDisabled("Explosion names and ranges follow the same GTA/Yim-style explosion table, while execution stays on the validated game-thread native path.");
 }
 
 void Devils_Den_Menu::DrawVehiclePage()
@@ -902,6 +982,161 @@ void Devils_Den_Menu::DrawTeleportPage()
     }
     ImGui::EndDisabled();
     ImGui::TextDisabled("Waypoint travel resolves ground, water, then approximate terrain. Current vehicles are moved with the player.");
+}
+
+void Devils_Den_Menu::DrawSettingsPage()
+{
+    auto& gameplay = GTA_Gameplay_State::Instance();
+    auto& vehicles = GTA_Vehicle_State::Instance();
+
+    static bool configsLoaded = false;
+    static std::vector<Devils_Den_Config> configs;
+    static int selectedConfig = -1;
+    static std::array<char, 64> configName{};
+    static bool seededName = false;
+    static std::string configStatus;
+
+    if (!seededName) {
+        constexpr std::string_view defaultName = "Default";
+        std::copy_n(defaultName.data(), defaultName.size(), configName.data());
+        seededName = true;
+    }
+
+    const auto reloadConfigs = [&]() {
+        configs = Devils_Den_Config_Store::LoadAll();
+        if (configs.empty())
+            selectedConfig = -1;
+        else
+            selectedConfig = std::clamp(selectedConfig, 0, static_cast<int>(configs.size()) - 1);
+        configsLoaded = true;
+    };
+
+    if (!configsLoaded)
+        reloadConfigs();
+
+    ImGui::TextColored(EmberRed, "SETTINGS");
+    ImGui::SameLine();
+    ImGui::TextDisabled("- configuration and persistence");
+    MedievalDivider();
+
+    ImGui::TextColored(Bronze, "CONFIGS");
+    ImGui::TextDisabled("Folder: %s", Devils_Den_Config_Store::RootDirectory().string().c_str());
+    ImGui::SetNextItemWidth(280.0F);
+    ImGui::InputTextWithHint("##ConfigName", "Config name...", configName.data(), configName.size());
+    ImGui::SameLine();
+
+    if (ImGui::Button("SAVE CONFIG", ImVec2(130.0F, 34.0F))) {
+        Devils_Den_Config config{};
+        config.name = configName.data();
+        config.godMode = gameplay.GodMode();
+        config.neverWanted = gameplay.NeverWanted();
+        config.superJump = gameplay.SuperJump();
+        config.infiniteOxygen = gameplay.InfiniteOxygen();
+        config.noRagdoll = gameplay.NoRagdoll();
+        config.keepPlayerClean = gameplay.KeepPlayerClean();
+        config.infiniteAmmo = gameplay.InfiniteAmmo();
+        config.unlimitedClip = gameplay.UnlimitedClip();
+        config.explosiveBullets = gameplay.ExplosiveBullets();
+        config.explosionType = gameplay.ExplosionType();
+        config.explosionDamageScale = gameplay.ExplosionDamageScale();
+        config.explosionCameraShake = gameplay.ExplosionCameraShake();
+        config.keepVehiclePerfect = vehicles.KeepVehiclePerfect();
+        config.vehicleGodMode = vehicles.VehicleGodMode();
+        config.spawnInsideVehicle = m_spawnInsideVehicle;
+        config.spawnVehicleMaxed = m_spawnVehicleMaxed;
+        config.spawnVehicleOnGround = m_spawnVehicleOnGround;
+        config.spawnVehicleEngineRunning = m_spawnVehicleEngineRunning;
+        config.spawnVehicleInvincible = m_spawnVehicleInvincible;
+        config.spawnVehicleClean = m_spawnVehicleClean;
+
+        std::string error;
+        if (Devils_Den_Config_Store::Save(config, &error)) {
+            configStatus = "Saved config JSON.";
+            reloadConfigs();
+        } else {
+            configStatus = error.empty() ? "Saving config failed." : error;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("RELOAD", ImVec2(95.0F, 34.0F))) {
+        reloadConfigs();
+        configStatus = "Reloaded config JSON files.";
+    }
+
+    if (!configStatus.empty())
+        ImGui::TextWrapped("%s", configStatus.c_str());
+
+    MedievalDivider();
+    if (ImGui::BeginChild("##ConfigList", ImVec2(265.0F, 280.0F), ImGuiChildFlags_Borders)) {
+        ImGui::TextColored(Bronze, "SAVED CONFIGS (%zu)", configs.size());
+        for (std::size_t index = 0; index < configs.size(); ++index) {
+            ImGui::PushID(static_cast<int>(index));
+            if (ImGui::Selectable(configs[index].name.c_str(), selectedConfig == static_cast<int>(index))) {
+                selectedConfig = static_cast<int>(index);
+                configName.fill('\0');
+                const auto count = (std::min)(configs[index].name.size(), configName.size() - 1U);
+                std::copy_n(configs[index].name.data(), count, configName.data());
+            }
+            ImGui::PopID();
+        }
+        if (configs.empty())
+            ImGui::TextDisabled("No configs saved yet.");
+    }
+    ImGui::EndChild();
+    ImGui::SameLine();
+
+    if (ImGui::BeginChild("##ConfigDetails", ImVec2(0.0F, 280.0F), ImGuiChildFlags_Borders)) {
+        if (selectedConfig >= 0 && selectedConfig < static_cast<int>(configs.size())) {
+            const auto& config = configs[static_cast<std::size_t>(selectedConfig)];
+            ImGui::TextColored(Bronze, "%s", config.name.c_str());
+            ImGui::Text("Infinite Ammo: %s", config.infiniteAmmo ? "ON" : "OFF");
+            ImGui::Text("Unlimited Clip: %s", config.unlimitedClip ? "ON" : "OFF");
+            ImGui::Text("Explosive Bullets: %s", config.explosiveBullets ? "ON" : "OFF");
+            ImGui::Text("Explosion: %s", LookupNamedValue(ExplosionTypes, config.explosionType, "Unknown"));
+            ImGui::Text("Keep Vehicle Perfect: %s", config.keepVehiclePerfect ? "ON" : "OFF");
+            ImGui::Text("Vehicle God Mode: %s", config.vehicleGodMode ? "ON" : "OFF");
+            ImGui::Separator();
+
+            if (ImGui::Button("LOAD CONFIG", ImVec2(140.0F, 36.0F))) {
+                gameplay.SetGodMode(config.godMode);
+                gameplay.SetNeverWanted(config.neverWanted);
+                gameplay.SetSuperJump(config.superJump);
+                gameplay.SetInfiniteOxygen(config.infiniteOxygen);
+                gameplay.SetNoRagdoll(config.noRagdoll);
+                gameplay.SetKeepPlayerClean(config.keepPlayerClean);
+                gameplay.SetInfiniteAmmo(config.infiniteAmmo);
+                gameplay.SetUnlimitedClip(config.unlimitedClip);
+                gameplay.SetExplosiveBullets(config.explosiveBullets);
+                gameplay.SetExplosionType(config.explosionType);
+                gameplay.SetExplosionDamageScale(config.explosionDamageScale);
+                gameplay.SetExplosionCameraShake(config.explosionCameraShake);
+                vehicles.SetKeepVehiclePerfect(config.keepVehiclePerfect);
+                vehicles.SetVehicleGodMode(config.vehicleGodMode);
+                m_spawnInsideVehicle = config.spawnInsideVehicle;
+                m_spawnVehicleMaxed = config.spawnVehicleMaxed;
+                m_spawnVehicleOnGround = config.spawnVehicleOnGround;
+                m_spawnVehicleEngineRunning = config.spawnVehicleEngineRunning;
+                m_spawnVehicleInvincible = config.spawnVehicleInvincible;
+                m_spawnVehicleClean = config.spawnVehicleClean;
+                configStatus = "Loaded config and applied live settings.";
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("DELETE CONFIG", ImVec2(145.0F, 36.0F))) {
+                std::string error;
+                if (Devils_Den_Config_Store::Remove(config, &error)) {
+                    configStatus = "Deleted config JSON.";
+                    reloadConfigs();
+                } else {
+                    configStatus = error.empty() ? "Delete failed." : error;
+                }
+            }
+        } else {
+            ImGui::TextDisabled("Select a config to inspect, load, or delete it.");
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::TextDisabled("Configs persist live Self/Weapons settings, vehicle protection, and vehicle-spawn defaults. One-shot actions are intentionally not saved.");
 }
 
 void Devils_Den_Menu::DrawPlaceholderPage(const char* title, const char* detail)
