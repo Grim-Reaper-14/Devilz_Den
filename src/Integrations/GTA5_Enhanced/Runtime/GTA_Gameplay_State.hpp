@@ -41,6 +41,26 @@ public:
     [[nodiscard]] bool SuperJump() const noexcept { return m_superJump.load(std::memory_order_acquire); }
     void SetSuperJump(bool enabled) noexcept { m_superJump.store(enabled, std::memory_order_release); }
 
+    [[nodiscard]] bool FastRun() const noexcept { return m_fastRun.load(std::memory_order_acquire); }
+    void SetFastRun(bool enabled) noexcept { m_fastRun.store(enabled, std::memory_order_release); }
+    [[nodiscard]] float RunSpeed() const noexcept { return m_runSpeed.load(std::memory_order_acquire); }
+    void SetRunSpeed(float speed) noexcept
+    {
+        if (speed < 1.0F) speed = 1.0F;
+        if (speed > 1.49F) speed = 1.49F;
+        m_runSpeed.store(speed, std::memory_order_release);
+    }
+
+    [[nodiscard]] bool FastSwim() const noexcept { return m_fastSwim.load(std::memory_order_acquire); }
+    void SetFastSwim(bool enabled) noexcept { m_fastSwim.store(enabled, std::memory_order_release); }
+    [[nodiscard]] float SwimSpeed() const noexcept { return m_swimSpeed.load(std::memory_order_acquire); }
+    void SetSwimSpeed(float speed) noexcept
+    {
+        if (speed < 1.0F) speed = 1.0F;
+        if (speed > 1.49F) speed = 1.49F;
+        m_swimSpeed.store(speed, std::memory_order_release);
+    }
+
     [[nodiscard]] bool InfiniteOxygen() const noexcept { return m_infiniteOxygen.load(std::memory_order_acquire); }
     void SetInfiniteOxygen(bool enabled) noexcept { m_infiniteOxygen.store(enabled, std::memory_order_release); }
 
@@ -129,6 +149,10 @@ public:
         m_godMode.store(false, std::memory_order_release);
         m_neverWanted.store(false, std::memory_order_release);
         m_superJump.store(false, std::memory_order_release);
+        m_fastRun.store(false, std::memory_order_release);
+        m_runSpeed.store(1.49F, std::memory_order_release);
+        m_fastSwim.store(false, std::memory_order_release);
+        m_swimSpeed.store(1.49F, std::memory_order_release);
         m_infiniteOxygen.store(false, std::memory_order_release);
         m_noRagdoll.store(false, std::memory_order_release);
         m_keepPlayerClean.store(false, std::memory_order_release);
@@ -153,6 +177,10 @@ private:
     std::atomic_bool m_godMode{false};
     std::atomic_bool m_neverWanted{false};
     std::atomic_bool m_superJump{false};
+    std::atomic_bool m_fastRun{false};
+    std::atomic<float> m_runSpeed{1.49F};
+    std::atomic_bool m_fastSwim{false};
+    std::atomic<float> m_swimSpeed{1.49F};
     std::atomic_bool m_infiniteOxygen{false};
     std::atomic_bool m_noRagdoll{false};
     std::atomic_bool m_keepPlayerClean{false};
