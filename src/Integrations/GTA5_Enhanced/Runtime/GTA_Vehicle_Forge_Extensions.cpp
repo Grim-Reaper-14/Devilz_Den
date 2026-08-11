@@ -1,14 +1,18 @@
 #include "GTA_Vehicle_Forge_Extensions.hpp"
 
+#include "GTA_Gameplay_State.hpp"
 #include "GTA_Vehicle_State.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace Devilz::Integrations::GTA5_Enhanced
@@ -51,11 +55,41 @@ constexpr GTA_Native_Hash GetDashboardColourHash = 0x4C5611B5008205EBULL;
 constexpr GTA_Native_Hash SetLiveryHash = 0xA1C03303EC67320BULL;
 constexpr GTA_Native_Hash GetLiveryHash = 0xA089B04A208DBD0BULL;
 constexpr GTA_Native_Hash GetLiveryCountHash = 0xBA3ECE95D3094B0FULL;
+
+constexpr GTA_Native_Hash SetRunSprintMultiplierHash = 0xA52E1AE3848A506BULL;
+constexpr GTA_Native_Hash SetSwimMultiplierHash = 0x289497A4BA9049E0ULL;
+constexpr GTA_Native_Hash SetPedMoveRateOverrideHash = 0xB27B08E34AC92345ULL;
+constexpr GTA_Native_Hash IsPedArmedHash = 0x11552FA9DCB8E126ULL;
+constexpr GTA_Native_Hash IsPedPerformingMeleeHash = 0xB73833BDAAE31047ULL;
+
 constexpr std::size_t ExtensionCommandBatchSize = 16;
+constexpr std::size_t CatalogResolveBatchSize = 16;
 constexpr int MaxEmptyModScanAttempts = 12;
+constexpr float FastRunMoveRateOverride = 2.0F;
 
 int g_modScanVehicle = 0;
 int g_emptyModScanAttempts = 0;
+std::size_t g_catalogResolveCursor = 0;
+void* g_scriptThread = nullptr;
+int g_lastExplosionTimer = -1000;
+GTA_Native_Script_Vector g_lastExplosionImpact{};
+
+// GTA V Enhanced layout verified against YimMenuV2's scrThread/GtaThread
+// definitions for this project generation: Context script hash @ 0x10,
+// scrThread script hash @ 0x150, GtaThread script hash 2 @ 0x1A8.
+struct GTA_Script_Thread_Spoof_View
+{
+    std::byte pad00[0x10]{};
+    std::uint64_t contextScriptHash = 0;
+    std::byte pad18[0x138]{};
+    std::uint32_t scriptHash = 0;
+    std::byte pad154[0x54]{};
+    std::uint32_t scriptHash2 = 0;
+};
+
+static_assert(offsetof(GTA_Script_Thread_Spoof_View, contextScriptHash) == 0x10);
+static_assert(offsetof(GTA_Script_Thread_Spoof_View, scriptHash) == 0x150);
+static_assert(offsetof(GTA_Script_Thread_Spoof_View, scriptHash2) == 0x1A8);
 
 [[nodiscard]] int CurrentVehicle(GTA_Native_Manager& natives) noexcept
 {
@@ -71,6 +105,153 @@ int g_emptyModScanAttempts = 0;
     return vehicle && *vehicle != 0 ? *vehicle : 0;
 }
 
+[[nodiscard]] std::string CopyLocalized(
+    GTA_Native_Manager& natives,
+    const char* label,
+    std::string fallback)
+{
+    if (!label || *label == '\0' || std::string_view(label) == "NULL")
+        return fallback;
+    const auto localized = natives.Invoke<const char*>(GTA_Native_Id::GetFilenameForAudioConversation, label);
+    if (localized && *localized && **localized != '\0' && std::string_view(*localized) != "NULL")
+        return std::string(*localized);
+    return std::string(label);
+}
+
+void TickSelfMovement(GTA_Native_Manager& natives) noexcept
+{
+    auto& state = GTA_Gameplay_State::Instance();
+    const auto player = natives.Invoke<int>(GTA_Native_Id::PlayerId);
+    if (!player)
+        return;
+
+    const float runMultiplier = state.FastRun() ? state.RunSpeed() : 1.0F;
+    const float swimMultiplier = state.FastSwim() ? state.SwimSpeed() : 1.0F;
+    (void)natives.InvokeHash<void>(SetRunSprintMultiplierHash, *player, runMultiplier);
+    (void)natives.InvokeHash<void>(SetSwimMultiplierHash, *player, swimMultiplier);
+
+    if (state.FastRun()) {
+        const auto ped = natives.Invoke<int>(GTA_Native_Id::PlayerPedId);
+        if (ped && *ped != 0)
+            (void)natives.InvokeHash<void>(SetPedMoveRateOverrideHash, *ped, FastRunMoveRateOverride);
+    }
+}
+
+void TickExplosiveAmmo(GTA_Native_Manager& natives) noexcept
+{
+    auto& state = GTA_Gameplay_State::Instance();
+    if (!state.ExplosiveBullets() || !g_scriptThread)
+        return;
+
+    const auto ped = natives.Invoke<int>(GTA_Native_Id::PlayerPedId);
+    if (!ped || *ped == 0)
+        return;
+
+    const auto armed = natives.InvokeHash<bool>(IsPedArmedHash, *ped, 4);
+    const auto melee = natives.InvokeHash<bool>(IsPedPerformingMeleeHash, *ped);
+    if (!armed || !*armed || (melee && *melee))
+        return;
+
+    GTA_Native_Script_Vector impact{};
+    const auto hit = natives.Invoke<bool>(GTA_Native_Id::GetPedLastWeaponImpactCoord, *ped, &impact);
+    if (!hit || !*hit)
+        return;
+
+    const auto timer = natives.Invoke<int>(GTA_Native_Id::GetGameTimer);
+    if (timer) {
+        const bool sameImpact = std::fabs(impact.x - g_lastExplosionImpact.x) < 0.01F &&
+            std::fabs(impact.y - g_lastExplosionImpact.y) < 0.01F &&
+            std::fabs(impact.z - g_lastExplosionImpact.z) < 0.01F;
+        if (sameImpact && *timer - g_lastExplosionTimer < 90)
+            return;
+        g_lastExplosionTimer = *timer;
+        g_lastExplosionImpact = impact;
+    }
+
+    const auto orbitalHash = natives.Invoke<std::uint32_t>(GTA_Native_Id::GetHashKey, "am_mp_orbital_cannon");
+    if (!orbitalHash)
+        return;
+
+    auto* thread = reinterpret_cast<GTA_Script_Thread_Spoof_View*>(g_scriptThread);
+    const auto previousContextHash = thread->contextScriptHash;
+    const auto previousHash = thread->scriptHash;
+    const auto previousHash2 = thread->scriptHash2;
+
+    thread->contextScriptHash = *orbitalHash;
+    thread->scriptHash = *orbitalHash;
+    thread->scriptHash2 = *orbitalHash;
+
+    (void)natives.Invoke<void>(GTA_Native_Id::AddOwnedExplosion,
+        *ped,
+        impact.x,
+        impact.y,
+        impact.z,
+        state.ExplosionType(),
+        state.ExplosionDamageScale(),
+        true,
+        false,
+        state.ExplosionCameraShake());
+
+    thread->scriptHash2 = previousHash2;
+    thread->scriptHash = previousHash;
+    thread->contextScriptHash = previousContextHash;
+}
+
+void EnrichVehicleCatalog(GTA_Native_Manager& natives, GTA_Vehicle_State& state) noexcept
+{
+    auto catalog = state.CatalogSnapshot();
+    if (catalog.empty())
+        return;
+
+    if (g_catalogResolveCursor >= catalog.size())
+        g_catalogResolveCursor = 0;
+
+    std::size_t visited = 0;
+    std::size_t resolvedThisTick = 0;
+    while (visited < catalog.size() && resolvedThisTick < CatalogResolveBatchSize) {
+        const std::size_t index = g_catalogResolveCursor++ % catalog.size();
+        ++visited;
+        auto metadata = catalog[index];
+        if (metadata.vehicleClass >= 0 && !metadata.makeName.empty() &&
+            metadata.displayName != metadata.modelName)
+            continue;
+
+        const auto valid = natives.Invoke<bool>(GTA_Native_Id::IsModelInCdimage, metadata.modelHash);
+        if (!valid || !*valid)
+            continue;
+
+        bool changed = false;
+        if (metadata.vehicleClass < 0) {
+            const auto vehicleClass = natives.Invoke<int>(GTA_Native_Id::GetVehicleClassFromName, metadata.modelHash);
+            if (vehicleClass && *vehicleClass >= 0) {
+                metadata.vehicleClass = *vehicleClass;
+                changed = true;
+            }
+        }
+
+        if (metadata.displayName.empty() || metadata.displayName == metadata.modelName) {
+            const auto displayLabel = natives.Invoke<const char*>(GTA_Native_Id::GetDisplayNameFromVehicleModel, metadata.modelHash);
+            if (displayLabel && *displayLabel) {
+                metadata.displayName = CopyLocalized(natives, *displayLabel, metadata.modelName);
+                changed = true;
+            }
+        }
+
+        if (metadata.makeName.empty()) {
+            const auto makeLabel = natives.Invoke<const char*>(GTA_Native_Id::GetMakeNameFromVehicleModel, metadata.modelHash);
+            if (makeLabel && *makeLabel) {
+                metadata.makeName = CopyLocalized(natives, *makeLabel, {});
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            state.PublishMetadata(std::move(metadata));
+            ++resolvedThisTick;
+        }
+    }
+}
+
 bool ApplyExtensionCommand(
     GTA_Native_Manager& natives,
     int vehicle,
@@ -80,6 +261,18 @@ bool ApplyExtensionCommand(
         return false;
 
     switch (command.type) {
+    case GTA_Vehicle_Forge_Command_Type::SetPrimaryPaint: {
+        int primary = 0;
+        int secondary = 0;
+        (void)natives.InvokeHash<void>(GetVehicleColoursHash, vehicle, &primary, &secondary);
+        return natives.Invoke<void>(GTA_Native_Id::SetVehicleColours, vehicle, command.arg1, secondary);
+    }
+    case GTA_Vehicle_Forge_Command_Type::SetSecondaryPaint: {
+        int primary = 0;
+        int secondary = 0;
+        (void)natives.InvokeHash<void>(GetVehicleColoursHash, vehicle, &primary, &secondary);
+        return natives.Invoke<void>(GTA_Native_Id::SetVehicleColours, vehicle, primary, command.arg1);
+    }
     case GTA_Vehicle_Forge_Command_Type::SetPlateText: {
         const std::string text = command.text.substr(0, 8);
         return natives.Invoke<void>(GTA_Native_Id::SetVehicleNumberPlateText, vehicle, text.c_str());
@@ -98,6 +291,8 @@ bool ApplyExtensionCommand(
     case GTA_Vehicle_Forge_Command_Type::SetExtra:
         return natives.InvokeHash<void>(SetVehicleExtraHash, vehicle, command.arg0, command.arg1 == 0);
     case GTA_Vehicle_Forge_Command_Type::SetTyreSmokeColor:
+        (void)natives.Invoke<void>(GTA_Native_Id::SetVehicleModKit, vehicle, 0);
+        (void)natives.Invoke<void>(GTA_Native_Id::ToggleVehicleMod, vehicle, 20, true);
         return natives.InvokeHash<void>(SetTyreSmokeColourHash, vehicle,
             std::clamp(command.arg0, 0, 255), std::clamp(command.arg1, 0, 255), std::clamp(command.arg2, 0, 255));
     case GTA_Vehicle_Forge_Command_Type::SetTyresCanBurst:
@@ -200,35 +395,27 @@ void EnrichForgeSnapshot(GTA_Native_Manager& natives, GTA_Vehicle_State& state) 
 
     if (gotPrimary || gotSecondary || gotBaseColours || gotExtras) {
         enriched.paintStateReady = true;
-        if (gotPrimary) {
-            enriched.primaryPaintType = primaryType;
-            enriched.primaryColor = primaryColor;
-        } else if (gotBaseColours) {
-            enriched.primaryPaintType = 0;
+        // SET_VEHICLE_COLOURS is authoritative for normal/chameleon palette
+        // selection. Prefer those base indexes so the UI reflects what was
+        // actually applied, while retaining mod-color type when GTA reports it.
+        if (gotBaseColours) {
             enriched.primaryColor = primaryBase;
-        }
-
-        if (gotSecondary) {
-            enriched.secondaryPaintType = secondaryType;
-            enriched.secondaryColor = secondaryColor;
-        } else if (gotBaseColours) {
-            enriched.secondaryPaintType = 0;
             enriched.secondaryColor = secondaryBase;
+        } else {
+            if (gotPrimary) enriched.primaryColor = primaryColor;
+            if (gotSecondary) enriched.secondaryColor = secondaryColor;
         }
-
-        if (gotExtras || primaryPearl >= 0)
-            enriched.pearlescentColor = pearlescent;
-        if (gotExtras)
-            enriched.wheelColor = wheelColor;
+        if (gotPrimary) enriched.primaryPaintType = primaryType;
+        if (gotSecondary) enriched.secondaryPaintType = secondaryType;
+        if (gotExtras || primaryPearl >= 0) enriched.pearlescentColor = pearlescent;
+        if (gotExtras) enriched.wheelColor = wheelColor;
     }
 
     const auto primaryCustom = natives.InvokeHash<bool>(GetIsPrimaryCustomHash, vehicle);
     if (primaryCustom) {
         enriched.primaryCustom = *primaryCustom;
         if (*primaryCustom) {
-            int r = 0;
-            int g = 0;
-            int b = 0;
+            int r = 0, g = 0, b = 0;
             if (natives.InvokeHash<void>(GetCustomPrimaryHash, vehicle, &r, &g, &b))
                 enriched.primaryRgb = {r, g, b};
         }
@@ -238,57 +425,42 @@ void EnrichForgeSnapshot(GTA_Native_Manager& natives, GTA_Vehicle_State& state) 
     if (secondaryCustom) {
         enriched.secondaryCustom = *secondaryCustom;
         if (*secondaryCustom) {
-            int r = 0;
-            int g = 0;
-            int b = 0;
+            int r = 0, g = 0, b = 0;
             if (natives.InvokeHash<void>(GetCustomSecondaryHash, vehicle, &r, &g, &b))
                 enriched.secondaryRgb = {r, g, b};
         }
     }
 
     const auto turbo = natives.InvokeHash<bool>(IsToggleModOnHash, vehicle, 18);
-    if (turbo)
-        enriched.turboEnabled = *turbo;
+    if (turbo) enriched.turboEnabled = *turbo;
     const auto tireSmoke = natives.InvokeHash<bool>(IsToggleModOnHash, vehicle, 20);
-    if (tireSmoke)
-        enriched.tireSmokeEnabled = *tireSmoke;
+    if (tireSmoke) enriched.tireSmokeEnabled = *tireSmoke;
     const auto xenon = natives.InvokeHash<bool>(IsToggleModOnHash, vehicle, 22);
-    if (xenon)
-        enriched.xenonEnabled = *xenon;
+    if (xenon) enriched.xenonEnabled = *xenon;
 
     const auto xenonColor = natives.InvokeHash<int>(GetXenonColourHash, vehicle);
-    if (xenonColor)
-        enriched.xenonColor = static_cast<std::int8_t>(*xenonColor);
+    if (xenonColor) enriched.xenonColor = static_cast<std::int8_t>(*xenonColor);
 
-    int neonR = 0;
-    int neonG = 0;
-    int neonB = 0;
+    int neonR = 0, neonG = 0, neonB = 0;
     if (natives.InvokeHash<void>(GetNeonColourHash, vehicle, &neonR, &neonG, &neonB))
         enriched.neonRgb = {neonR, neonG, neonB};
     for (int side = 0; side < 4; ++side) {
         const auto enabled = natives.InvokeHash<bool>(GetNeonEnabledHash, vehicle, side);
-        if (enabled)
-            enriched.neonEnabled[static_cast<std::size_t>(side)] = *enabled;
+        if (enabled) enriched.neonEnabled[static_cast<std::size_t>(side)] = *enabled;
     }
 
-    int smokeR = 0;
-    int smokeG = 0;
-    int smokeB = 0;
+    int smokeR = 0, smokeG = 0, smokeB = 0;
     if (natives.InvokeHash<void>(GetTyreSmokeColourHash, vehicle, &smokeR, &smokeG, &smokeB))
         enriched.tyreSmokeRgb = {smokeR, smokeG, smokeB};
 
     const auto frontVariation = natives.InvokeHash<bool>(GetVehicleModVariationHash, vehicle, 23);
-    if (frontVariation)
-        enriched.frontCustomTires = *frontVariation;
+    if (frontVariation) enriched.frontCustomTires = *frontVariation;
     const auto rearVariation = natives.InvokeHash<bool>(GetVehicleModVariationHash, vehicle, 24);
-    if (rearVariation)
-        enriched.rearCustomTires = *rearVariation;
+    if (rearVariation) enriched.rearCustomTires = *rearVariation;
     const auto canBurst = natives.InvokeHash<bool>(GetTyresCanBurstHash, vehicle);
-    if (canBurst)
-        enriched.tyresCanBurst = *canBurst;
+    if (canBurst) enriched.tyresCanBurst = *canBurst;
     const auto driftTyres = natives.InvokeHash<bool>(GetDriftTyresHash, vehicle);
-    if (driftTyres)
-        enriched.driftTyres = *driftTyres;
+    if (driftTyres) enriched.driftTyres = *driftTyres;
 
     for (int extra = 1; extra <= 14; ++extra) {
         const auto exists = natives.InvokeHash<bool>(DoesExtraExistHash, vehicle, extra);
@@ -297,28 +469,22 @@ void EnrichForgeSnapshot(GTA_Native_Manager& natives, GTA_Vehicle_State& state) 
         enriched.extraExists[static_cast<std::size_t>(extra)] = *exists;
         if (*exists) {
             const auto enabled = natives.InvokeHash<bool>(IsExtraTurnedOnHash, vehicle, extra);
-            if (enabled)
-                enriched.extrasEnabled[static_cast<std::size_t>(extra)] = *enabled;
+            if (enabled) enriched.extrasEnabled[static_cast<std::size_t>(extra)] = *enabled;
         }
     }
 
     const auto liveryCount = natives.InvokeHash<int>(GetLiveryCountHash, vehicle);
-    if (liveryCount)
-        enriched.liveryCount = (std::max)(*liveryCount, 0);
+    if (liveryCount) enriched.liveryCount = (std::max)(*liveryCount, 0);
     const auto livery = natives.InvokeHash<int>(GetLiveryHash, vehicle);
-    if (livery)
-        enriched.livery = *livery;
+    if (livery) enriched.livery = *livery;
 
     int interior = -1;
-    if (natives.InvokeHash<void>(GetInteriorColourHash, vehicle, &interior))
-        enriched.interiorColor = interior;
+    if (natives.InvokeHash<void>(GetInteriorColourHash, vehicle, &interior)) enriched.interiorColor = interior;
     int dashboard = -1;
-    if (natives.InvokeHash<void>(GetDashboardColourHash, vehicle, &dashboard))
-        enriched.dashboardColor = dashboard;
+    if (natives.InvokeHash<void>(GetDashboardColourHash, vehicle, &dashboard)) enriched.dashboardColor = dashboard;
 
     const auto plateText = natives.InvokeHash<const char*>(GetPlateTextHash, vehicle);
-    if (plateText && *plateText)
-        enriched.plateText = std::string(*plateText).substr(0, 8);
+    if (plateText && *plateText) enriched.plateText = std::string(*plateText).substr(0, 8);
 
     const bool changed = enriched.modKitCount != snapshot.modKitCount ||
         enriched.modScanAttempts != snapshot.modScanAttempts ||
@@ -358,9 +524,17 @@ void EnrichForgeSnapshot(GTA_Native_Manager& natives, GTA_Vehicle_State& state) 
 }
 }
 
+void SetForgeExtensionScriptThread(void* scriptThread) noexcept
+{
+    g_scriptThread = scriptThread;
+}
+
 void TickVehicleForgeExtensions(GTA_Native_Manager& natives) noexcept
 {
     auto& state = GTA_Vehicle_State::Instance();
+    TickSelfMovement(natives);
+    TickExplosiveAmmo(natives);
+    EnrichVehicleCatalog(natives, state);
     DrainCurrentExtensionCommands(natives, state);
     DrainPostSpawnExtensionCommands(natives, state);
     EnrichForgeSnapshot(natives, state);
