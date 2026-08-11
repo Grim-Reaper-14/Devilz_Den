@@ -53,6 +53,7 @@ private:
     void TickVehicleMaintenance() noexcept;
     void TickVehicleForgeSnapshot() noexcept;
     void BuildVehicleForgeSnapshot(int vehicle) noexcept;
+    bool ApplyForgeCommandToVehicle(int vehicle, const GTA_Vehicle_Forge_Command& command) noexcept;
     void BeginVehicleSpawn(std::uint32_t modelHash, const GTA_Vehicle_Spawn_Options& options) noexcept;
     void FinishVehicleSpawn(bool success, const char* detail) noexcept;
     [[nodiscard]] int CurrentVehicle() noexcept;
