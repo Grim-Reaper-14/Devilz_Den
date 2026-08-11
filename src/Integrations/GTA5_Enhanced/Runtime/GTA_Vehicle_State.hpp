@@ -3,6 +3,7 @@
 #include "GTA_Vehicle_Catalog.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -49,7 +50,10 @@ enum class GTA_Vehicle_Forge_Command_Type : std::uint8_t
     SetWindowTint,
     SetPlateStyle,
     RepairVehicle,
-    CleanVehicle
+    CleanVehicle,
+    SetPlateText,
+    ClearCustomPrimary,
+    ClearCustomSecondary
 };
 
 struct GTA_Vehicle_Forge_Command
@@ -58,6 +62,7 @@ struct GTA_Vehicle_Forge_Command
     int arg0 = 0;
     int arg1 = 0;
     int arg2 = 0;
+    std::string text;
 };
 
 struct GTA_Vehicle_Forge_Option
@@ -81,6 +86,25 @@ struct GTA_Vehicle_Forge_Snapshot
     int wheelType = -1;
     int windowTint = -1;
     int plateStyle = -1;
+    std::string plateText;
+
+    bool paintStateReady = false;
+    int primaryPaintType = -1;
+    int primaryColor = -1;
+    int secondaryPaintType = -1;
+    int secondaryColor = -1;
+    int pearlescentColor = -1;
+    int wheelColor = -1;
+    bool primaryCustom = false;
+    bool secondaryCustom = false;
+    std::array<int, 3> primaryRgb{0, 0, 0};
+    std::array<int, 3> secondaryRgb{0, 0, 0};
+
+    bool turboEnabled = false;
+    bool xenonEnabled = false;
+    bool frontCustomTires = false;
+    bool rearCustomTires = false;
+
     std::vector<GTA_Vehicle_Forge_Category> categories;
 };
 
@@ -120,9 +144,7 @@ public:
         m_spawnRequested.store(true, std::memory_order_release);
     }
 
-    [[nodiscard]] bool ConsumeSpawnRequest(
-        std::uint32_t& modelHash,
-        GTA_Vehicle_Spawn_Options& options) noexcept
+    [[nodiscard]] bool ConsumeSpawnRequest(std::uint32_t& modelHash, GTA_Vehicle_Spawn_Options& options) noexcept
     {
         if (!m_spawnRequested.exchange(false, std::memory_order_acq_rel))
             return false;
@@ -137,25 +159,10 @@ public:
         return true;
     }
 
-    [[nodiscard]] GTA_Vehicle_Spawn_Status SpawnStatus() const noexcept
-    {
-        return m_spawnStatus.load(std::memory_order_acquire);
-    }
-
-    void SetSpawnStatus(GTA_Vehicle_Spawn_Status status) noexcept
-    {
-        m_spawnStatus.store(status, std::memory_order_release);
-    }
-
-    [[nodiscard]] int LastSpawnedVehicle() const noexcept
-    {
-        return m_lastSpawnedVehicle.load(std::memory_order_acquire);
-    }
-
-    void SetLastSpawnedVehicle(int vehicle) noexcept
-    {
-        m_lastSpawnedVehicle.store(vehicle, std::memory_order_release);
-    }
+    [[nodiscard]] GTA_Vehicle_Spawn_Status SpawnStatus() const noexcept { return m_spawnStatus.load(std::memory_order_acquire); }
+    void SetSpawnStatus(GTA_Vehicle_Spawn_Status status) noexcept { m_spawnStatus.store(status, std::memory_order_release); }
+    [[nodiscard]] int LastSpawnedVehicle() const noexcept { return m_lastSpawnedVehicle.load(std::memory_order_acquire); }
+    void SetLastSpawnedVehicle(int vehicle) noexcept { m_lastSpawnedVehicle.store(vehicle, std::memory_order_release); }
 
     void QueueForgeCommand(const GTA_Vehicle_Forge_Command& command)
     {
@@ -184,17 +191,42 @@ public:
     [[nodiscard]] GTA_Vehicle_Forge_Command ConsumeForgeCommand()
     {
         std::scoped_lock lock(m_forgeCommandMutex);
-        if (m_forgeCommands.empty())
+        const auto it = std::find_if(m_forgeCommands.begin(), m_forgeCommands.end(),
+            [](const GTA_Vehicle_Forge_Command& command) {
+                return command.type != GTA_Vehicle_Forge_Command_Type::None && !IsExtensionCommand(command.type);
+            });
+        if (it == m_forgeCommands.end())
             return {};
-        const auto command = m_forgeCommands.front();
-        m_forgeCommands.erase(m_forgeCommands.begin());
+        const auto command = *it;
+        m_forgeCommands.erase(it);
+        return command;
+    }
+
+    [[nodiscard]] GTA_Vehicle_Forge_Command ConsumeForgeExtensionCommand()
+    {
+        std::scoped_lock lock(m_forgeCommandMutex);
+        const auto it = std::find_if(m_forgeCommands.begin(), m_forgeCommands.end(),
+            [](const GTA_Vehicle_Forge_Command& command) { return IsExtensionCommand(command.type); });
+        if (it == m_forgeCommands.end())
+            return {};
+        const auto command = *it;
+        m_forgeCommands.erase(it);
         return command;
     }
 
     void SetPostSpawnForgeCommands(std::vector<GTA_Vehicle_Forge_Command> commands)
     {
         std::scoped_lock lock(m_postSpawnCommandMutex);
-        m_postSpawnForgeCommands = std::move(commands);
+        m_postSpawnForgeCommands.clear();
+        m_postSpawnExtensionCommands.clear();
+        for (auto& command : commands) {
+            if (command.type == GTA_Vehicle_Forge_Command_Type::None)
+                continue;
+            if (IsExtensionCommand(command.type))
+                m_postSpawnExtensionCommands.push_back(std::move(command));
+            else
+                m_postSpawnForgeCommands.push_back(std::move(command));
+        }
     }
 
     [[nodiscard]] std::vector<GTA_Vehicle_Forge_Command> ConsumePostSpawnForgeCommands()
@@ -205,35 +237,20 @@ public:
         return commands;
     }
 
-    void SetKeepVehiclePerfect(bool enabled) noexcept
+    [[nodiscard]] std::vector<GTA_Vehicle_Forge_Command> ConsumePostSpawnExtensionCommands()
     {
-        m_keepVehiclePerfect.store(enabled, std::memory_order_release);
+        std::scoped_lock lock(m_postSpawnCommandMutex);
+        auto commands = std::move(m_postSpawnExtensionCommands);
+        m_postSpawnExtensionCommands.clear();
+        return commands;
     }
 
-    [[nodiscard]] bool KeepVehiclePerfect() const noexcept
-    {
-        return m_keepVehiclePerfect.load(std::memory_order_acquire);
-    }
-
-    void SetVehicleGodMode(bool enabled) noexcept
-    {
-        m_vehicleGodMode.store(enabled, std::memory_order_release);
-    }
-
-    [[nodiscard]] bool VehicleGodMode() const noexcept
-    {
-        return m_vehicleGodMode.load(std::memory_order_acquire);
-    }
-
-    void RequestForgeSnapshotRefresh() noexcept
-    {
-        m_forgeSnapshotRefreshRequested.store(true, std::memory_order_release);
-    }
-
-    [[nodiscard]] bool ConsumeForgeSnapshotRefreshRequest() noexcept
-    {
-        return m_forgeSnapshotRefreshRequested.exchange(false, std::memory_order_acq_rel);
-    }
+    void SetKeepVehiclePerfect(bool enabled) noexcept { m_keepVehiclePerfect.store(enabled, std::memory_order_release); }
+    [[nodiscard]] bool KeepVehiclePerfect() const noexcept { return m_keepVehiclePerfect.load(std::memory_order_acquire); }
+    void SetVehicleGodMode(bool enabled) noexcept { m_vehicleGodMode.store(enabled, std::memory_order_release); }
+    [[nodiscard]] bool VehicleGodMode() const noexcept { return m_vehicleGodMode.load(std::memory_order_acquire); }
+    void RequestForgeSnapshotRefresh() noexcept { m_forgeSnapshotRefreshRequested.store(true, std::memory_order_release); }
+    [[nodiscard]] bool ConsumeForgeSnapshotRefreshRequest() noexcept { return m_forgeSnapshotRefreshRequested.exchange(false, std::memory_order_acq_rel); }
 
     void PublishForgeSnapshot(GTA_Vehicle_Forge_Snapshot snapshot)
     {
@@ -248,26 +265,17 @@ public:
         return m_forgeSnapshot;
     }
 
-    [[nodiscard]] std::uint64_t ForgeSnapshotGeneration() const noexcept
-    {
-        return m_forgeSnapshotGeneration.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::uint64_t ForgeSnapshotGeneration() const noexcept { return m_forgeSnapshotGeneration.load(std::memory_order_acquire); }
 
     void PublishMetadata(GTA_Vehicle_Metadata metadata)
     {
         std::scoped_lock lock(m_catalogMutex);
-        const auto existing = std::find_if(
-            m_catalog.begin(),
-            m_catalog.end(),
-            [&metadata](const GTA_Vehicle_Metadata& entry) {
-                return entry.modelHash == metadata.modelHash;
-            });
-
+        const auto existing = std::find_if(m_catalog.begin(), m_catalog.end(),
+            [&metadata](const GTA_Vehicle_Metadata& entry) { return entry.modelHash == metadata.modelHash; });
         if (existing != m_catalog.end())
             *existing = std::move(metadata);
         else
             m_catalog.push_back(std::move(metadata));
-
         m_catalogGeneration.fetch_add(1, std::memory_order_release);
     }
 
@@ -277,10 +285,7 @@ public:
         return m_catalog;
     }
 
-    [[nodiscard]] std::uint64_t CatalogGeneration() const noexcept
-    {
-        return m_catalogGeneration.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::uint64_t CatalogGeneration() const noexcept { return m_catalogGeneration.load(std::memory_order_acquire); }
 
     void Reset() noexcept
     {
@@ -296,6 +301,7 @@ public:
         {
             std::scoped_lock lock(m_postSpawnCommandMutex);
             m_postSpawnForgeCommands.clear();
+            m_postSpawnExtensionCommands.clear();
         }
         m_keepVehiclePerfect.store(false, std::memory_order_release);
         m_vehicleGodMode.store(false, std::memory_order_release);
@@ -313,16 +319,19 @@ public:
     }
 
 private:
-    GTA_Vehicle_State()
+    GTA_Vehicle_State() { SeedStaticCatalogLocked(); }
+
+    [[nodiscard]] static bool IsExtensionCommand(GTA_Vehicle_Forge_Command_Type type) noexcept
     {
-        SeedStaticCatalogLocked();
+        return type == GTA_Vehicle_Forge_Command_Type::SetPlateText ||
+               type == GTA_Vehicle_Forge_Command_Type::ClearCustomPrimary ||
+               type == GTA_Vehicle_Forge_Command_Type::ClearCustomSecondary;
     }
 
     void SeedStaticCatalogLocked()
     {
         m_catalog.clear();
         m_catalog.reserve(GTA_Vehicle_Model_Names.size());
-
         for (const auto modelName : GTA_Vehicle_Model_Names) {
             GTA_Vehicle_Metadata metadata{};
             metadata.modelHash = GTA_Model_Hash(modelName);
@@ -337,18 +346,17 @@ private:
     std::atomic<std::uint8_t> m_spawnFlags{0};
     std::atomic<GTA_Vehicle_Spawn_Status> m_spawnStatus{GTA_Vehicle_Spawn_Status::Idle};
     std::atomic_int m_lastSpawnedVehicle{0};
-
     mutable std::mutex m_forgeCommandMutex;
     std::vector<GTA_Vehicle_Forge_Command> m_forgeCommands;
     mutable std::mutex m_postSpawnCommandMutex;
     std::vector<GTA_Vehicle_Forge_Command> m_postSpawnForgeCommands;
+    std::vector<GTA_Vehicle_Forge_Command> m_postSpawnExtensionCommands;
     std::atomic_bool m_keepVehiclePerfect{false};
     std::atomic_bool m_vehicleGodMode{false};
     std::atomic_bool m_forgeSnapshotRefreshRequested{true};
     mutable std::mutex m_forgeSnapshotMutex;
     GTA_Vehicle_Forge_Snapshot m_forgeSnapshot;
     std::atomic<std::uint64_t> m_forgeSnapshotGeneration{0};
-
     mutable std::mutex m_catalogMutex;
     std::vector<GTA_Vehicle_Metadata> m_catalog;
     std::atomic<std::uint64_t> m_catalogGeneration{0};
