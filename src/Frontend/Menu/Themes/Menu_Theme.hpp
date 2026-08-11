@@ -11,6 +11,19 @@ enum class Menu_Theme_Id : std::uint8_t
     DevilsDenMedieval
 };
 
+enum class Menu_Icon : std::uint8_t
+{
+    DevilCrest,
+    Self,
+    Weapons,
+    Vehicle,
+    Teleport,
+    World,
+    Network,
+    Lua,
+    Settings
+};
+
 struct Menu_Theme_Palette
 {
     ImVec4 emberRed{};
@@ -38,6 +51,8 @@ public:
     void Apply() const noexcept;
     void DrawHeader(const char* title, const char* subtitle) const noexcept;
     void DrawDivider() const noexcept;
+    void DrawIcon(Menu_Icon icon, ImDrawList* draw, ImVec2 center, float radius, ImU32 color = 0) const noexcept;
+    void DrawOrnateFrame(ImDrawList* draw, ImVec2 min, ImVec2 max, bool active = false) const noexcept;
 
 private:
     Menu_Theme_Manager() noexcept;
