@@ -46,6 +46,8 @@ private:
     void TickNoRagdoll() noexcept;
     void TickKeepPlayerClean() noexcept;
     void TickInfiniteAmmo() noexcept;
+    void TickUnlimitedClip() noexcept;
+    void TickExplosiveBullets() noexcept;
     void TickWeaponActions() noexcept;
     void TickVehicleCatalog() noexcept;
     void TickVehicleSpawner() noexcept;
@@ -70,6 +72,7 @@ private:
     bool m_infiniteOxygenApplied = false;
     bool m_noRagdollApplied = false;
     bool m_infiniteAmmoApplied = false;
+    bool m_unlimitedClipApplied = false;
 
     std::size_t m_vehicleCatalogIndex = 0;
     Vehicle_Spawn_Phase m_vehicleSpawnPhase = Vehicle_Spawn_Phase::Idle;
