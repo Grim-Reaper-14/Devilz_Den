@@ -127,8 +127,7 @@ bool ReadBool(std::string_view text, std::string_view key, bool& output)
 
 std::string NameOf(const auto& values, int value)
 {
-    const auto name = GTA_Vehicle_Value_Name(values, value, "Unknown");
-    return std::string(name);
+    return std::string(GTA_Vehicle_Value_Name(values, value, "Unknown"));
 }
 
 std::string PaintName(int type, int color)
@@ -176,6 +175,32 @@ bool ParseBuild(std::string_view text, GTA_Vehicle_Saved_Build& build)
     (void)ReadBool(text, "turboEnabled", build.turboEnabled);
     (void)ReadBool(text, "xenonEnabled", build.xenonEnabled);
 
+    if (build.version >= 3) {
+        (void)ReadInteger(text, "xenonColor", build.xenonColor);
+        (void)ReadBool(text, "tireSmokeEnabled", build.tireSmokeEnabled);
+        (void)ReadInteger(text, "tyreSmokeR", build.tyreSmokeRgb[0]);
+        (void)ReadInteger(text, "tyreSmokeG", build.tyreSmokeRgb[1]);
+        (void)ReadInteger(text, "tyreSmokeB", build.tyreSmokeRgb[2]);
+        (void)ReadBool(text, "tyresCanBurst", build.tyresCanBurst);
+        (void)ReadBool(text, "driftTyres", build.driftTyres);
+        (void)ReadBool(text, "neonLeft", build.neonEnabled[0]);
+        (void)ReadBool(text, "neonRight", build.neonEnabled[1]);
+        (void)ReadBool(text, "neonFront", build.neonEnabled[2]);
+        (void)ReadBool(text, "neonBack", build.neonEnabled[3]);
+        (void)ReadInteger(text, "neonR", build.neonRgb[0]);
+        (void)ReadInteger(text, "neonG", build.neonRgb[1]);
+        (void)ReadInteger(text, "neonB", build.neonRgb[2]);
+        (void)ReadInteger(text, "livery", build.livery);
+        (void)ReadInteger(text, "interiorColor", build.interiorColor);
+        (void)ReadInteger(text, "dashboardColor", build.dashboardColor);
+        for (int extra = 1; extra <= 14; ++extra) {
+            const std::string prefix = "extra" + std::to_string(extra);
+            (void)ReadBool(text, prefix + "Exists", build.extraExists[static_cast<std::size_t>(extra)]);
+            (void)ReadBool(text, prefix + "Enabled", build.extrasEnabled[static_cast<std::size_t>(extra)]);
+        }
+    }
+
+    build.mods.clear();
     const auto modsKey = text.find("\"mods\"");
     if (modsKey == std::string_view::npos)
         return build.modelHash != 0;
@@ -246,8 +271,21 @@ GTA_Vehicle_Saved_Build GTA_Vehicle_Saved_Builds::Capture(
     build.secondaryCustom = snapshot.secondaryCustom;
     build.primaryRgb = snapshot.primaryRgb;
     build.secondaryRgb = snapshot.secondaryRgb;
+
     build.turboEnabled = snapshot.turboEnabled;
     build.xenonEnabled = snapshot.xenonEnabled;
+    build.xenonColor = snapshot.xenonColor;
+    build.tireSmokeEnabled = snapshot.tireSmokeEnabled;
+    build.tyreSmokeRgb = snapshot.tyreSmokeRgb;
+    build.tyresCanBurst = snapshot.tyresCanBurst;
+    build.driftTyres = snapshot.driftTyres;
+    build.neonEnabled = snapshot.neonEnabled;
+    build.neonRgb = snapshot.neonRgb;
+    build.extraExists = snapshot.extraExists;
+    build.extrasEnabled = snapshot.extrasEnabled;
+    build.livery = snapshot.livery;
+    build.interiorColor = snapshot.interiorColor;
+    build.dashboardColor = snapshot.dashboardColor;
 
     if (metadata) {
         build.modelName = metadata->modelName;
@@ -256,8 +294,6 @@ GTA_Vehicle_Saved_Build GTA_Vehicle_Saved_Builds::Capture(
     }
 
     for (const auto& category : snapshot.categories) {
-        if (category.installedIndex < 0)
-            continue;
         GTA_Vehicle_Saved_Mod mod{};
         mod.slot = category.slot;
         mod.index = category.installedIndex;
@@ -365,6 +401,28 @@ bool GTA_Vehicle_Saved_Builds::Save(const GTA_Vehicle_Saved_Build& build, std::s
     stream << "  \"secondaryB\": " << build.secondaryRgb[2] << ",\n";
     stream << "  \"turboEnabled\": " << (build.turboEnabled ? "true" : "false") << ",\n";
     stream << "  \"xenonEnabled\": " << (build.xenonEnabled ? "true" : "false") << ",\n";
+    stream << "  \"xenonColor\": " << build.xenonColor << ",\n";
+    stream << "  \"tireSmokeEnabled\": " << (build.tireSmokeEnabled ? "true" : "false") << ",\n";
+    stream << "  \"tyreSmokeR\": " << build.tyreSmokeRgb[0] << ",\n";
+    stream << "  \"tyreSmokeG\": " << build.tyreSmokeRgb[1] << ",\n";
+    stream << "  \"tyreSmokeB\": " << build.tyreSmokeRgb[2] << ",\n";
+    stream << "  \"tyresCanBurst\": " << (build.tyresCanBurst ? "true" : "false") << ",\n";
+    stream << "  \"driftTyres\": " << (build.driftTyres ? "true" : "false") << ",\n";
+    stream << "  \"neonLeft\": " << (build.neonEnabled[0] ? "true" : "false") << ",\n";
+    stream << "  \"neonRight\": " << (build.neonEnabled[1] ? "true" : "false") << ",\n";
+    stream << "  \"neonFront\": " << (build.neonEnabled[2] ? "true" : "false") << ",\n";
+    stream << "  \"neonBack\": " << (build.neonEnabled[3] ? "true" : "false") << ",\n";
+    stream << "  \"neonR\": " << build.neonRgb[0] << ",\n";
+    stream << "  \"neonG\": " << build.neonRgb[1] << ",\n";
+    stream << "  \"neonB\": " << build.neonRgb[2] << ",\n";
+    stream << "  \"livery\": " << build.livery << ",\n";
+    stream << "  \"interiorColor\": " << build.interiorColor << ",\n";
+    stream << "  \"dashboardColor\": " << build.dashboardColor << ",\n";
+    for (int extra = 1; extra <= 14; ++extra) {
+        const auto index = static_cast<std::size_t>(extra);
+        stream << "  \"extra" << extra << "Exists\": " << (build.extraExists[index] ? "true" : "false") << ",\n";
+        stream << "  \"extra" << extra << "Enabled\": " << (build.extrasEnabled[index] ? "true" : "false") << ",\n";
+    }
     stream << "  \"mods\": [\n";
     for (std::size_t i = 0; i < build.mods.size(); ++i) {
         const auto& mod = build.mods[i];
@@ -406,7 +464,7 @@ std::vector<GTA_Vehicle_Forge_Command> GTA_Vehicle_Saved_Builds::BuildCommands(
     const GTA_Vehicle_Saved_Build& build)
 {
     std::vector<GTA_Vehicle_Forge_Command> commands;
-    commands.reserve(build.mods.size() + 16U);
+    commands.reserve(build.mods.size() + 64U);
 
     if (build.wheelType >= 0)
         commands.push_back({GTA_Vehicle_Forge_Command_Type::SetWheelType, build.wheelType, 0, 0, {}});
@@ -433,7 +491,7 @@ std::vector<GTA_Vehicle_Forge_Command> GTA_Vehicle_Saved_Builds::BuildCommands(
 
     if (build.pearlescentColor >= 0 || build.wheelColor >= 0)
         commands.push_back({GTA_Vehicle_Forge_Command_Type::SetExtraColours,
-            std::max(build.pearlescentColor, 0), std::max(build.wheelColor, 0), 0, {}});
+            (std::max)(build.pearlescentColor, 0), (std::max)(build.wheelColor, 0), 0, {}});
 
     for (const auto& mod : build.mods)
         commands.push_back({GTA_Vehicle_Forge_Command_Type::SetMod,
@@ -442,6 +500,32 @@ std::vector<GTA_Vehicle_Forge_Command> GTA_Vehicle_Saved_Builds::BuildCommands(
     if (build.version >= 2) {
         commands.push_back({GTA_Vehicle_Forge_Command_Type::ToggleMod, 18, build.turboEnabled ? 1 : 0, 0, {}});
         commands.push_back({GTA_Vehicle_Forge_Command_Type::ToggleMod, 22, build.xenonEnabled ? 1 : 0, 0, {}});
+    }
+
+    if (build.version >= 3) {
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetXenonColor, build.xenonColor, 0, 0, {}});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::ToggleMod, 20, build.tireSmokeEnabled ? 1 : 0, 0, {}});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetTyreSmokeColor,
+            build.tyreSmokeRgb[0], build.tyreSmokeRgb[1], build.tyreSmokeRgb[2], {}});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetTyresCanBurst, build.tyresCanBurst ? 1 : 0, 0, 0, {}});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetDriftTyres, build.driftTyres ? 1 : 0, 0, 0, {}});
+        for (int side = 0; side < 4; ++side)
+            commands.push_back({GTA_Vehicle_Forge_Command_Type::SetNeonEnabled,
+                side, build.neonEnabled[static_cast<std::size_t>(side)] ? 1 : 0, 0, {}});
+        commands.push_back({GTA_Vehicle_Forge_Command_Type::SetNeonColor,
+            build.neonRgb[0], build.neonRgb[1], build.neonRgb[2], {}});
+        for (int extra = 1; extra <= 14; ++extra) {
+            const auto index = static_cast<std::size_t>(extra);
+            if (build.extraExists[index])
+                commands.push_back({GTA_Vehicle_Forge_Command_Type::SetExtra,
+                    extra, build.extrasEnabled[index] ? 1 : 0, 0, {}});
+        }
+        if (build.livery >= 0)
+            commands.push_back({GTA_Vehicle_Forge_Command_Type::SetLivery, build.livery, 0, 0, {}});
+        if (build.interiorColor >= 0)
+            commands.push_back({GTA_Vehicle_Forge_Command_Type::SetInteriorColor, build.interiorColor, 0, 0, {}});
+        if (build.dashboardColor >= 0)
+            commands.push_back({GTA_Vehicle_Forge_Command_Type::SetDashboardColor, build.dashboardColor, 0, 0, {}});
     }
 
     if (build.windowTint >= 0)
