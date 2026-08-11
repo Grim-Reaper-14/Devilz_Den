@@ -125,6 +125,7 @@ void GTA_Gameplay_Feature_Runner::Reset() noexcept
     m_infiniteOxygenApplied = false;
     m_noRagdollApplied = false;
     m_infiniteAmmoApplied = false;
+    m_unlimitedClipApplied = false;
     m_vehicleCatalogIndex = 0;
     m_vehicleSpawnPhase = Vehicle_Spawn_Phase::Idle;
     m_vehicleSpawnModel = 0;
@@ -153,6 +154,8 @@ void GTA_Gameplay_Feature_Runner::Tick() noexcept
     TickNoRagdoll();
     TickKeepPlayerClean();
     TickInfiniteAmmo();
+    TickUnlimitedClip();
+    TickExplosiveBullets();
     TickWeaponActions();
     TickVehicleCatalog();
     TickVehicleSpawner();
@@ -281,12 +284,56 @@ void GTA_Gameplay_Feature_Runner::TickInfiniteAmmo() noexcept
     m_infiniteAmmoApplied = desired;
 }
 
+void GTA_Gameplay_Feature_Runner::TickUnlimitedClip() noexcept
+{
+    auto& state = GTA_Gameplay_State::Instance();
+    const bool desired = state.UnlimitedClip();
+    if (!desired && !m_unlimitedClipApplied)
+        return;
+    const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
+    if (!ped || *ped == 0)
+        return;
+    if (!m_natives->Invoke<void>(GTA_Native_Id::SetPedInfiniteAmmoClip, *ped, desired))
+        return;
+    if (desired != m_unlimitedClipApplied && m_logger)
+        m_logger->Log(Backend::LogLevel::Info, desired ? "Unlimited Clip enabled" : "Unlimited Clip disabled", "GTA5_Enhanced.Features");
+    m_unlimitedClipApplied = desired;
+}
+
+void GTA_Gameplay_Feature_Runner::TickExplosiveBullets() noexcept
+{
+    auto& state = GTA_Gameplay_State::Instance();
+    if (!state.ExplosiveBullets())
+        return;
+
+    const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
+    if (!ped || *ped == 0)
+        return;
+
+    GTA_Native_Script_Vector impact{};
+    const auto hit = m_natives->Invoke<bool>(GTA_Native_Id::GetPedLastWeaponImpactCoord, *ped, &impact);
+    if (!hit || !*hit)
+        return;
+
+    (void)m_natives->Invoke<void>(GTA_Native_Id::AddOwnedExplosion,
+        *ped,
+        impact.x,
+        impact.y,
+        impact.z,
+        state.ExplosionType(),
+        state.ExplosionDamageScale(),
+        true,
+        false,
+        state.ExplosionCameraShake());
+}
+
 void GTA_Gameplay_Feature_Runner::TickWeaponActions() noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
     const bool giveAll = state.ConsumeGiveAllWeaponsRequest();
     const bool giveAmmo = state.ConsumeGiveMaxAmmoRequest();
-    if (!giveAll && !giveAmmo)
+    const bool removeAll = state.ConsumeRemoveAllWeaponsRequest();
+    if (!giveAll && !giveAmmo && !removeAll)
         return;
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
@@ -298,12 +345,16 @@ void GTA_Gameplay_Feature_Runner::TickWeaponActions() noexcept
             success = m_natives->Invoke<void>(GTA_Native_Id::GiveWeaponToPed, *ped, hash, 9999, false, false) && success;
         if (giveAmmo)
             success = m_natives->Invoke<void>(GTA_Native_Id::SetPedAmmo, *ped, hash, 9999, false) && success;
+        if (removeAll)
+            success = m_natives->Invoke<void>(GTA_Native_Id::RemoveWeaponFromPed, *ped, hash) && success;
     }
     if (m_logger) {
         if (giveAll)
             m_logger->Log(success ? Backend::LogLevel::Info : Backend::LogLevel::Warning, success ? "Give All Weapons completed" : "Give All Weapons completed with native failures", "GTA5_Enhanced.Features");
         if (giveAmmo)
             m_logger->Log(success ? Backend::LogLevel::Info : Backend::LogLevel::Warning, success ? "Give Max Ammo completed" : "Give Max Ammo completed with native failures", "GTA5_Enhanced.Features");
+        if (removeAll)
+            m_logger->Log(success ? Backend::LogLevel::Info : Backend::LogLevel::Warning, success ? "Remove All Weapons completed" : "Remove All Weapons completed with native failures", "GTA5_Enhanced.Features");
     }
 }
 
