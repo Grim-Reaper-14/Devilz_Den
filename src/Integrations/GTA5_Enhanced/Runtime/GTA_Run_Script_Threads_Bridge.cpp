@@ -194,8 +194,6 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     gameplayState.SetGodMode(false);
     gameplayState.SetNeverWanted(false);
 
-    // Give the live game thread a brief opportunity to restore looped feature state
-    // before the RunScriptThreads patch is removed.
     ::Sleep(50);
 
     if (!m_installed.exchange(false))
@@ -324,8 +322,22 @@ void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
 
     tls->currentScriptThread = scriptThread;
     tls->scriptThreadActive = true;
+
+    // Explosive ammo now runs in the extension layer where we can scope the
+    // Yim-style script identity spoof only around ADD_OWNED_EXPLOSION. Keep the
+    // legacy runner from firing a second unspoofed explosion during this tick.
+    auto& gameplayState = GTA_Gameplay_State::Instance();
+    const bool explosiveAmmo = gameplayState.ExplosiveBullets();
+    if (explosiveAmmo)
+        gameplayState.SetExplosiveBullets(false);
     m_gameplay.Tick();
+    if (explosiveAmmo)
+        gameplayState.SetExplosiveBullets(true);
+
+    SetForgeExtensionScriptThread(scriptThread);
     TickVehicleForgeExtensions(*m_natives);
+    SetForgeExtensionScriptThread(nullptr);
+
     tls->scriptThreadActive = previousActive;
     tls->currentScriptThread = previousThread;
 }
