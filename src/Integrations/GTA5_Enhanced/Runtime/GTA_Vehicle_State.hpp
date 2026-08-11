@@ -157,23 +157,52 @@ public:
         m_lastSpawnedVehicle.store(vehicle, std::memory_order_release);
     }
 
-    void QueueForgeCommand(const GTA_Vehicle_Forge_Command& command) noexcept
+    void QueueForgeCommand(const GTA_Vehicle_Forge_Command& command)
     {
-        m_forgeArg0.store(command.arg0, std::memory_order_relaxed);
-        m_forgeArg1.store(command.arg1, std::memory_order_relaxed);
-        m_forgeArg2.store(command.arg2, std::memory_order_relaxed);
-        m_forgeCommand.store(command.type, std::memory_order_release);
+        if (command.type == GTA_Vehicle_Forge_Command_Type::None)
+            return;
+        {
+            std::scoped_lock lock(m_forgeCommandMutex);
+            m_forgeCommands.push_back(command);
+        }
         RequestForgeSnapshotRefresh();
     }
 
-    [[nodiscard]] GTA_Vehicle_Forge_Command ConsumeForgeCommand() noexcept
+    void QueueForgeCommands(const std::vector<GTA_Vehicle_Forge_Command>& commands)
     {
-        GTA_Vehicle_Forge_Command command{};
-        command.type = m_forgeCommand.exchange(GTA_Vehicle_Forge_Command_Type::None, std::memory_order_acq_rel);
-        command.arg0 = m_forgeArg0.load(std::memory_order_relaxed);
-        command.arg1 = m_forgeArg1.load(std::memory_order_relaxed);
-        command.arg2 = m_forgeArg2.load(std::memory_order_relaxed);
+        if (commands.empty())
+            return;
+        {
+            std::scoped_lock lock(m_forgeCommandMutex);
+            for (const auto& command : commands)
+                if (command.type != GTA_Vehicle_Forge_Command_Type::None)
+                    m_forgeCommands.push_back(command);
+        }
+        RequestForgeSnapshotRefresh();
+    }
+
+    [[nodiscard]] GTA_Vehicle_Forge_Command ConsumeForgeCommand()
+    {
+        std::scoped_lock lock(m_forgeCommandMutex);
+        if (m_forgeCommands.empty())
+            return {};
+        const auto command = m_forgeCommands.front();
+        m_forgeCommands.erase(m_forgeCommands.begin());
         return command;
+    }
+
+    void SetPostSpawnForgeCommands(std::vector<GTA_Vehicle_Forge_Command> commands)
+    {
+        std::scoped_lock lock(m_postSpawnCommandMutex);
+        m_postSpawnForgeCommands = std::move(commands);
+    }
+
+    [[nodiscard]] std::vector<GTA_Vehicle_Forge_Command> ConsumePostSpawnForgeCommands()
+    {
+        std::scoped_lock lock(m_postSpawnCommandMutex);
+        auto commands = std::move(m_postSpawnForgeCommands);
+        m_postSpawnForgeCommands.clear();
+        return commands;
     }
 
     void SetKeepVehiclePerfect(bool enabled) noexcept
@@ -260,7 +289,14 @@ public:
         m_spawnFlags.store(0, std::memory_order_release);
         m_spawnStatus.store(GTA_Vehicle_Spawn_Status::Idle, std::memory_order_release);
         m_lastSpawnedVehicle.store(0, std::memory_order_release);
-        m_forgeCommand.store(GTA_Vehicle_Forge_Command_Type::None, std::memory_order_release);
+        {
+            std::scoped_lock lock(m_forgeCommandMutex);
+            m_forgeCommands.clear();
+        }
+        {
+            std::scoped_lock lock(m_postSpawnCommandMutex);
+            m_postSpawnForgeCommands.clear();
+        }
         m_keepVehiclePerfect.store(false, std::memory_order_release);
         m_vehicleGodMode.store(false, std::memory_order_release);
         m_forgeSnapshotRefreshRequested.store(true, std::memory_order_release);
@@ -302,10 +338,10 @@ private:
     std::atomic<GTA_Vehicle_Spawn_Status> m_spawnStatus{GTA_Vehicle_Spawn_Status::Idle};
     std::atomic_int m_lastSpawnedVehicle{0};
 
-    std::atomic<GTA_Vehicle_Forge_Command_Type> m_forgeCommand{GTA_Vehicle_Forge_Command_Type::None};
-    std::atomic_int m_forgeArg0{0};
-    std::atomic_int m_forgeArg1{0};
-    std::atomic_int m_forgeArg2{0};
+    mutable std::mutex m_forgeCommandMutex;
+    std::vector<GTA_Vehicle_Forge_Command> m_forgeCommands;
+    mutable std::mutex m_postSpawnCommandMutex;
+    std::vector<GTA_Vehicle_Forge_Command> m_postSpawnForgeCommands;
     std::atomic_bool m_keepVehiclePerfect{false};
     std::atomic_bool m_vehicleGodMode{false};
     std::atomic_bool m_forgeSnapshotRefreshRequested{true};
