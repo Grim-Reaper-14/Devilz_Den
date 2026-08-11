@@ -14,6 +14,7 @@ enum class GTA_Runtime_Target_Id : std::uint8_t
     ScriptThreads,
     RunScriptThreads,
     InitNativeTables,
+    ScriptVM,
     NativeTable
 };
 
