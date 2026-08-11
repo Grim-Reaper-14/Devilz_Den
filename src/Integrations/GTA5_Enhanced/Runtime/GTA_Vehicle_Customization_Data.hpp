@@ -52,11 +52,11 @@ inline constexpr std::array<GTA_Vehicle_Named_Rgb, 13> GTA_Vehicle_Neon_Colors{{
     {"Purple", {35, 1, 255}}, {"Blacklight", {15, 3, 255}}
 }};
 
-inline constexpr std::array<GTA_Vehicle_Named_Rgb, 10> GTA_Vehicle_Tyre_Smoke_Colors{{
+inline constexpr std::array<GTA_Vehicle_Named_Rgb, 11> GTA_Vehicle_Tyre_Smoke_Colors{{
     {"White", {255, 255, 255}}, {"Black", {20, 20, 20}}, {"Blue", {0, 174, 239}},
     {"Yellow", {252, 238, 0}}, {"Purple", {100, 79, 142}}, {"Orange", {255, 127, 0}},
     {"Green", {114, 204, 114}}, {"Red", {226, 6, 6}}, {"Pink", {203, 54, 148}},
-    {"Brown", {180, 130, 97}}
+    {"Brown", {180, 130, 97}}, {"Patriot", {0, 0, 0}}
 }};
 
 inline constexpr std::array<GTA_Vehicle_Named_Value, 6> GTA_Vehicle_Paint_Types{{
