@@ -12,6 +12,12 @@ struct GTA_Vehicle_Named_Value
     std::string_view name;
 };
 
+struct GTA_Vehicle_Named_Rgb
+{
+    std::string_view name;
+    std::array<int, 3> rgb{0, 0, 0};
+};
+
 inline constexpr std::array<GTA_Vehicle_Named_Value, 13> GTA_Vehicle_Wheel_Types{{
     {0, "Sport"}, {1, "Muscle"}, {2, "Lowrider"}, {3, "SUV"}, {4, "Offroad"},
     {5, "Tuner"}, {6, "Bike Wheels"}, {7, "High End"}, {8, "Benny's Originals"},
@@ -29,6 +35,28 @@ inline constexpr std::array<GTA_Vehicle_Named_Value, 13> GTA_Vehicle_Plate_Style
 inline constexpr std::array<GTA_Vehicle_Named_Value, 7> GTA_Vehicle_Window_Tints{{
     {0, "None"}, {1, "Pure Black"}, {2, "Dark Smoke"}, {3, "Light Smoke"},
     {4, "Stock"}, {5, "Limo"}, {6, "Green"}
+}};
+
+inline constexpr std::array<GTA_Vehicle_Named_Value, 14> GTA_Vehicle_Headlight_Colors{{
+    {-1, "Default"}, {0, "White"}, {1, "Blue"}, {2, "Electric Blue"},
+    {3, "Mint Green"}, {4, "Lime Green"}, {5, "Yellow"}, {6, "Golden Shower"},
+    {7, "Orange"}, {8, "Red"}, {9, "Pony Pink"}, {10, "Hot Pink"},
+    {11, "Purple"}, {12, "Blacklight"}
+}};
+
+inline constexpr std::array<GTA_Vehicle_Named_Rgb, 13> GTA_Vehicle_Neon_Colors{{
+    {"White", {222, 222, 255}}, {"Blue", {2, 21, 255}}, {"Electric Blue", {3, 83, 255}},
+    {"Mint Green", {0, 255, 140}}, {"Lime Green", {94, 255, 1}}, {"Yellow", {255, 255, 0}},
+    {"Golden Shower", {255, 150, 5}}, {"Orange", {255, 62, 0}}, {"Red", {255, 1, 1}},
+    {"Pony Pink", {255, 50, 100}}, {"Hot Pink", {255, 5, 190}},
+    {"Purple", {35, 1, 255}}, {"Blacklight", {15, 3, 255}}
+}};
+
+inline constexpr std::array<GTA_Vehicle_Named_Rgb, 10> GTA_Vehicle_Tyre_Smoke_Colors{{
+    {"White", {255, 255, 255}}, {"Black", {20, 20, 20}}, {"Blue", {0, 174, 239}},
+    {"Yellow", {252, 238, 0}}, {"Purple", {100, 79, 142}}, {"Orange", {255, 127, 0}},
+    {"Green", {114, 204, 114}}, {"Red", {226, 6, 6}}, {"Pink", {203, 54, 148}},
+    {"Brown", {180, 130, 97}}
 }};
 
 inline constexpr std::array<GTA_Vehicle_Named_Value, 6> GTA_Vehicle_Paint_Types{{
