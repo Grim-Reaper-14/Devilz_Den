@@ -70,6 +70,17 @@ GTA_Build_Target_Registry::GTA_Build_Target_Registry()
             GTA_Target_Candidate_Kind::CodeSite
         },
         {
+            GTA_Runtime_Target_Id::ScriptVM,
+            "ScriptVM",
+            "GTA5_Enhanced.exe",
+            "49 63 41 1C",
+            {
+                {GTA_Address_Resolve_Op_Type::Add, -0x24}
+            },
+            false,
+            GTA_Target_Candidate_Kind::CodeSite
+        },
+        {
             GTA_Runtime_Target_Id::NativeTable,
             "NativeTable",
             "GTA5_Enhanced.exe",
