@@ -1,5 +1,7 @@
 #include "Network_Page.hpp"
 
+#include "Random_Events_Page.hpp"
+
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Network_Session_State.hpp"
 
@@ -49,7 +51,7 @@ void DrawNetworkPage()
 
     ImGui::TextColored(palette.emberRed, "NETWORK");
     ImGui::SameLine();
-    ImGui::TextDisabled("- sessions, players and protections");
+    ImGui::TextDisabled("- sessions, random events, players and protections");
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
 
     ImGui::TextColored(palette.bronze, "SESSIONS");
@@ -94,6 +96,8 @@ void DrawNetworkPage()
     SessionButton("Leave GTA Online", GTA_Network_Join_Type::LeaveOnline, available);
 
     ImGui::EndDisabled();
+
+    DrawRandomEventsPanel();
 
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "PLAYERS");

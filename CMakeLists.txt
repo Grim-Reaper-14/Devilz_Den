@@ -96,6 +96,8 @@ list(APPEND DEVILZ_DEN_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Lua/Lua_Page.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Scripting/Lua/Lua_Runtime.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Network/Network_Page.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Network/Random_Events_Page.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Themes/Menu_Theme.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Menu_Appearance.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Renderer/D3D12_Image_Loader.cpp"

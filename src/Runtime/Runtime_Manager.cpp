@@ -5,6 +5,7 @@
 #include "Backend/Logging/Sinks/FileSink.hpp"
 #include "Backend/Process/Process_Module_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Network_Session_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.hpp"
 
 #include <exception>
 #include <iomanip>
@@ -222,9 +223,12 @@ void Runtime_Manager::InitializeGameThreadBridge(
     const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
 {
     using Integrations::GTA5_Enhanced::ConfigureNetworkSessionExtension;
+    using Integrations::GTA5_Enhanced::ConfigureRandomEventsExtension;
     using Integrations::GTA5_Enhanced::ResetNetworkSessionExtension;
+    using Integrations::GTA5_Enhanced::ResetRandomEventsExtension;
 
     ResetNetworkSessionExtension();
+    ResetRandomEventsExtension();
 
     if (!m_natives.Ready() || !status.targetReport) {
         m_logger.Log(Backend::LogLevel::Warning,
@@ -282,6 +286,13 @@ void Runtime_Manager::InitializeGameThreadBridge(
         programTable,
         scriptThreadsStorage,
         scriptVm,
+        &m_logger);
+    ConfigureRandomEventsExtension(
+        scriptGlobals,
+        programTable,
+        scriptThreadsStorage,
+        scriptVm,
+        status.build ? status.build->fingerprint : 0,
         &m_logger);
 }
 

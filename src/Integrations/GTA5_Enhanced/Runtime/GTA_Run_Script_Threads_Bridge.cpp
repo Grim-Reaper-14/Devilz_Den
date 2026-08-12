@@ -3,6 +3,7 @@
 #include "GTA_Explosive_Ammo_Extension.hpp"
 #include "GTA_Gameplay_State.hpp"
 #include "GTA_Network_Session_Extension.hpp"
+#include "GTA_Random_Events_Extension.hpp"
 #include "GTA_Vehicle_Forge_Extensions.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
@@ -211,6 +212,7 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
         s_active = nullptr;
 
     ResetNetworkSessionExtension();
+    ResetRandomEventsExtension();
     m_gameplay.Reset();
     gameplayState.Reset();
     m_original = nullptr;
@@ -327,6 +329,7 @@ void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
     tls->scriptThreadActive = true;
 
     TickNetworkSessionExtension();
+    TickRandomEventsExtension(*m_natives);
 
     // Explosive ammo owns its dedicated Yim-style spoofed extension path. Keep
     // the legacy gameplay runner from emitting an unspoofed duplicate.
