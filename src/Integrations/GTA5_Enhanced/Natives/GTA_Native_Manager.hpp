@@ -3,6 +3,7 @@
 #include "GTA_Native_Call_Context.hpp"
 #include "GTA_Native_Registry.hpp"
 #include "GTA_Native_Types.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Outfit_Editor_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Utility_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Extension.hpp"
@@ -45,9 +46,9 @@ class GTA_Native_Manager final
 public:
     // Validated Enhanced handlers which do not need a public named-id yet live
     // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self,
-    // Weapons, Garage, and World also use the final handlers for their
-    // game-thread actions.
-    static constexpr std::array<GTA_Native_Hash, 57> BootstrapProbeHashes{
+    // Weapons, Garage, World, and Outfit Editor use the final handlers for
+    // their game-thread actions.
+    static constexpr std::array<GTA_Native_Hash, 69> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -104,7 +105,19 @@ public:
         0xC2BF1F6F84E31EB2ULL, // GET_PED_STEALTH_MOVEMENT
         0xD33BCB9F50C1E588ULL, // SPECIAL_ABILITY_UNLOCK
         0xE3D5A2DE522F29C1ULL, // SPECIAL_ABILITY_LOCK
-        0x5F5FDED45A3345C9ULL  // SET_SPECIAL_ABILITY_MP
+        0x5F5FDED45A3345C9ULL, // SET_SPECIAL_ABILITY_MP
+        0xD1C578C204015E1FULL, // SET_PED_COMPONENT_VARIATION
+        0xC0120BBCC298EA2FULL, // GET_PED_DRAWABLE_VARIATION
+        0x1A4EFE92822E3123ULL, // GET_NUMBER_OF_PED_DRAWABLE_VARIATIONS
+        0xD6AED6BFCC58AF7FULL, // GET_PED_TEXTURE_VARIATION
+        0x8401C77F508D70FDULL, // GET_NUMBER_OF_PED_TEXTURE_VARIATIONS
+        0xDAF263B0E792EAECULL, // GET_PED_PALETTE_VARIATION
+        0xB204F40D393426B6ULL, // GET_PED_PROP_INDEX
+        0x4D0F04723A52D0E9ULL, // GET_NUMBER_OF_PED_PROP_DRAWABLE_VARIATIONS
+        0x0DC23FA727759F9FULL, // GET_PED_PROP_TEXTURE_INDEX
+        0x1D77F90D87ACD2BAULL, // GET_NUMBER_OF_PED_PROP_TEXTURE_VARIATIONS
+        0x7F08C4791E6D6969ULL, // SET_PED_PROP_INDEX
+        0x09397806857F5DFBULL  // CLEAR_PED_PROP
     };
 
     [[nodiscard]] GTA_Native_Manager_Status Initialize(
@@ -134,10 +147,11 @@ public:
     {
         // Vehicle Forge calls SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER every game
         // tick. Use that guaranteed game-thread point to service the online,
-        // Self utility, teleport, garage, and world extensions without another hook.
+        // Self, outfit, teleport, garage, and world extensions without another hook.
         if (hash == 0xA52E1AE3848A506BULL) {
             TickSelfOnlineExtension(*this);
             TickSelfUtilityExtension(*this);
+            TickOutfitEditorExtension(*this);
             TickTeleportExtension(*this);
             TickVehicleGarageSave(*this);
             TickWorldEnvironmentExtension(*this);
