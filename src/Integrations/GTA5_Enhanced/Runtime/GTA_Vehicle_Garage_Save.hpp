@@ -29,6 +29,8 @@ enum class GTA_Garage_Save_Result : std::uint8_t
 
 void RequestVehicleGarageSave() noexcept;
 [[nodiscard]] GTA_Vehicle_Garage_Status VehicleGarageSaveStatus() noexcept;
-[[nodiscard]] GTA_Garage_Save_Result SaveCurrentForgeVehicleToGarage(GTA_Vehicle_State& state) noexcept;
+[[nodiscard]] GTA_Garage_Save_Result SaveCurrentForgeVehicleToGarage(
+    GTA_Native_Manager& natives,
+    GTA_Vehicle_State& state) noexcept;
 void TickVehicleGarageSave(GTA_Native_Manager& natives) noexcept;
 }
