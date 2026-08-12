@@ -53,6 +53,7 @@ if(WIN32)
 
     add_library(Devilz_Den_ImGui STATIC
         "${dear_imgui_SOURCE_DIR}/imgui.cpp"
+        "${dear_imgui_SOURCE_DIR}/imgui_demo.cpp"
         "${dear_imgui_SOURCE_DIR}/imgui_draw.cpp"
         "${dear_imgui_SOURCE_DIR}/imgui_tables.cpp"
         "${dear_imgui_SOURCE_DIR}/imgui_widgets.cpp"
