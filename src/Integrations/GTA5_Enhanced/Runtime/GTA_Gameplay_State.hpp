@@ -70,6 +70,15 @@ public:
     [[nodiscard]] bool KeepPlayerClean() const noexcept { return m_keepPlayerClean.load(std::memory_order_acquire); }
     void SetKeepPlayerClean(bool enabled) noexcept { m_keepPlayerClean.store(enabled, std::memory_order_release); }
 
+    [[nodiscard]] bool OffTheRadar() const noexcept { return m_offTheRadar.load(std::memory_order_acquire); }
+    void SetOffTheRadar(bool enabled) noexcept { m_offTheRadar.store(enabled, std::memory_order_release); }
+
+    void RequestSkipCutscene() noexcept { m_skipCutsceneRequested.store(true, std::memory_order_release); }
+    [[nodiscard]] bool ConsumeSkipCutsceneRequest() noexcept
+    {
+        return m_skipCutsceneRequested.exchange(false, std::memory_order_acq_rel);
+    }
+
     [[nodiscard]] bool InfiniteAmmo() const noexcept { return m_infiniteAmmo.load(std::memory_order_acquire); }
     void SetInfiniteAmmo(bool enabled) noexcept { m_infiniteAmmo.store(enabled, std::memory_order_release); }
 
@@ -156,6 +165,8 @@ public:
         m_infiniteOxygen.store(false, std::memory_order_release);
         m_noRagdoll.store(false, std::memory_order_release);
         m_keepPlayerClean.store(false, std::memory_order_release);
+        m_offTheRadar.store(false, std::memory_order_release);
+        m_skipCutsceneRequested.store(false, std::memory_order_release);
         m_infiniteAmmo.store(false, std::memory_order_release);
         m_unlimitedClip.store(false, std::memory_order_release);
         m_explosiveBullets.store(false, std::memory_order_release);
@@ -184,6 +195,8 @@ private:
     std::atomic_bool m_infiniteOxygen{false};
     std::atomic_bool m_noRagdoll{false};
     std::atomic_bool m_keepPlayerClean{false};
+    std::atomic_bool m_offTheRadar{false};
+    std::atomic_bool m_skipCutsceneRequested{false};
     std::atomic_bool m_infiniteAmmo{false};
     std::atomic_bool m_unlimitedClip{false};
     std::atomic_bool m_explosiveBullets{false};
