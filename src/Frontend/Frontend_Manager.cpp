@@ -1,6 +1,8 @@
 #include "Frontend_Manager.hpp"
 
 #include "Backend/Logging/LoggerService.hpp"
+#include "Frontend/Menu/Menu_Appearance.hpp"
+#include "Frontend/Renderer/D3D12_Image_Loader.hpp"
 #include "Frontend/Renderer/D3D12_Targets.hpp"
 
 #include <chrono>
@@ -22,6 +24,8 @@ void Frontend_Manager::Start(
     bool expected = false;
     if (!m_running.compare_exchange_strong(expected, true))
         return;
+
+    Menu_Appearance_State::Instance().ConfigureLogger(&logger);
 
     m_bootstrapThread = std::jthread(
         [this, status, &logger](std::stop_token stopToken) mutable {
@@ -45,6 +49,8 @@ void Frontend_Manager::Stop() noexcept
     }
 
     m_renderer.Shutdown();
+    Renderer::D3D12_Image_Loader::Instance().Shutdown();
+    Menu_Appearance_State::Instance().Shutdown();
 }
 
 void Frontend_Manager::Bootstrap(
@@ -57,6 +63,7 @@ void Frontend_Manager::Bootstrap(
         return;
     }
 
+    Menu_Appearance_State::Instance().ConfigureLogger(logger);
     logger->Log(
         Backend::LogLevel::Info,
         "Frontend bootstrap waiting for GTA Enhanced D3D12 targets",
@@ -91,13 +98,14 @@ void Frontend_Manager::Bootstrap(
                 "GTA5_Enhanced.Frontend");
             m_presentHook.reset();
             m_renderer.Shutdown();
+            Renderer::D3D12_Image_Loader::Instance().Shutdown();
             m_running.store(false);
             return;
         }
 
         logger->Log(
             Backend::LogLevel::Info,
-            "Devils Den frontend ready | Menu: open | Toggle: INSERT",
+            "Devils Den frontend ready | Menu: open | Toggle: INSERT | Appearance manager: enabled",
             "GTA5_Enhanced.Frontend");
         return;
     }

@@ -1,12 +1,17 @@
 #include "Frontend/Menu/Devils_Den_Menu.hpp"
+#include "Frontend/Menu/Menu_Appearance.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 
+#define Draw DrawLegacy
 #define DrawBanner DrawBannerLegacy
+#define DrawNavigation DrawNavigationLegacy
 #include "Devils_Den_Menu_part00.inc"
+#undef DrawNavigation
 #undef DrawBanner
+#undef Draw
 
 #include "Devils_Den_Menu_part01.inc"
 #include "Devils_Den_Menu_part02.inc"
@@ -21,7 +26,9 @@
 #undef DrawPlaceholderPage
 #undef DrawTeleportPage
 
+#include "Devils_Den_Menu_draw.inc"
 #include "Devils_Den_Menu_banner.inc"
+#include "Devils_Den_Menu_navigation.inc"
 #include "Devils_Den_Menu_settings.inc"
 #include "Devils_Den_Menu_world.inc"
 #include "Devils_Den_Menu_teleport.inc"

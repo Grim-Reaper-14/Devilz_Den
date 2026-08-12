@@ -130,10 +130,27 @@ void ParseAppearance(std::string_view text, Devils_Den_Config& config)
 {
     (void)ReadInteger(text, "menuTheme", config.menuTheme);
     (void)ReadBool(text, "bannerEnabled", config.bannerEnabled);
+    (void)ReadString(text, "bannerImage", config.bannerImage);
     (void)ReadString(text, "bannerImagePath", config.bannerImagePath);
     (void)ReadFloat(text, "bannerOpacity", config.bannerOpacity);
+
+    (void)ReadBool(text, "backgroundEnabled", config.backgroundEnabled);
+    (void)ReadString(text, "backgroundImage", config.backgroundImage);
+    (void)ReadFloat(text, "backgroundOpacity", config.backgroundOpacity);
+    (void)ReadInteger(text, "backgroundFit", config.backgroundFit);
+
+    (void)ReadBool(text, "iconsEnabled", config.iconsEnabled);
+    (void)ReadString(text, "iconSet", config.iconSet);
+
+    (void)ReadString(text, "fontFile", config.fontFile);
+    (void)ReadFloat(text, "fontSize", config.fontSize);
+    (void)ReadString(text, "imguiStyleData", config.imguiStyleData);
+
     config.menuTheme = std::clamp(config.menuTheme, 0, 2);
     config.bannerOpacity = std::clamp(config.bannerOpacity, 0.10F, 1.0F);
+    config.backgroundOpacity = std::clamp(config.backgroundOpacity, 0.0F, 1.0F);
+    config.backgroundFit = std::clamp(config.backgroundFit, 0, 2);
+    config.fontSize = std::clamp(config.fontSize, 10.0F, 42.0F);
 }
 
 bool ParseConfig(std::string_view text, Devils_Den_Config& config)
@@ -192,8 +209,17 @@ void WriteAppearance(std::ostream& stream, const Devils_Den_Config& config, bool
     const auto flag = [](bool value) { return value ? "true" : "false"; };
     stream << "  \"menuTheme\": " << std::clamp(config.menuTheme, 0, 2) << ",\n";
     stream << "  \"bannerEnabled\": " << flag(config.bannerEnabled) << ",\n";
-    stream << "  \"bannerImagePath\": \"" << EscapeJson(config.bannerImagePath) << "\",\n";
-    stream << "  \"bannerOpacity\": " << std::clamp(config.bannerOpacity, 0.10F, 1.0F);
+    stream << "  \"bannerImage\": \"" << EscapeJson(config.bannerImage) << "\",\n";
+    stream << "  \"bannerOpacity\": " << std::clamp(config.bannerOpacity, 0.10F, 1.0F) << ",\n";
+    stream << "  \"backgroundEnabled\": " << flag(config.backgroundEnabled) << ",\n";
+    stream << "  \"backgroundImage\": \"" << EscapeJson(config.backgroundImage) << "\",\n";
+    stream << "  \"backgroundOpacity\": " << std::clamp(config.backgroundOpacity, 0.0F, 1.0F) << ",\n";
+    stream << "  \"backgroundFit\": " << std::clamp(config.backgroundFit, 0, 2) << ",\n";
+    stream << "  \"iconsEnabled\": " << flag(config.iconsEnabled) << ",\n";
+    stream << "  \"iconSet\": \"" << EscapeJson(config.iconSet) << "\",\n";
+    stream << "  \"fontFile\": \"" << EscapeJson(config.fontFile) << "\",\n";
+    stream << "  \"fontSize\": " << std::clamp(config.fontSize, 10.0F, 42.0F) << ",\n";
+    stream << "  \"imguiStyleData\": \"" << EscapeJson(config.imguiStyleData) << "\"";
     stream << (trailingComma ? ",\n" : "\n");
 }
 }
@@ -254,7 +280,7 @@ bool Devils_Den_Config_Store::Save(const Devils_Den_Config& config, std::string*
 
     const auto flag = [](bool value) { return value ? "true" : "false"; };
     stream << "{\n";
-    stream << "  \"version\": 2,\n";
+    stream << "  \"version\": 3,\n";
     stream << "  \"name\": \"" << EscapeJson(config.name) << "\",\n";
     WriteAppearance(stream, config, true);
     stream << "  \"godMode\": " << flag(config.godMode) << ",\n";
@@ -278,7 +304,6 @@ bool Devils_Den_Config_Store::Save(const Devils_Den_Config& config, std::string*
     stream << "  \"spawnVehicleInvincible\": " << flag(config.spawnVehicleInvincible) << ",\n";
     stream << "  \"spawnVehicleClean\": " << flag(config.spawnVehicleClean) << "\n";
     stream << "}\n";
-
     if (!stream.good()) {
         if (error) *error = "Writing config JSON failed.";
         return false;
@@ -329,7 +354,7 @@ bool Devils_Den_Config_Store::SaveAppearance(const Devils_Den_Config& config, st
     }
 
     stream << "{\n";
-    stream << "  \"version\": 2,\n";
+    stream << "  \"version\": 3,\n";
     WriteAppearance(stream, config, false);
     stream << "}\n";
     if (!stream.good()) {

@@ -6,9 +6,11 @@
 
 #include <imgui_internal.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <system_error>
 #include <vector>
 
 namespace Devilz::Frontend::Renderer
@@ -21,23 +23,32 @@ D3D12_Image_Loader& D3D12_Image_Loader::Instance() noexcept
     return loader;
 }
 
-bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* error) noexcept
+std::string D3D12_Image_Loader::KeyFor(const std::filesystem::path& path)
 {
-    SweepRetired();
+    std::error_code ec;
+    auto normalized = std::filesystem::weakly_canonical(path, ec);
+    if (ec)
+        normalized = path.lexically_normal();
+    auto key = normalized.string();
+    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return key;
+}
 
+bool D3D12_Image_Loader::DecodeAndRegister(
+    const std::filesystem::path& path,
+    Image_Record& record,
+    std::string* error) noexcept
+{
     if (!ImGui::GetCurrentContext()) {
-        if (error) *error = "ImGui context is not ready for banner textures.";
-        return false;
-    }
-
-    if (path.empty()) {
-        if (error) *error = "Banner image path is empty.";
+        if (error) *error = "ImGui context is not ready for image textures.";
         return false;
     }
 
     std::error_code ec;
     if (!std::filesystem::is_regular_file(path, ec) || ec) {
-        if (error) *error = "Banner image file does not exist.";
+        if (error) *error = "Image file does not exist.";
         return false;
     }
 
@@ -75,7 +86,7 @@ bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* er
     hr = decoder->GetFrame(0, frame.ReleaseAndGetAddressOf());
     if (FAILED(hr)) {
         if (uninit) ::CoUninitialize();
-        if (error) *error = "Could not decode the first image frame.";
+        if (error) *error = "Could not decode image frame.";
         return false;
     }
 
@@ -83,7 +94,7 @@ bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* er
     UINT height = 0;
     if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0 || width > 8192 || height > 8192) {
         if (uninit) ::CoUninitialize();
-        if (error) *error = "Banner dimensions are invalid or too large.";
+        if (error) *error = "Image dimensions are invalid or too large.";
         return false;
     }
 
@@ -92,7 +103,7 @@ bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* er
     if (FAILED(hr) || FAILED(converter->Initialize(frame.Get(), GUID_WICPixelFormat32bppRGBA,
         WICBitmapDitherTypeNone, nullptr, 0.0, WICBitmapPaletteTypeCustom))) {
         if (uninit) ::CoUninitialize();
-        if (error) *error = "Could not convert banner to RGBA32.";
+        if (error) *error = "Could not convert image to RGBA32.";
         return false;
     }
 
@@ -100,7 +111,7 @@ bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* er
     const std::size_t byteCount = rowPitch * static_cast<std::size_t>(height);
     if (byteCount > static_cast<std::size_t>((std::numeric_limits<UINT>::max)())) {
         if (uninit) ::CoUninitialize();
-        if (error) *error = "Banner image is too large.";
+        if (error) *error = "Image is too large.";
         return false;
     }
 
@@ -108,7 +119,7 @@ bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* er
     hr = converter->CopyPixels(nullptr, static_cast<UINT>(rowPitch), static_cast<UINT>(byteCount), pixels.data());
     if (FAILED(hr)) {
         if (uninit) ::CoUninitialize();
-        if (error) *error = "Could not copy decoded banner pixels.";
+        if (error) *error = "Could not copy decoded image pixels.";
         return false;
     }
 
@@ -116,38 +127,100 @@ bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* er
     texture->Create(ImTextureFormat_RGBA32, static_cast<int>(width), static_cast<int>(height));
     if (!texture->Pixels) {
         if (uninit) ::CoUninitialize();
-        if (error) *error = "Could not allocate ImGui banner texture.";
+        if (error) *error = "Could not allocate ImGui image texture.";
         return false;
     }
 
     std::memcpy(texture->Pixels, pixels.data(), byteCount);
     texture->UseColors = true;
     texture->SetStatus(ImTextureStatus_WantCreate);
-
-    // ImGui 1.92+ only sends registered user textures through PlatformIO.Textures.
-    // The DX12 backend consumes that list before drawing and creates the SRV/GPU resource.
     ImGui::RegisterUserTexture(texture.get());
 
-    RetireActive();
-    m_active = std::move(texture);
-    m_loadedPath = path.string();
-    m_width = static_cast<int>(width);
-    m_height = static_cast<int>(height);
+    record.path = path;
+    record.texture = std::move(texture);
+    record.width = static_cast<int>(width);
+    record.height = static_cast<int>(height);
+    record.lastWrite = std::filesystem::last_write_time(path, ec);
 
     if (uninit) ::CoUninitialize();
     return true;
 }
 
-void D3D12_Image_Loader::RetireActive() noexcept
+bool D3D12_Image_Loader::EnsureLoaded(const std::filesystem::path& path, std::string* error) noexcept
 {
-    if (!m_active)
-        return;
+    SweepRetired();
+    if (path.empty()) {
+        if (error) *error = "Image path is empty.";
+        return false;
+    }
 
-    // Let ImGui/DX12 defer destruction until the texture is no longer referenced
-    // by any in-flight frame. SweepRetired() unregisters it after the backend
-    // reports ImTextureStatus_Destroyed.
-    m_active->WantDestroyNextFrame = true;
-    m_retired.push_back(std::move(m_active));
+    const auto key = KeyFor(path);
+    std::error_code ec;
+    const auto writeTime = std::filesystem::last_write_time(path, ec);
+    auto found = m_images.find(key);
+    if (found != m_images.end() && !ec && found->second.lastWrite == writeTime)
+        return true;
+
+    Image_Record replacement;
+    if (!DecodeAndRegister(path, replacement, error))
+        return false;
+
+    if (found != m_images.end()) {
+        Retire(std::move(found->second.texture));
+        found->second = std::move(replacement);
+    } else {
+        m_images.emplace(key, std::move(replacement));
+    }
+    return true;
+}
+
+bool D3D12_Image_Loader::Reload(const std::filesystem::path& path, std::string* error) noexcept
+{
+    Remove(path);
+    return EnsureLoaded(path, error);
+}
+
+D3D12_Image_View D3D12_Image_Loader::View(const std::filesystem::path& path) noexcept
+{
+    D3D12_Image_View view{};
+    if (!EnsureLoaded(path, nullptr))
+        return view;
+
+    const auto found = m_images.find(KeyFor(path));
+    if (found == m_images.end() || !found->second.texture)
+        return view;
+
+    const auto& record = found->second;
+    view.texture = record.texture->GetTexRef();
+    view.width = record.width;
+    view.height = record.height;
+    view.ready = !record.texture->WantDestroyNextFrame &&
+        record.texture->Status != ImTextureStatus_Destroyed;
+    return view;
+}
+
+void D3D12_Image_Loader::Retire(std::unique_ptr<ImTextureData> texture) noexcept
+{
+    if (!texture)
+        return;
+    texture->WantDestroyNextFrame = true;
+    m_retired.push_back(std::move(texture));
+}
+
+void D3D12_Image_Loader::Remove(const std::filesystem::path& path) noexcept
+{
+    const auto key = KeyFor(path);
+    auto found = m_images.find(key);
+    if (found == m_images.end())
+        return;
+    Retire(std::move(found->second.texture));
+    m_images.erase(found);
+    if (m_activeKey == key) {
+        m_activeKey.clear();
+        m_loadedPath.clear();
+        m_activeWidth = 0;
+        m_activeHeight = 0;
+    }
 }
 
 void D3D12_Image_Loader::SweepRetired() noexcept
@@ -172,47 +245,70 @@ void D3D12_Image_Loader::Tick() noexcept
     SweepRetired();
 }
 
-void D3D12_Image_Loader::Clear() noexcept
+bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* error) noexcept
 {
-    SweepRetired();
-    RetireActive();
-    m_loadedPath.clear();
-    m_width = 0;
-    m_height = 0;
-}
-
-void D3D12_Image_Loader::Shutdown() noexcept
-{
-    // This singleton normally outlives the ImGui context. If Shutdown is called
-    // while a context is still alive, only unregister textures whose GPU resource
-    // has already been destroyed; live resources remain owned until backend shutdown.
-    if (ImGui::GetCurrentContext()) {
-        SweepRetired();
-        if (m_active && m_active->Status == ImTextureStatus_Destroyed && m_active->RefCount > 0)
-            ImGui::UnregisterUserTexture(m_active.get());
-        for (auto& texture : m_retired) {
-            if (texture && texture->Status == ImTextureStatus_Destroyed && texture->RefCount > 0)
-                ImGui::UnregisterUserTexture(texture.get());
-        }
-    }
-
-    m_active.reset();
-    m_retired.clear();
-    m_loadedPath.clear();
-    m_width = 0;
-    m_height = 0;
+    if (!EnsureLoaded(path, error))
+        return false;
+    const auto key = KeyFor(path);
+    const auto found = m_images.find(key);
+    if (found == m_images.end())
+        return false;
+    m_activeKey = key;
+    m_loadedPath = path.string();
+    m_activeWidth = found->second.width;
+    m_activeHeight = found->second.height;
+    return true;
 }
 
 bool D3D12_Image_Loader::Ready() const noexcept
 {
-    return m_active &&
-        m_active->Pixels != nullptr &&
-        !m_active->WantDestroyNextFrame &&
-        m_active->Status != ImTextureStatus_Destroyed;
+    const auto found = m_images.find(m_activeKey);
+    return found != m_images.end() && found->second.texture &&
+        !found->second.texture->WantDestroyNextFrame &&
+        found->second.texture->Status != ImTextureStatus_Destroyed;
 }
 
 ImTextureRef D3D12_Image_Loader::Texture() noexcept
 {
-    return m_active ? m_active->GetTexRef() : ImTextureRef{};
+    const auto found = m_images.find(m_activeKey);
+    return found != m_images.end() && found->second.texture
+        ? found->second.texture->GetTexRef()
+        : ImTextureRef{};
+}
+
+void D3D12_Image_Loader::Clear() noexcept
+{
+    m_activeKey.clear();
+    m_loadedPath.clear();
+    m_activeWidth = 0;
+    m_activeHeight = 0;
+}
+
+void D3D12_Image_Loader::Shutdown() noexcept
+{
+    if (ImGui::GetCurrentContext()) {
+        SweepRetired();
+        const auto unregister = [](ImTextureData* texture) {
+            if (!texture || texture->RefCount == 0)
+                return;
+            if (texture->Status == ImTextureStatus_Destroyed ||
+                (texture->BackendUserData == nullptr && texture->TexID == ImTextureID_Invalid)) {
+                ImGui::UnregisterUserTexture(texture);
+            }
+        };
+        for (auto& [key, record] : m_images) {
+            (void)key;
+            unregister(record.texture.get());
+        }
+        for (auto& texture : m_retired)
+            unregister(texture.get());
+    }
+
+    m_images.clear();
+    m_retired.clear();
+    m_activeKey.clear();
+    m_loadedPath.clear();
+    m_activeWidth = 0;
+    m_activeHeight = 0;
 }
 }

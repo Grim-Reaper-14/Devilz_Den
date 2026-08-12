@@ -8,13 +8,27 @@ namespace Devilz::Frontend
 {
 struct Devils_Den_Config
 {
-    int version = 2;
+    int version = 3;
     std::string name;
 
     int menuTheme = 0;
+
     bool bannerEnabled = false;
-    std::string bannerImagePath;
+    std::string bannerImage;
+    std::string bannerImagePath; // legacy v2 migration source
     float bannerOpacity = 1.0F;
+
+    bool backgroundEnabled = false;
+    std::string backgroundImage;
+    float backgroundOpacity = 0.30F;
+    int backgroundFit = 0; // 0 fill/crop, 1 fit, 2 stretch
+
+    bool iconsEnabled = false;
+    std::string iconSet;
+
+    std::string fontFile;
+    float fontSize = 18.0F;
+    std::string imguiStyleData;
 
     bool godMode = false;
     bool neverWanted = false;

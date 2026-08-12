@@ -24,9 +24,11 @@ private:
         Settings
     };
 
+    void DrawLegacy(bool& open);
     void DrawBanner();
     void DrawBannerLegacy();
     void DrawNavigation();
+    void DrawNavigationLegacy();
     void DrawSelfPage();
     void DrawSelfPageLegacy();
     void DrawWeaponsPage();
