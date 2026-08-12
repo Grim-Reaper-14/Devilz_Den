@@ -15,6 +15,7 @@ public:
     static D3D12_Image_Loader& Instance() noexcept;
 
     [[nodiscard]] bool Load(const std::filesystem::path& path, std::string* error = nullptr) noexcept;
+    void Tick() noexcept;
     void Clear() noexcept;
     void Shutdown() noexcept;
 

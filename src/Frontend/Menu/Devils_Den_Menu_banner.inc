@@ -7,6 +7,9 @@ void Devils_Den_Menu::DrawBanner()
     auto& appearance = Menu_Appearance_State::Instance();
     appearance.InitializeOnce();
 
+    auto& image = Renderer::D3D12_Image_Loader::Instance();
+    image.Tick();
+
     if (!appearance.BannerEnabled() || !appearance.BannerLoaded()) {
         DrawBannerLegacy();
         return;
@@ -14,7 +17,6 @@ void Devils_Den_Menu::DrawBanner()
 
     auto& theme = Themes::Menu_Theme_Manager::Instance();
     const auto& palette = theme.Palette();
-    auto& image = Renderer::D3D12_Image_Loader::Instance();
 
     ImVec2 origin = ImGui::GetCursorScreenPos();
     float width = (std::max)(1.0F, ImGui::GetContentRegionAvail().x);

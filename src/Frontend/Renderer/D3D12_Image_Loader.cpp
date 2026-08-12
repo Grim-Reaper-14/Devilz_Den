@@ -4,6 +4,8 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 
+#include <imgui_internal.h>
+
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -22,7 +24,11 @@ D3D12_Image_Loader& D3D12_Image_Loader::Instance() noexcept
 bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* error) noexcept
 {
     SweepRetired();
-    RetireActive();
+
+    if (!ImGui::GetCurrentContext()) {
+        if (error) *error = "ImGui context is not ready for banner textures.";
+        return false;
+    }
 
     if (path.empty()) {
         if (error) *error = "Banner image path is empty.";
@@ -118,6 +124,11 @@ bool D3D12_Image_Loader::Load(const std::filesystem::path& path, std::string* er
     texture->UseColors = true;
     texture->SetStatus(ImTextureStatus_WantCreate);
 
+    // ImGui 1.92+ only sends registered user textures through PlatformIO.Textures.
+    // The DX12 backend consumes that list before drawing and creates the SRV/GPU resource.
+    ImGui::RegisterUserTexture(texture.get());
+
+    RetireActive();
     m_active = std::move(texture);
     m_loadedPath = path.string();
     m_width = static_cast<int>(width);
@@ -131,20 +142,34 @@ void D3D12_Image_Loader::RetireActive() noexcept
 {
     if (!m_active)
         return;
-    m_active->WantDestroyNextFrame = false;
-    m_active->UnusedFrames = 0;
-    m_active->SetStatus(ImTextureStatus_WantDestroy);
+
+    // Let ImGui/DX12 defer destruction until the texture is no longer referenced
+    // by any in-flight frame. SweepRetired() unregisters it after the backend
+    // reports ImTextureStatus_Destroyed.
+    m_active->WantDestroyNextFrame = true;
     m_retired.push_back(std::move(m_active));
 }
 
 void D3D12_Image_Loader::SweepRetired() noexcept
 {
+    if (!ImGui::GetCurrentContext())
+        return;
+
     for (auto it = m_retired.begin(); it != m_retired.end();) {
-        if ((*it)->Status == ImTextureStatus_Destroyed)
+        auto* texture = it->get();
+        if (texture && texture->Status == ImTextureStatus_Destroyed) {
+            if (texture->RefCount > 0)
+                ImGui::UnregisterUserTexture(texture);
             it = m_retired.erase(it);
-        else
+        } else {
             ++it;
+        }
     }
+}
+
+void D3D12_Image_Loader::Tick() noexcept
+{
+    SweepRetired();
 }
 
 void D3D12_Image_Loader::Clear() noexcept
@@ -158,6 +183,19 @@ void D3D12_Image_Loader::Clear() noexcept
 
 void D3D12_Image_Loader::Shutdown() noexcept
 {
+    // This singleton normally outlives the ImGui context. If Shutdown is called
+    // while a context is still alive, only unregister textures whose GPU resource
+    // has already been destroyed; live resources remain owned until backend shutdown.
+    if (ImGui::GetCurrentContext()) {
+        SweepRetired();
+        if (m_active && m_active->Status == ImTextureStatus_Destroyed && m_active->RefCount > 0)
+            ImGui::UnregisterUserTexture(m_active.get());
+        for (auto& texture : m_retired) {
+            if (texture && texture->Status == ImTextureStatus_Destroyed && texture->RefCount > 0)
+                ImGui::UnregisterUserTexture(texture.get());
+        }
+    }
+
     m_active.reset();
     m_retired.clear();
     m_loadedPath.clear();
@@ -167,7 +205,10 @@ void D3D12_Image_Loader::Shutdown() noexcept
 
 bool D3D12_Image_Loader::Ready() const noexcept
 {
-    return m_active && m_active->Pixels != nullptr;
+    return m_active &&
+        m_active->Pixels != nullptr &&
+        !m_active->WantDestroyNextFrame &&
+        m_active->Status != ImTextureStatus_Destroyed;
 }
 
 ImTextureRef D3D12_Image_Loader::Texture() noexcept
