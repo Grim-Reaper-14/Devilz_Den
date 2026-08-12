@@ -1,3 +1,5 @@
+namespace Devilz::Frontend
+{
 void Devils_Den_Menu::DrawWorldPage()
 {
     using namespace Devilz::Integrations::GTA5_Enhanced;
@@ -76,4 +78,5 @@ void Devils_Den_Menu::DrawPlaceholderPage(const char* title, const char* detail)
     }
 
     DrawPlaceholderPageLegacy(title, detail);
+}
 }
