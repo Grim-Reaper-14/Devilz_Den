@@ -1,5 +1,10 @@
 #include "Devils_Den_Menu_part00.inc"
+
+#define DrawSelfPage DrawSelfPageLegacy
 #include "Devils_Den_Menu_part01.inc"
+#undef DrawSelfPage
+
+#include "Devils_Den_Menu_self.inc"
 #include "Devils_Den_Menu_part02.inc"
 #include "Devils_Den_Menu_part03.inc"
 #include "Devils_Den_Menu_part04.inc"
