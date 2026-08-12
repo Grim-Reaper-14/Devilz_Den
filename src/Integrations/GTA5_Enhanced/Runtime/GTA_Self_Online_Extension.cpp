@@ -1,13 +1,14 @@
 #include "GTA_Self_Online_Extension.hpp"
 
 #include "GTA_Gameplay_State.hpp"
-#include "Backend/Logging/LoggerService.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
 #include <Windows.h>
+#include <Psapi.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -28,11 +29,20 @@ constexpr std::uint32_t GlobalPlayerOffRadarOffset = 214U;
 constexpr std::uint32_t OffRadarTimerGlobal = 2673276U + 58U;
 constexpr int FreemodeRunningState = 4;
 
+constexpr std::array<int, 17> ScriptGlobalsPattern{
+    0x48, 0x8B, 0x8E, 0xB8, 0x00, 0x00, 0x00, 0x48, 0x8D, 0x15,
+    -1, -1, -1, -1, 0x49, 0x89, 0xD8
+};
+constexpr std::array<int, 19> ScriptThreadsPattern{
+    0x48, 0x8B, 0x05, -1, -1, -1, -1, 0x48, 0x89, 0x34,
+    0xF8, 0x48, 0xFF, 0xC7, 0x48, 0x39, 0xFB, 0x75, 0x97
+};
+
 struct SelfOnlineRuntime
 {
     std::uintptr_t scriptGlobalsAddress = 0;
     std::uintptr_t scriptThreadsStorageAddress = 0;
-    Backend::LoggerService* logger = nullptr;
+    bool resolutionAttempted = false;
 };
 
 SelfOnlineRuntime g_runtime{};
@@ -121,6 +131,68 @@ bool IsWritableAddress(std::uintptr_t address, std::size_t size) noexcept
            protection == PAGE_EXECUTE_READWRITE || protection == PAGE_EXECUTE_WRITECOPY;
 }
 
+template <std::size_t N>
+std::uintptr_t FindPattern(std::uintptr_t base, std::size_t size, const std::array<int, N>& pattern) noexcept
+{
+    if (base == 0 || size < N)
+        return 0;
+
+    const auto* bytes = reinterpret_cast<const std::uint8_t*>(base);
+    for (std::size_t offset = 0; offset + N <= size; ++offset) {
+        bool match = true;
+        for (std::size_t index = 0; index < N; ++index) {
+            if (pattern[index] >= 0 && bytes[offset + index] != static_cast<std::uint8_t>(pattern[index])) {
+                match = false;
+                break;
+            }
+        }
+        if (match)
+            return base + offset;
+    }
+    return 0;
+}
+
+std::uintptr_t ResolveRipRelative32(std::uintptr_t displacementAddress) noexcept
+{
+    if (!IsReadableAddress(displacementAddress, sizeof(std::int32_t)))
+        return 0;
+
+    std::int32_t displacement = 0;
+    std::memcpy(&displacement, reinterpret_cast<const void*>(displacementAddress), sizeof(displacement));
+    return static_cast<std::uintptr_t>(
+        static_cast<std::intptr_t>(displacementAddress + sizeof(displacement)) + displacement);
+}
+
+bool EnsureRuntimeTargets() noexcept
+{
+    if (g_runtime.scriptGlobalsAddress != 0 && g_runtime.scriptThreadsStorageAddress != 0)
+        return true;
+    if (g_runtime.resolutionAttempted)
+        return false;
+
+    g_runtime.resolutionAttempted = true;
+    const HMODULE module = ::GetModuleHandleW(L"GTA5_Enhanced.exe");
+    if (!module)
+        return false;
+
+    MODULEINFO info{};
+    if (::GetModuleInformation(::GetCurrentProcess(), module, &info, sizeof(info)) == FALSE)
+        return false;
+
+    const auto base = reinterpret_cast<std::uintptr_t>(info.lpBaseOfDll);
+    const auto imageSize = static_cast<std::size_t>(info.SizeOfImage);
+
+    const auto globalsMatch = FindPattern(base, imageSize, ScriptGlobalsPattern);
+    const auto threadsMatch = FindPattern(base, imageSize, ScriptThreadsPattern);
+    if (globalsMatch == 0 || threadsMatch == 0)
+        return false;
+
+    // Matches the same Enhanced resolve chains used by the project's target registry.
+    g_runtime.scriptGlobalsAddress = ResolveRipRelative32(globalsMatch + 10U);
+    g_runtime.scriptThreadsStorageAddress = ResolveRipRelative32(threadsMatch + 3U);
+    return g_runtime.scriptGlobalsAddress != 0 && g_runtime.scriptThreadsStorageAddress != 0;
+}
+
 std::uint32_t Joaat(std::string_view value) noexcept
 {
     std::uint32_t hash = 0;
@@ -138,8 +210,10 @@ std::uint32_t Joaat(std::string_view value) noexcept
 
 GTA_Script_Thread_View* FindFreemodeThread() noexcept
 {
-    if (!IsReadableAddress(g_runtime.scriptThreadsStorageAddress, sizeof(GTA_Script_Thread_Array_View)))
+    if (!EnsureRuntimeTargets() ||
+        !IsReadableAddress(g_runtime.scriptThreadsStorageAddress, sizeof(GTA_Script_Thread_Array_View))) {
         return nullptr;
+    }
 
     GTA_Script_Thread_Array_View threads{};
     std::memcpy(&threads,
@@ -168,6 +242,9 @@ GTA_Script_Thread_View* FindFreemodeThread() noexcept
 template <typename T>
 T* ResolveGlobal(std::uint32_t index) noexcept
 {
+    if (!EnsureRuntimeTargets())
+        return nullptr;
+
     const std::uint32_t blockIndex = (index >> 0x12U) & 0x3FU;
     const std::uint32_t slotIndex = index & 0x3FFFFU;
 
@@ -212,10 +289,7 @@ void TickOffTheRadar(GTA_Native_Manager& natives) noexcept
         return;
 
     const auto player = natives.Invoke<int>(GTA_Native_Id::PlayerId);
-    if (!player || *player < 0 || *player >= 32)
-        return;
-
-    if (!SafeToModifyFreemodeGlobals(*player))
+    if (!player || *player < 0 || *player >= 32 || !SafeToModifyFreemodeGlobals(*player))
         return;
 
     auto* active = ResolveGlobal<int>(PlayerEntryGlobal(*player, GlobalPlayerOffRadarOffset));
@@ -225,10 +299,6 @@ void TickOffTheRadar(GTA_Native_Manager& natives) noexcept
     if (!desired) {
         *active = 0;
         g_offRadarApplied = false;
-        if (g_runtime.logger)
-            g_runtime.logger->Log(Backend::LogLevel::Info,
-                                  "Off The Radar disabled; freemode broadcast flag restored",
-                                  "GTA5_Enhanced.Features");
         return;
     }
 
@@ -239,46 +309,16 @@ void TickOffTheRadar(GTA_Native_Manager& natives) noexcept
 
     *timer = *networkTime;
     *active = 1;
-
-    if (!g_offRadarApplied && g_runtime.logger)
-        g_runtime.logger->Log(Backend::LogLevel::Info,
-                              "Off The Radar enabled through freemode broadcast globals",
-                              "GTA5_Enhanced.Features");
     g_offRadarApplied = true;
 }
 
 void TickSkipCutscene(GTA_Native_Manager& natives) noexcept
 {
-    auto& state = GTA_Gameplay_State::Instance();
-    if (!state.ConsumeSkipCutsceneRequest())
+    if (!GTA_Gameplay_State::Instance().ConsumeSkipCutsceneRequest())
         return;
 
-    const bool success = natives.InvokeHash<void>(StopCutsceneImmediatelyHash);
-    if (g_runtime.logger) {
-        g_runtime.logger->Log(
-            success ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
-            success ? "Skip Cutscene requested" : "Skip Cutscene native invocation failed",
-            "GTA5_Enhanced.Features");
-    }
+    (void)natives.InvokeHash<void>(StopCutsceneImmediatelyHash);
 }
-}
-
-void ConfigureSelfOnlineExtension(
-    std::uintptr_t scriptGlobalsAddress,
-    std::uintptr_t scriptThreadsStorageAddress,
-    Backend::LoggerService* logger) noexcept
-{
-    g_runtime = {};
-    g_runtime.scriptGlobalsAddress = scriptGlobalsAddress;
-    g_runtime.scriptThreadsStorageAddress = scriptThreadsStorageAddress;
-    g_runtime.logger = logger;
-    g_offRadarApplied = false;
-
-    if (logger && (scriptGlobalsAddress == 0 || scriptThreadsStorageAddress == 0)) {
-        logger->Log(Backend::LogLevel::Warning,
-                    "Off The Radar unavailable: ScriptGlobals or ScriptThreads target missing",
-                    "GTA5_Enhanced.Features");
-    }
 }
 
 void ResetSelfOnlineExtension() noexcept
