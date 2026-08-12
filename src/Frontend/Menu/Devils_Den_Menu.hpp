@@ -31,6 +31,7 @@ private:
     void DrawWeaponsPage();
     void DrawVehiclePage();
     void DrawTeleportPage();
+    void DrawTeleportPageLegacy();
     void DrawWorldPage();
     void DrawSettingsPage();
     void DrawPlaceholderPage(const char* title, const char* detail);

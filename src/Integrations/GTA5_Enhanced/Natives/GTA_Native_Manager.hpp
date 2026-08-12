@@ -5,6 +5,7 @@
 #include "GTA_Native_Types.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Utility_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 
@@ -133,10 +134,11 @@ public:
     {
         // Vehicle Forge calls SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER every game
         // tick. Use that guaranteed game-thread point to service the online,
-        // Self utility, garage, and world extensions without another hook.
+        // Self utility, teleport, garage, and world extensions without another hook.
         if (hash == 0xA52E1AE3848A506BULL) {
             TickSelfOnlineExtension(*this);
             TickSelfUtilityExtension(*this);
+            TickTeleportExtension(*this);
             TickVehicleGarageSave(*this);
             TickWorldEnvironmentExtension(*this);
         }
