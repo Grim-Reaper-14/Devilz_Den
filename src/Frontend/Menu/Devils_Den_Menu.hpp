@@ -31,8 +31,10 @@ private:
     void DrawWeaponsPage();
     void DrawVehiclePage();
     void DrawTeleportPage();
+    void DrawWorldPage();
     void DrawSettingsPage();
     void DrawPlaceholderPage(const char* title, const char* detail);
+    void DrawPlaceholderPageLegacy(const char* title, const char* detail);
 
     Page m_page = Page::Self;
     bool m_godMode = false;

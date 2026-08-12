@@ -5,6 +5,7 @@
 #include "GTA_Native_Types.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 
 #include <array>
 #include <cstddef>
@@ -41,10 +42,10 @@ class GTA_Native_Manager final
 {
 public:
     // Validated Enhanced handlers which do not need a public named-id yet live
-    // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self and
-    // Weapons also use the final handlers for movement, explosive-ammo guards,
-    // Off The Radar network time, and cutscene skipping.
-    static constexpr std::array<GTA_Native_Hash, 47> BootstrapProbeHashes{
+    // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self,
+    // Weapons, Garage, and World also use the final handlers for their
+    // game-thread actions.
+    static constexpr std::array<GTA_Native_Hash, 51> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -91,7 +92,11 @@ public:
         0x11552FA9DCB8E126ULL, // IS_PED_ARMED
         0xB73833BDAAE31047ULL, // IS_PED_PERFORMING_MELEE_ACTION
         0x7E3F74F641EE6B27ULL, // GET_NETWORK_TIME
-        0xA7E4AA8D29D3DAC1ULL  // STOP_CUTSCENE_IMMEDIATELY
+        0xA7E4AA8D29D3DAC1ULL, // STOP_CUTSCENE_IMMEDIATELY
+        0xAFD3BC0F6EBB5474ULL, // NETWORK_OVERRIDE_CLOCK_TIME
+        0x99599AE2C0FDB2A1ULL, // NETWORK_CLEAR_CLOCK_TIME_OVERRIDE
+        0x88791F880F624022ULL, // SET_OVERRIDE_WEATHER
+        0x58A3B74F26D2B532ULL  // CLEAR_OVERRIDE_WEATHER
     };
 
     [[nodiscard]] GTA_Native_Manager_Status Initialize(
@@ -120,11 +125,12 @@ public:
         -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
         // Vehicle Forge calls SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER every game
-        // tick. Use that guaranteed game-thread point to service Self online
-        // actions and garage-save requests without another hook.
+        // tick. Use that guaranteed game-thread point to service the online and
+        // world extensions without adding another hook.
         if (hash == 0xA52E1AE3848A506BULL) {
             TickSelfOnlineExtension(*this);
             TickVehicleGarageSave(*this);
+            TickWorldEnvironmentExtension(*this);
         }
 
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
