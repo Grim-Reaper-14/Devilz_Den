@@ -1,12 +1,24 @@
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Call_Context.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Utility_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
 
 #include <Windows.h>
 
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+
+namespace Devilz::Integrations::GTA5_Enhanced
+{
+void SetSelfSpecialAbilities(bool) noexcept {}
+void SetSelfNoIdleKick(bool) noexcept {}
+void ResetSelfUtilityExtension() noexcept {}
+void TickSelfUtilityExtension(GTA_Native_Manager&) noexcept {}
+void ConfigureVehicleLSCRestrictions(std::uintptr_t) noexcept {}
+void ResetVehicleLSCRestrictions() noexcept {}
+}
 
 namespace
 {
