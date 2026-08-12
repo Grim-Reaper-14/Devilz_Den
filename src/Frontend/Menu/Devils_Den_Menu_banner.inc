@@ -1,5 +1,7 @@
 #include "Frontend/Menu/Menu_Appearance.hpp"
 
+namespace Devilz::Frontend
+{
 void Devils_Den_Menu::DrawBanner()
 {
     auto& appearance = Menu_Appearance_State::Instance();
@@ -71,4 +73,5 @@ void Devils_Den_Menu::DrawBanner()
         ImGui::GetColorU32(palette.bronze), subtitle);
 
     ImGui::Dummy(ImVec2{width, height});
+}
 }

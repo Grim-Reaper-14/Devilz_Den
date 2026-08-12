@@ -1,3 +1,4 @@
+#include "Frontend/Menu/Devils_Den_Menu.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"

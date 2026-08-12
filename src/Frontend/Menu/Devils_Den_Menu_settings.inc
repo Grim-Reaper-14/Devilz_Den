@@ -2,7 +2,10 @@
 
 #include <Windows.h>
 #include <shobjidl.h>
+#include <utility>
 
+namespace Devilz::Frontend
+{
 namespace
 {
 std::string BrowseBannerImage()
@@ -235,4 +238,5 @@ void Devils_Den_Menu::DrawSettingsPage()
     }
     ImGui::EndChild();
     ImGui::TextDisabled("Settings.json auto-loads theme/banner on startup. Named configs also persist appearance and live menu settings.");
+}
 }
