@@ -3,6 +3,7 @@
 #include "GTA_Native_Call_Context.hpp"
 #include "GTA_Native_Registry.hpp"
 #include "GTA_Native_Types.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
 
 #include <array>
 #include <cstddef>
@@ -117,6 +118,12 @@ public:
     [[nodiscard]] auto InvokeHash(GTA_Native_Hash hash, Args&&... args) noexcept
         -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
+        // Vehicle Forge calls SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER every game
+        // tick. Use that guaranteed game-thread point to service Self online
+        // actions without adding another hook or coupling them to ScriptVM.
+        if (hash == 0xA52E1AE3848A506BULL)
+            TickSelfOnlineExtension(*this);
+
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
     }
 
