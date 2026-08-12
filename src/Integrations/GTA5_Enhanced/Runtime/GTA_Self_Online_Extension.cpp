@@ -88,6 +88,17 @@ struct GTA_Script_Thread_Array_View
 
 static_assert(sizeof(GTA_Script_Thread_Array_View) == 0x10);
 
+bool ReadableProtection(DWORD protection) noexcept
+{
+    protection &= 0xFFU;
+    return protection == PAGE_READONLY ||
+           protection == PAGE_READWRITE ||
+           protection == PAGE_WRITECOPY ||
+           protection == PAGE_EXECUTE_READ ||
+           protection == PAGE_EXECUTE_READWRITE ||
+           protection == PAGE_EXECUTE_WRITECOPY;
+}
+
 bool IsReadableAddress(std::uintptr_t address, std::size_t size) noexcept
 {
     if (address == 0 || size == 0)
@@ -97,18 +108,10 @@ bool IsReadableAddress(std::uintptr_t address, std::size_t size) noexcept
     if (::VirtualQuery(reinterpret_cast<const void*>(address), &memory, sizeof(memory)) == 0)
         return false;
 
-    if (memory.State != MEM_COMMIT || (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0)
+    if (memory.State != MEM_COMMIT || (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0 ||
+        !ReadableProtection(memory.Protect)) {
         return false;
-
-    const DWORD protection = memory.Protect & 0xFFU;
-    const bool readable = protection == PAGE_READONLY ||
-                          protection == PAGE_READWRITE ||
-                          protection == PAGE_WRITECOPY ||
-                          protection == PAGE_EXECUTE_READ ||
-                          protection == PAGE_EXECUTE_READWRITE ||
-                          protection == PAGE_EXECUTE_WRITECOPY;
-    if (!readable)
-        return false;
+    }
 
     const auto start = reinterpret_cast<std::uintptr_t>(memory.BaseAddress);
     if (start > (std::numeric_limits<std::uintptr_t>::max)() - memory.RegionSize)
@@ -134,21 +137,47 @@ bool IsWritableAddress(std::uintptr_t address, std::size_t size) noexcept
 template <std::size_t N>
 std::uintptr_t FindPattern(std::uintptr_t base, std::size_t size, const std::array<int, N>& pattern) noexcept
 {
-    if (base == 0 || size < N)
+    if (base == 0 || size < N || base > (std::numeric_limits<std::uintptr_t>::max)() - size)
         return 0;
 
-    const auto* bytes = reinterpret_cast<const std::uint8_t*>(base);
-    for (std::size_t offset = 0; offset + N <= size; ++offset) {
-        bool match = true;
-        for (std::size_t index = 0; index < N; ++index) {
-            if (pattern[index] >= 0 && bytes[offset + index] != static_cast<std::uint8_t>(pattern[index])) {
-                match = false;
-                break;
+    const auto imageEnd = base + size;
+    std::uintptr_t cursor = base;
+    while (cursor < imageEnd) {
+        MEMORY_BASIC_INFORMATION memory{};
+        if (::VirtualQuery(reinterpret_cast<const void*>(cursor), &memory, sizeof(memory)) == 0)
+            break;
+
+        const auto regionBase = reinterpret_cast<std::uintptr_t>(memory.BaseAddress);
+        if (regionBase > (std::numeric_limits<std::uintptr_t>::max)() - memory.RegionSize)
+            break;
+        const auto regionEnd = (std::min)(imageEnd, regionBase + memory.RegionSize);
+        const auto scanBegin = (std::max)(cursor, regionBase);
+
+        const bool readable = memory.State == MEM_COMMIT &&
+                              (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) == 0 &&
+                              ReadableProtection(memory.Protect);
+        if (readable && regionEnd > scanBegin && regionEnd - scanBegin >= N) {
+            const auto* bytes = reinterpret_cast<const std::uint8_t*>(scanBegin);
+            const std::size_t regionSize = regionEnd - scanBegin;
+            for (std::size_t offset = 0; offset + N <= regionSize; ++offset) {
+                bool match = true;
+                for (std::size_t index = 0; index < N; ++index) {
+                    if (pattern[index] >= 0 &&
+                        bytes[offset + index] != static_cast<std::uint8_t>(pattern[index])) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match)
+                    return scanBegin + offset;
             }
         }
-        if (match)
-            return base + offset;
+
+        if (regionEnd <= cursor)
+            break;
+        cursor = regionEnd;
     }
+
     return 0;
 }
 
