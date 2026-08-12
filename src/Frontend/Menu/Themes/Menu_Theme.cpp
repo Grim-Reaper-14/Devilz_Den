@@ -252,13 +252,37 @@ void Menu_Theme_Manager::DrawIcon(
 
 void Menu_Theme_Manager::DrawHeader(const char* title, const char* subtitle) const noexcept
 {
-    const auto origin = ImGui::GetCursorScreenPos();
-    const float width = ImGui::GetContentRegionAvail().x;
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+    float width = (std::max)(1.0F, ImGui::GetContentRegionAvail().x);
     constexpr float height = 122.0F;
-    auto* draw = ImGui::GetWindowDrawList();
+
+    // Keep the banner itself visible even if a saved ImGui window position
+    // places the top edge slightly above the current game viewport.
+    const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+    constexpr float viewportMargin = 8.0F;
+    if (origin.y < viewportMargin) {
+        origin.y = viewportMargin;
+        ImGui::SetCursorScreenPos(origin);
+    }
+    if (displaySize.x > viewportMargin && origin.x + width > displaySize.x - viewportMargin)
+        width = (std::max)(1.0F, displaySize.x - viewportMargin - origin.x);
+
+    // Draw the header on ImGui's foreground layer so later child windows cannot
+    // cover the menu banner. The normal layout space is still reserved below.
+    auto* draw = ImGui::GetForegroundDrawList();
+    if (!draw) {
+        ImGui::Dummy(ImVec2{width, height});
+        return;
+    }
+
     const ImVec2 max{origin.x + width, origin.y + height};
 
-    draw->AddRectFilled(origin, max, Color(ImVec4{0.025F, 0.017F, 0.014F, 1.0F}), 1.0F);
+    // Strong drop shadow and top/bottom ember rails make the banner read as a
+    // single header element instead of blending into the menu body.
+    draw->AddRectFilled({origin.x + 5.0F, origin.y + 6.0F}, {max.x + 5.0F, max.y + 6.0F},
+        Color(ImVec4{0.0F, 0.0F, 0.0F, 0.62F}), 2.0F);
+    draw->AddRectFilled(origin, max, Color(ImVec4{0.025F, 0.017F, 0.014F, 1.0F}), 2.0F);
+
     constexpr float blockHeight = 24.0F;
     for (int row = 0; row < 5; ++row) {
         const float y0 = origin.y + static_cast<float>(row) * blockHeight;
@@ -272,12 +296,16 @@ void Menu_Theme_Manager::DrawHeader(const char* title, const char* subtitle) con
         }
     }
 
+    draw->AddRectFilled({origin.x + 10.0F, origin.y + 7.0F}, {max.x - 10.0F, origin.y + 10.0F},
+        Color(m_palette.emberGlow), 1.5F);
+    draw->AddRectFilled({origin.x + 10.0F, max.y - 10.0F}, {max.x - 10.0F, max.y - 7.0F},
+        Color(m_palette.emberGlow), 1.5F);
     DrawOrnateFrame(draw, origin, max, true);
 
     const float plaqueWidth = (std::min)(width * 0.64F, 720.0F);
     const ImVec2 plaqueMin{origin.x + (width - plaqueWidth) * 0.5F, origin.y + 13.0F};
     const ImVec2 plaqueMax{plaqueMin.x + plaqueWidth, origin.y + 88.0F};
-    draw->AddRectFilled(plaqueMin, plaqueMax, Color(ImVec4{0.055F, 0.018F, 0.015F, 0.96F}), 1.0F);
+    draw->AddRectFilled(plaqueMin, plaqueMax, Color(ImVec4{0.055F, 0.018F, 0.015F, 0.98F}), 1.0F);
     DrawOrnateFrame(draw, plaqueMin, plaqueMax, true);
     draw->AddLine({plaqueMin.x + 18.0F, plaqueMin.y + 10.0F}, {plaqueMax.x - 18.0F, plaqueMin.y + 10.0F}, Color(m_palette.emberGlow), 2.0F);
     draw->AddLine({plaqueMin.x + 18.0F, plaqueMax.y - 10.0F}, {plaqueMax.x - 18.0F, plaqueMax.y - 10.0F}, Color(m_palette.emberGlow), 2.0F);
@@ -300,7 +328,6 @@ void Menu_Theme_Manager::DrawHeader(const char* title, const char* subtitle) con
     draw->AddCircle(crestCenter, 19.0F, Color(m_palette.emberGlow), 24, 3.0F);
     DrawIcon(Menu_Icon::DevilCrest, draw, crestCenter, 12.0F, Color(m_palette.bronze));
 
-    // Side spear/finial details inspired by the reference's gothic frame.
     for (const float side : {origin.x + 34.0F, max.x - 34.0F}) {
         draw->AddLine({side, origin.y + 14.0F}, {side, max.y - 14.0F}, Color(m_palette.ironLight), 3.0F);
         draw->AddTriangleFilled({side, origin.y + 4.0F}, {side - 5.0F, origin.y + 16.0F}, {side + 5.0F, origin.y + 16.0F}, Color(m_palette.bronzeDark));
