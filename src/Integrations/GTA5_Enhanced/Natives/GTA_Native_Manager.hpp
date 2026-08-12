@@ -4,6 +4,7 @@
 #include "GTA_Native_Registry.hpp"
 #include "GTA_Native_Types.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
 
 #include <array>
 #include <cstddef>
@@ -120,9 +121,11 @@ public:
     {
         // Vehicle Forge calls SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER every game
         // tick. Use that guaranteed game-thread point to service Self online
-        // actions without adding another hook or coupling them to ScriptVM.
-        if (hash == 0xA52E1AE3848A506BULL)
+        // actions and garage-save requests without another hook.
+        if (hash == 0xA52E1AE3848A506BULL) {
             TickSelfOnlineExtension(*this);
+            TickVehicleGarageSave(*this);
+        }
 
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
     }
