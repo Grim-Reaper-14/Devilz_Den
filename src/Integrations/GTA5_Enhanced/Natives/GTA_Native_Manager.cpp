@@ -96,6 +96,13 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
 
 void GTA_Native_Manager::Reset() noexcept
 {
+    if (m_ready) {
+        SetSelfSpecialAbilities(false);
+        SetSelfNoIdleKick(false);
+        TickSelfUtilityExtension(*this);
+    }
+    ResetSelfUtilityExtension();
+
     m_ready = false;
     m_fingerprint = 0;
     m_handlers.clear();

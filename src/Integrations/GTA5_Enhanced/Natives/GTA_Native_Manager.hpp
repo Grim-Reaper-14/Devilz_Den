@@ -4,6 +4,7 @@
 #include "GTA_Native_Registry.hpp"
 #include "GTA_Native_Types.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Utility_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 
@@ -45,7 +46,7 @@ public:
     // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self,
     // Weapons, Garage, and World also use the final handlers for their
     // game-thread actions.
-    static constexpr std::array<GTA_Native_Hash, 51> BootstrapProbeHashes{
+    static constexpr std::array<GTA_Native_Hash, 57> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -96,7 +97,13 @@ public:
         0xAFD3BC0F6EBB5474ULL, // NETWORK_OVERRIDE_CLOCK_TIME
         0x99599AE2C0FDB2A1ULL, // NETWORK_CLEAR_CLOCK_TIME_OVERRIDE
         0x88791F880F624022ULL, // SET_OVERRIDE_WEATHER
-        0x58A3B74F26D2B532ULL  // CLEAR_OVERRIDE_WEATHER
+        0x58A3B74F26D2B532ULL, // CLEAR_OVERRIDE_WEATHER
+        0xD25E9BDC14A0B649ULL, // SET_ENTITY_HEALTH
+        0x92EBF838856DCF63ULL, // RESTORE_PLAYER_STAMINA
+        0xC2BF1F6F84E31EB2ULL, // GET_PED_STEALTH_MOVEMENT
+        0xD33BCB9F50C1E588ULL, // SPECIAL_ABILITY_UNLOCK
+        0xE3D5A2DE522F29C1ULL, // SPECIAL_ABILITY_LOCK
+        0x5F5FDED45A3345C9ULL  // SET_SPECIAL_ABILITY_MP
     };
 
     [[nodiscard]] GTA_Native_Manager_Status Initialize(
@@ -125,10 +132,11 @@ public:
         -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
         // Vehicle Forge calls SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER every game
-        // tick. Use that guaranteed game-thread point to service the online and
-        // world extensions without adding another hook.
+        // tick. Use that guaranteed game-thread point to service the online,
+        // Self utility, garage, and world extensions without another hook.
         if (hash == 0xA52E1AE3848A506BULL) {
             TickSelfOnlineExtension(*this);
+            TickSelfUtilityExtension(*this);
             TickVehicleGarageSave(*this);
             TickWorldEnvironmentExtension(*this);
         }

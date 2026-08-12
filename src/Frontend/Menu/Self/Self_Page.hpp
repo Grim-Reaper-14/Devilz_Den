@@ -2,6 +2,7 @@
 
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Utility_Extension.hpp"
 
 #include <imgui.h>
 
@@ -16,15 +17,12 @@ inline void DrawSelfPage()
 
     ImGui::TextColored(palette.emberRed, "SELF");
     ImGui::SameLine();
-    ImGui::TextDisabled("- live Story Mode features");
+    ImGui::TextDisabled("- live player and online controls");
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
 
     ImGui::TextColored(palette.bronze, "PLAYER OPTIONS");
     bool godMode = gameplay.GodMode();
     if (ImGui::Checkbox("God Mode", &godMode)) gameplay.SetGodMode(godMode);
-
-    bool neverWanted = gameplay.NeverWanted();
-    if (ImGui::Checkbox("Never Wanted", &neverWanted)) gameplay.SetNeverWanted(neverWanted);
 
     bool superJump = gameplay.SuperJump();
     if (ImGui::Checkbox("Super Jump", &superJump)) gameplay.SetSuperJump(superJump);
@@ -37,6 +35,21 @@ inline void DrawSelfPage()
 
     bool keepClean = gameplay.KeepPlayerClean();
     if (ImGui::Checkbox("Keep Player Clean", &keepClean)) gameplay.SetKeepPlayerClean(keepClean);
+
+    Themes::Menu_Theme_Manager::Instance().DrawDivider();
+    ImGui::TextColored(palette.bronze, "WANTED");
+
+    int wantedLevel = SelfWantedLevelSelection();
+    ImGui::SetNextItemWidth(420.0F);
+    if (ImGui::SliderInt("Wanted Level", &wantedLevel, 0, 5))
+        SetSelfWantedLevelSelection(wantedLevel);
+    if (ImGui::Button("SET WANTED LEVEL", ImVec2(190.0F, 36.0F)))
+        RequestSelfWantedLevel();
+    ImGui::SameLine();
+    ImGui::TextDisabled("Setting a level disables Never Wanted.");
+
+    bool neverWanted = gameplay.NeverWanted();
+    if (ImGui::Checkbox("Never Wanted", &neverWanted)) gameplay.SetNeverWanted(neverWanted);
 
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "MOVEMENT");
@@ -59,8 +72,70 @@ inline void DrawSelfPage()
         gameplay.SetSwimSpeed(swimSpeed);
     ImGui::EndDisabled();
 
-    ImGui::TextDisabled("Movement multipliers restore to 1.00x when disabled. Fast Run also applies the live ped move-rate override each game tick.");
+    bool unlimitedStamina = SelfUnlimitedStamina();
+    if (ImGui::Checkbox("Unlimited Stamina", &unlimitedStamina))
+        SetSelfUnlimitedStamina(unlimitedStamina);
+
+    bool stealthSpeed = SelfStealthSpeed();
+    if (ImGui::Checkbox("Stealth Speed", &stealthSpeed))
+        SetSelfStealthSpeed(stealthSpeed);
+    float stealthMultiplier = SelfStealthSpeedMultiplier();
+    ImGui::BeginDisabled(!stealthSpeed);
+    ImGui::SetNextItemWidth(420.0F);
+    if (ImGui::SliderFloat("Stealth Movement Speed", &stealthMultiplier, 1.0F, 1.49F, "%.2fx"))
+        SetSelfStealthSpeedMultiplier(stealthMultiplier);
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("Stealth speed is applied only while the local ped is actually in stealth mode. Fast Run takes priority when both are enabled.");
+
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
-    ImGui::TextDisabled("Weapon controls live on the WEAPONS page. Live features execute on the validated game thread.");
+    ImGui::TextColored(palette.bronze, "SPECIAL ABILITY");
+
+    bool specialAbilities = SelfSpecialAbilities();
+    if (ImGui::Checkbox("Enable Special Abilities", &specialAbilities))
+        SetSelfSpecialAbilities(specialAbilities);
+
+    int specialSelection = SelfSpecialAbilitySelection();
+    ImGui::BeginDisabled(!specialAbilities);
+    ImGui::SetNextItemWidth(420.0F);
+    if (ImGui::BeginCombo("Ability", SelfSpecialAbilityLabel(specialSelection))) {
+        for (int index = 0; index < GTA_Self_Special_Ability_Count; ++index) {
+            const bool selected = index == specialSelection;
+            if (ImGui::Selectable(SelfSpecialAbilityLabel(index), selected)) {
+                specialSelection = index;
+                SetSelfSpecialAbilitySelection(index);
+            }
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    ImGui::TextDisabled("Experimental multiplayer special-ability path. Available types: Slipstream, Deadeye, Trevor Rage, Snapshot, and Insult.");
+
+    Themes::Menu_Theme_Manager::Instance().DrawDivider();
+    ImGui::TextColored(palette.bronze, "ONLINE");
+
+    bool offTheRadar = gameplay.OffTheRadar();
+    if (ImGui::Checkbox("Off The Radar", &offTheRadar))
+        gameplay.SetOffTheRadar(offTheRadar);
+
+    bool noIdleKick = SelfNoIdleKick();
+    if (ImGui::Checkbox("No Idle Kick", &noIdleKick))
+        SetSelfNoIdleKick(noIdleKick);
+    if (noIdleKick) {
+        ImGui::SameLine();
+        ImGui::TextDisabled(SelfNoIdleKickReady() ? "Idle timers overridden" : "Resolving current-build idle tunables...");
+    }
+
+    Themes::Menu_Theme_Manager::Instance().DrawDivider();
+    ImGui::TextColored(palette.bronze, "ACTIONS");
+
+    if (ImGui::Button("SUICIDE", ImVec2(150.0F, 38.0F)))
+        RequestSelfSuicide();
+    ImGui::SameLine();
+    if (ImGui::Button("SKIP CUTSCENE", ImVec2(190.0F, 38.0F)))
+        gameplay.RequestSkipCutscene();
+
+    ImGui::TextDisabled("Self actions execute on the validated GTA game thread. Weapon controls remain on the WEAPONS page.");
 }
 }
