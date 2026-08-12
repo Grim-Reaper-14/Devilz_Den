@@ -40,8 +40,9 @@ class GTA_Native_Manager final
 public:
     // Validated Enhanced handlers which do not need a public named-id yet live
     // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self and
-    // Weapons also use the final five for movement and explosive-ammo guards.
-    static constexpr std::array<GTA_Native_Hash, 45> BootstrapProbeHashes{
+    // Weapons also use the final handlers for movement, explosive-ammo guards,
+    // Off The Radar network time, and cutscene skipping.
+    static constexpr std::array<GTA_Native_Hash, 47> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -86,7 +87,9 @@ public:
         0x289497A4BA9049E0ULL, // SET_SWIM_MULTIPLIER_FOR_PLAYER
         0xB27B08E34AC92345ULL, // SET_PED_MOVE_RATE_OVERRIDE
         0x11552FA9DCB8E126ULL, // IS_PED_ARMED
-        0xB73833BDAAE31047ULL  // IS_PED_PERFORMING_MELEE_ACTION
+        0xB73833BDAAE31047ULL, // IS_PED_PERFORMING_MELEE_ACTION
+        0x7E3F74F641EE6B27ULL, // GET_NETWORK_TIME
+        0xA7E4AA8D29D3DAC1ULL  // STOP_CUTSCENE_IMMEDIATELY
     };
 
     [[nodiscard]] GTA_Native_Manager_Status Initialize(
