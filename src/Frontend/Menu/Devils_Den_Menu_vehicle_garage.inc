@@ -1,4 +1,41 @@
     if (ImGui::BeginTabItem("GARAGE")) {
+        ImGui::TextColored(Bronze, "PERSONAL VEHICLE");
+        const auto pvStatus = Devilz::Integrations::GTA5_Enhanced::PersonalVehicleRequestStatus();
+        const bool pvBusy = pvStatus == Devilz::Integrations::GTA5_Enhanced::GTA_Personal_Vehicle_Request_Status::Queued ||
+            pvStatus == Devilz::Integrations::GTA5_Enhanced::GTA_Personal_Vehicle_Request_Status::Requesting;
+
+        ImGui::BeginDisabled(pvBusy);
+        if (ImGui::Button("REQUEST PERSONAL VEHICLE", ImVec2(230.0F, 38.0F)))
+            Devilz::Integrations::GTA5_Enhanced::RequestCurrentPersonalVehicle();
+        ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        switch (pvStatus) {
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Personal_Vehicle_Request_Status::Idle:
+            ImGui::TextDisabled("Ready");
+            break;
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Personal_Vehicle_Request_Status::Queued:
+            ImGui::TextDisabled("Queued...");
+            break;
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Personal_Vehicle_Request_Status::Requesting:
+            ImGui::TextDisabled("Requesting...");
+            break;
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Personal_Vehicle_Request_Status::Requested:
+            ImGui::Text("Request sent.");
+            break;
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Personal_Vehicle_Request_Status::Unavailable:
+            ImGui::TextColored(EmberRed, "Enter GTA Online freemode.");
+            break;
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Personal_Vehicle_Request_Status::Busy:
+            ImGui::TextColored(EmberRed, "Another PV request is active.");
+            break;
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Personal_Vehicle_Request_Status::Failed:
+            ImGui::TextColored(EmberRed, "Personal vehicle request failed.");
+            break;
+        }
+        ImGui::TextDisabled("Requests the current/last-saved owned personal vehicle through freemode.");
+
+        MedievalDivider();
         ImGui::TextColored(Bronze, "GTA GARAGE SAVE");
         ImGui::TextDisabled("Runs through the validated game-thread request path.");
 

@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -29,6 +30,23 @@ constexpr std::uint32_t GlobalPlayerOffRadarOffset = 214U;
 constexpr std::uint32_t OffRadarTimerGlobal = 2673276U + 58U;
 constexpr int FreemodeRunningState = 4;
 
+// YimMenuV2 Enhanced globals used by PersonalVehicles::GetCurrent()->Request().
+// g_SavedMPGlobals is a one-entry SCR_ARRAY, so Entries[0] starts at +1.
+constexpr std::uint32_t SavedMpGlobalsBase = 2359296U;
+constexpr std::uint32_t SavedMpGlobalsGeneralSavedOffset = 681U;
+constexpr std::uint32_t SavedMpGlobalsLastSavedCarOffset = 2U;
+constexpr std::uint32_t LastSavedPersonalVehicleGlobal =
+    SavedMpGlobalsBase + 1U + SavedMpGlobalsGeneralSavedOffset + SavedMpGlobalsLastSavedCarOffset;
+
+constexpr std::uint32_t FreemodeGeneralBase = 2733326U;
+constexpr std::uint32_t FreemodePersonalVehicleRequestedOffset = 575U;
+constexpr std::uint32_t FreemodeRequestedPersonalVehicleIdOffset = 639U;
+constexpr std::uint32_t FreemodeExec1ImpoundOffset = 642U;
+constexpr std::size_t FreemodePersonalVehicleRequestLocal = 19672U + 176U;
+constexpr int MaxPersonalVehicleEntries = 607;
+constexpr ULONGLONG PersonalVehicleLocalResetDelayMs = 100ULL;
+constexpr ULONGLONG PersonalVehicleLocalResetTimeoutMs = 2000ULL;
+
 constexpr std::array<int, 17> ScriptGlobalsPattern{
     0x48, 0x8B, 0x8E, 0xB8, 0x00, 0x00, 0x00, 0x48, 0x8D, 0x15,
     -1, -1, -1, -1, 0x49, 0x89, 0xD8
@@ -47,6 +65,11 @@ struct SelfOnlineRuntime
 
 SelfOnlineRuntime g_runtime{};
 bool g_offRadarApplied = false;
+std::atomic_bool g_personalVehicleRequestPending{false};
+std::atomic<GTA_Personal_Vehicle_Request_Status> g_personalVehicleRequestStatus{
+    GTA_Personal_Vehicle_Request_Status::Idle};
+std::atomic_bool g_personalVehicleLocalResetPending{false};
+std::atomic<ULONGLONG> g_personalVehicleRequestIssuedAt{0};
 
 struct GTA_Script_Context_View
 {
@@ -310,6 +333,91 @@ bool SafeToModifyFreemodeGlobals(int player) noexcept
     return freemodeState && *freemodeState == FreemodeRunningState;
 }
 
+bool ClearFreemodePersonalVehicleRequestLocal() noexcept
+{
+    auto* thread = FindFreemodeThread();
+    if (!thread || !thread->stack)
+        return false;
+
+    const auto address = reinterpret_cast<std::uintptr_t>(thread->stack) +
+        FreemodePersonalVehicleRequestLocal * sizeof(std::uint64_t);
+    if (!IsWritableAddress(address, sizeof(int)))
+        return false;
+
+    *reinterpret_cast<int*>(address) = 0;
+    return true;
+}
+
+void TickPersonalVehicleRequest(GTA_Native_Manager& natives) noexcept
+{
+    if (g_personalVehicleLocalResetPending.load(std::memory_order_acquire)) {
+        const ULONGLONG issuedAt = g_personalVehicleRequestIssuedAt.load(std::memory_order_acquire);
+        const ULONGLONG elapsed = ::GetTickCount64() - issuedAt;
+        if (elapsed >= PersonalVehicleLocalResetDelayMs) {
+            if (ClearFreemodePersonalVehicleRequestLocal() || elapsed >= PersonalVehicleLocalResetTimeoutMs)
+                g_personalVehicleLocalResetPending.store(false, std::memory_order_release);
+        }
+    }
+
+    if (!g_personalVehicleRequestPending.exchange(false, std::memory_order_acq_rel))
+        return;
+
+    g_personalVehicleRequestStatus.store(
+        GTA_Personal_Vehicle_Request_Status::Requesting,
+        std::memory_order_release);
+
+    const auto player = natives.Invoke<int>(GTA_Native_Id::PlayerId);
+    if (!player || *player < 0 || *player >= 32 || !SafeToModifyFreemodeGlobals(*player)) {
+        g_personalVehicleRequestStatus.store(
+            GTA_Personal_Vehicle_Request_Status::Unavailable,
+            std::memory_order_release);
+        return;
+    }
+
+    auto* lastSavedCar = ResolveGlobal<int>(LastSavedPersonalVehicleGlobal);
+    auto* personalVehicleRequested = ResolveGlobal<int>(
+        FreemodeGeneralBase + FreemodePersonalVehicleRequestedOffset);
+    auto* requestedPersonalVehicleId = ResolveGlobal<int>(
+        FreemodeGeneralBase + FreemodeRequestedPersonalVehicleIdOffset);
+    auto* exec1Impound = ResolveGlobal<int>(
+        FreemodeGeneralBase + FreemodeExec1ImpoundOffset);
+
+    if (!lastSavedCar || !personalVehicleRequested || !requestedPersonalVehicleId || !exec1Impound) {
+        g_personalVehicleRequestStatus.store(
+            GTA_Personal_Vehicle_Request_Status::Failed,
+            std::memory_order_release);
+        return;
+    }
+
+    if (*requestedPersonalVehicleId != -1) {
+        g_personalVehicleRequestStatus.store(
+            GTA_Personal_Vehicle_Request_Status::Busy,
+            std::memory_order_release);
+        return;
+    }
+
+    const int personalVehicleId = *lastSavedCar;
+    if (personalVehicleId < 0 || personalVehicleId >= MaxPersonalVehicleEntries) {
+        g_personalVehicleRequestStatus.store(
+            GTA_Personal_Vehicle_Request_Status::Failed,
+            std::memory_order_release);
+        return;
+    }
+
+    // Matches PersonalVehicles::PersonalVehicle::Request(false): request the
+    // already-saved PV, leave the normal node-distance behavior intact, and
+    // clear the impound execution flag before setting the requested slot ID.
+    *personalVehicleRequested = 1;
+    *exec1Impound = 0;
+    *requestedPersonalVehicleId = personalVehicleId;
+
+    g_personalVehicleRequestIssuedAt.store(::GetTickCount64(), std::memory_order_release);
+    g_personalVehicleLocalResetPending.store(true, std::memory_order_release);
+    g_personalVehicleRequestStatus.store(
+        GTA_Personal_Vehicle_Request_Status::Requested,
+        std::memory_order_release);
+}
+
 void TickOffTheRadar(GTA_Native_Manager& natives) noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
@@ -350,14 +458,40 @@ void TickSkipCutscene(GTA_Native_Manager& natives) noexcept
 }
 }
 
+void RequestCurrentPersonalVehicle() noexcept
+{
+    const auto status = g_personalVehicleRequestStatus.load(std::memory_order_acquire);
+    if (status == GTA_Personal_Vehicle_Request_Status::Queued ||
+        status == GTA_Personal_Vehicle_Request_Status::Requesting) {
+        return;
+    }
+
+    g_personalVehicleRequestStatus.store(
+        GTA_Personal_Vehicle_Request_Status::Queued,
+        std::memory_order_release);
+    g_personalVehicleRequestPending.store(true, std::memory_order_release);
+}
+
+GTA_Personal_Vehicle_Request_Status PersonalVehicleRequestStatus() noexcept
+{
+    return g_personalVehicleRequestStatus.load(std::memory_order_acquire);
+}
+
 void ResetSelfOnlineExtension() noexcept
 {
     g_offRadarApplied = false;
+    g_personalVehicleRequestPending.store(false, std::memory_order_release);
+    g_personalVehicleLocalResetPending.store(false, std::memory_order_release);
+    g_personalVehicleRequestIssuedAt.store(0, std::memory_order_release);
+    g_personalVehicleRequestStatus.store(
+        GTA_Personal_Vehicle_Request_Status::Idle,
+        std::memory_order_release);
     g_runtime = {};
 }
 
 void TickSelfOnlineExtension(GTA_Native_Manager& natives) noexcept
 {
+    TickPersonalVehicleRequest(natives);
     TickSkipCutscene(natives);
     TickOffTheRadar(natives);
 }
