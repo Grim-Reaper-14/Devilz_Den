@@ -70,9 +70,31 @@
             break;
         }
 
+        bool removeRestrictions = Devilz::Integrations::GTA5_Enhanced::RemoveLSCRestrictions();
+        if (ImGui::Checkbox("Remove LSC Restrictions", &removeRestrictions))
+            Devilz::Integrations::GTA5_Enhanced::SetRemoveLSCRestrictions(removeRestrictions);
+
+        ImGui::SameLine();
+        switch (Devilz::Integrations::GTA5_Enhanced::RemoveLSCRestrictionsStatus()) {
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Restriction_Status::Disabled:
+            ImGui::TextDisabled("Disabled");
+            break;
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Restriction_Status::WaitingForScript:
+            ImGui::TextDisabled("Waiting for LSC...");
+            break;
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Restriction_Status::Active:
+            ImGui::Text("Active");
+            break;
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Restriction_Status::Unsupported:
+            ImGui::TextColored(EmberRed, "Unsupported script build/signature.");
+            break;
+        }
+        ImGui::TextDisabled("Reversibly removes the two current carmod_shop modification restrictions while enabled.");
+
         ImGui::TextWrapped(
             "LSC Prep repairs the current vehicle, fixes deformation, restores engine/body health, cleans it, starts the engine, "
-            "and refreshes Devils Forge. It does not create ownership, insurance, or a garage slot; GTA handles those through its normal flow.");
+            "and refreshes Devils Forge. Remove LSC Restrictions changes local carmod_shop checks only. Neither feature creates "
+            "ownership, insurance, or a garage slot; GTA handles those through its normal flow.");
         ImGui::TextDisabled("Spawned/custom vehicles can still be kept in Saved Builds for later use.");
 
         ImGui::EndTabItem();
