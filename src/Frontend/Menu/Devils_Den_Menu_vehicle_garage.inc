@@ -36,44 +36,44 @@
         ImGui::TextDisabled("Requests the current/last-saved owned personal vehicle through freemode.");
 
         MedievalDivider();
-        ImGui::TextColored(Bronze, "GTA GARAGE SAVE");
-        ImGui::TextDisabled("Runs through the validated game-thread request path.");
+        ImGui::TextColored(Bronze, "LSC PREP");
+        ImGui::TextDisabled("Prepares the vehicle you are currently driving for a normal Los Santos Customs visit.");
 
-        const auto garageStatus = Devilz::Integrations::GTA5_Enhanced::VehicleGarageSaveStatus();
-        const bool garageBusy = garageStatus == Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_Garage_Status::Queued ||
-            garageStatus == Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_Garage_Status::Saving;
+        const auto prepStatus = Devilz::Integrations::GTA5_Enhanced::VehicleLSCPrepStatus();
+        const bool prepBusy = prepStatus == Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Prep_Status::Queued ||
+            prepStatus == Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Prep_Status::Preparing;
 
-        ImGui::BeginDisabled(forge.vehicle == 0 || garageBusy);
-        if (ImGui::Button("SAVE TO GTA GARAGE", ImVec2(220.0F, 38.0F)))
-            Devilz::Integrations::GTA5_Enhanced::RequestVehicleGarageSave();
+        ImGui::BeginDisabled(forge.vehicle == 0 || prepBusy);
+        if (ImGui::Button("PREP CURRENT VEHICLE FOR LSC", ImVec2(270.0F, 38.0F)))
+            Devilz::Integrations::GTA5_Enhanced::RequestVehicleLSCPrep();
         ImGui::EndDisabled();
 
         ImGui::SameLine();
-        switch (garageStatus) {
-        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_Garage_Status::Idle:
+        switch (prepStatus) {
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Prep_Status::Idle:
             ImGui::TextDisabled("Ready");
             break;
-        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_Garage_Status::Queued:
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Prep_Status::Queued:
             ImGui::TextDisabled("Queued...");
             break;
-        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_Garage_Status::Saving:
-            ImGui::TextDisabled("Saving vehicle...");
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Prep_Status::Preparing:
+            ImGui::TextDisabled("Preparing vehicle...");
             break;
-        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_Garage_Status::Saved:
-            ImGui::Text("Vehicle saved.");
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Prep_Status::Prepared:
+            ImGui::Text("Vehicle prepared.");
             break;
-        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_Garage_Status::OwnershipRequired:
-            ImGui::TextColored(EmberRed, "Ownership validation required.");
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Prep_Status::NoVehicle:
+            ImGui::TextColored(EmberRed, "Get in the vehicle you want to prep.");
             break;
-        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_Garage_Status::Failed:
-            ImGui::TextColored(EmberRed, "Garage save failed.");
+        case Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_LSC_Prep_Status::Failed:
+            ImGui::TextColored(EmberRed, "LSC prep failed.");
             break;
         }
 
-        MedievalDivider();
         ImGui::TextWrapped(
-            "This scaffold only persists a vehicle after a legitimate personal-vehicle validator is connected. "
-            "It does not inject ownership or fabricate a garage slot for spawned/unowned vehicles.");
+            "LSC Prep repairs the current vehicle, fixes deformation, restores engine/body health, cleans it, starts the engine, "
+            "and refreshes Devils Forge. It does not create ownership, insurance, or a garage slot; GTA handles those through its normal flow.");
+        ImGui::TextDisabled("Spawned/custom vehicles can still be kept in Saved Builds for later use.");
 
         ImGui::EndTabItem();
     }

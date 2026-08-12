@@ -2,6 +2,7 @@
 
 #include "GTA_Vehicle_State.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
+#include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
 #include <atomic>
 
@@ -9,112 +10,70 @@ namespace Devilz::Integrations::GTA5_Enhanced
 {
 namespace
 {
-constexpr GTA_Native_Hash DoesEntityExistHash = 0xFC8BFE4B41177C22ULL;
-constexpr GTA_Native_Hash IsEntityAVehicleHash = 0x55B80B6E7AB61270ULL;
-constexpr GTA_Native_Hash DecorExistOnHash = 0xD130E7CDEE903624ULL;
-constexpr GTA_Native_Hash DecorGetIntHash = 0xE2F6FE9B61232165ULL;
+std::atomic_bool g_lscPrepRequested{false};
+std::atomic<GTA_Vehicle_LSC_Prep_Status> g_lscPrepStatus{GTA_Vehicle_LSC_Prep_Status::Idle};
 
-std::atomic_bool g_garageSaveRequested{false};
-std::atomic<GTA_Vehicle_Garage_Status> g_garageSaveStatus{GTA_Vehicle_Garage_Status::Idle};
-
-[[nodiscard]] bool IsExistingPersonalVehicle(GTA_Native_Manager& natives, int vehicle) noexcept
+[[nodiscard]] int CurrentVehicle(GTA_Native_Manager& natives) noexcept
 {
-    if (vehicle == 0)
-        return false;
+    const auto ped = natives.Invoke<int>(GTA_Native_Id::PlayerPedId);
+    if (!ped || *ped == 0)
+        return 0;
 
-    const auto exists = natives.InvokeHash<bool>(DoesEntityExistHash, vehicle);
-    if (!exists || !*exists)
-        return false;
+    const auto seated = natives.Invoke<bool>(GTA_Native_Id::IsPedInAnyVehicle, *ped, false);
+    if (!seated || !*seated)
+        return 0;
 
-    const auto isVehicle = natives.InvokeHash<bool>(IsEntityAVehicleHash, vehicle);
-    if (!isVehicle || !*isVehicle)
-        return false;
-
-    const auto hasPlayerVehicleDecor =
-        natives.InvokeHash<bool>(DecorExistOnHash, vehicle, "Player_Vehicle");
-    if (!hasPlayerVehicleDecor || !*hasPlayerVehicleDecor)
-        return false;
-
-    const auto hasPvSlotDecor =
-        natives.InvokeHash<bool>(DecorExistOnHash, vehicle, "PV_Slot");
-    if (!hasPvSlotDecor || !*hasPvSlotDecor)
-        return false;
-
-    const auto pvSlot = natives.InvokeHash<int>(DecorGetIntHash, vehicle, "PV_Slot");
-    if (!pvSlot || *pvSlot < 0)
-        return false;
-
-    // Require markers which GTA has already placed on an existing personal
-    // vehicle. This validator never creates ownership or assigns a garage slot.
-    return true;
+    const auto vehicle = natives.Invoke<int>(GTA_Native_Id::GetVehiclePedIsIn, *ped, false);
+    return vehicle && *vehicle != 0 ? *vehicle : 0;
 }
 
-[[nodiscard]] bool PersistExistingPersonalVehicle(
-    GTA_Native_Manager& /*natives*/,
-    int vehicle) noexcept
+[[nodiscard]] bool PrepareCurrentVehicleForLSC(GTA_Native_Manager& natives) noexcept
 {
-    if (vehicle == 0)
+    const int vehicle = CurrentVehicle(natives);
+    if (vehicle == 0) {
+        g_lscPrepStatus.store(GTA_Vehicle_LSC_Prep_Status::NoVehicle, std::memory_order_release);
         return false;
+    }
 
-    // Fail closed until GTA's legitimate existing-personal-vehicle refresh/save
-    // path is connected. Returning true here would incorrectly report that a
-    // vehicle was persisted when no save operation actually ran.
-    return false;
+    const auto model = natives.Invoke<std::uint32_t>(GTA_Native_Id::GetEntityModel, vehicle);
+    if (!model || *model == 0) {
+        g_lscPrepStatus.store(GTA_Vehicle_LSC_Prep_Status::Failed, std::memory_order_release);
+        return false;
+    }
+
+    bool success = true;
+    success = natives.Invoke<void>(GTA_Native_Id::SetVehicleFixed, vehicle) && success;
+    success = natives.Invoke<void>(GTA_Native_Id::SetVehicleDeformationFixed, vehicle) && success;
+    success = natives.Invoke<void>(GTA_Native_Id::SetVehicleEngineHealth, vehicle, 1000.0F) && success;
+    success = natives.Invoke<void>(GTA_Native_Id::SetVehicleBodyHealth, vehicle, 1000.0F) && success;
+    success = natives.Invoke<void>(GTA_Native_Id::SetVehicleDirtLevel, vehicle, 0.0F) && success;
+    success = natives.Invoke<void>(GTA_Native_Id::SetVehicleEngineOn, vehicle, true, true, false) && success;
+
+    GTA_Vehicle_State::Instance().RequestForgeSnapshotRefresh();
+    g_lscPrepStatus.store(
+        success ? GTA_Vehicle_LSC_Prep_Status::Prepared : GTA_Vehicle_LSC_Prep_Status::Failed,
+        std::memory_order_release);
+    return success;
 }
 }
 
-void RequestVehicleGarageSave() noexcept
+void RequestVehicleLSCPrep() noexcept
 {
-    g_garageSaveStatus.store(GTA_Vehicle_Garage_Status::Queued, std::memory_order_release);
-    g_garageSaveRequested.store(true, std::memory_order_release);
+    g_lscPrepStatus.store(GTA_Vehicle_LSC_Prep_Status::Queued, std::memory_order_release);
+    g_lscPrepRequested.store(true, std::memory_order_release);
 }
 
-GTA_Vehicle_Garage_Status VehicleGarageSaveStatus() noexcept
+GTA_Vehicle_LSC_Prep_Status VehicleLSCPrepStatus() noexcept
 {
-    return g_garageSaveStatus.load(std::memory_order_acquire);
-}
-
-GTA_Garage_Save_Result SaveCurrentForgeVehicleToGarage(
-    GTA_Native_Manager& natives,
-    GTA_Vehicle_State& state) noexcept
-{
-    const auto forge = state.ForgeSnapshot();
-
-    if (forge.vehicle == 0)
-        return GTA_Garage_Save_Result::NoVehicle;
-
-    if (forge.modelHash == 0)
-        return GTA_Garage_Save_Result::InvalidVehicle;
-
-    if (!IsExistingPersonalVehicle(natives, forge.vehicle))
-        return GTA_Garage_Save_Result::OwnershipRegistrationRequired;
-
-    state.RequestForgeSnapshotRefresh();
-
-    if (!PersistExistingPersonalVehicle(natives, forge.vehicle))
-        return GTA_Garage_Save_Result::Failed;
-
-    return GTA_Garage_Save_Result::Success;
+    return g_lscPrepStatus.load(std::memory_order_acquire);
 }
 
 void TickVehicleGarageSave(GTA_Native_Manager& natives) noexcept
 {
-    if (!g_garageSaveRequested.exchange(false, std::memory_order_acq_rel))
+    if (!g_lscPrepRequested.exchange(false, std::memory_order_acq_rel))
         return;
 
-    g_garageSaveStatus.store(GTA_Vehicle_Garage_Status::Saving, std::memory_order_release);
-
-    switch (SaveCurrentForgeVehicleToGarage(natives, GTA_Vehicle_State::Instance())) {
-    case GTA_Garage_Save_Result::Success:
-        g_garageSaveStatus.store(GTA_Vehicle_Garage_Status::Saved, std::memory_order_release);
-        break;
-    case GTA_Garage_Save_Result::OwnershipRegistrationRequired:
-    case GTA_Garage_Save_Result::NotOwned:
-        g_garageSaveStatus.store(GTA_Vehicle_Garage_Status::OwnershipRequired, std::memory_order_release);
-        break;
-    default:
-        g_garageSaveStatus.store(GTA_Vehicle_Garage_Status::Failed, std::memory_order_release);
-        break;
-    }
+    g_lscPrepStatus.store(GTA_Vehicle_LSC_Prep_Status::Preparing, std::memory_order_release);
+    (void)PrepareCurrentVehicleForLSC(natives);
 }
 }

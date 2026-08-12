@@ -10,13 +10,6 @@ namespace Devilz::Integrations::GTA5_Enhanced
 {
 namespace
 {
-constexpr std::array<GTA_Native_Hash, 4> GarageValidationProbeHashes{
-    0xFC8BFE4B41177C22ULL, // DOES_ENTITY_EXIST
-    0x55B80B6E7AB61270ULL, // IS_ENTITY_A_VEHICLE
-    0xD130E7CDEE903624ULL, // DECOR_EXIST_ON
-    0xE2F6FE9B61232165ULL  // DECOR_GET_INT
-};
-
 bool IsExecutableProtection(DWORD protection) noexcept
 {
     const auto base = protection & 0xFFu;
@@ -48,24 +41,17 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
     }
 
     constexpr std::size_t namedNativeCount = GTA_Native_Registry::NamedIds.size();
-    constexpr std::size_t requestedHandlerCount =
-        BootstrapProbeHashes.size() + GarageValidationProbeHashes.size() + namedNativeCount;
+    constexpr std::size_t requestedHandlerCount = BootstrapProbeHashes.size() + namedNativeCount;
     std::array<GTA_Native_Hash, requestedHandlerCount> requestedHashes{};
     std::copy(BootstrapProbeHashes.begin(), BootstrapProbeHashes.end(), requestedHashes.begin());
-    std::copy(
-        GarageValidationProbeHashes.begin(),
-        GarageValidationProbeHashes.end(),
-        requestedHashes.begin() + BootstrapProbeHashes.size());
 
-    constexpr std::size_t namedNativeOffset =
-        BootstrapProbeHashes.size() + GarageValidationProbeHashes.size();
     for (std::size_t i = 0; i < GTA_Native_Registry::NamedIds.size(); ++i) {
         const auto definition = GTA_Native_Registry::Find(fingerprint, GTA_Native_Registry::NamedIds[i]);
         if (!definition) {
             status.detail = "No complete native registry is available for this GTA build fingerprint";
             return status;
         }
-        requestedHashes[namedNativeOffset + i] = definition->enhancedHash;
+        requestedHashes[BootstrapProbeHashes.size() + i] = definition->enhancedHash;
     }
 
     status.requestedHandlers = requestedHashes.size();
