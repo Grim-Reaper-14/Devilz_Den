@@ -27,6 +27,7 @@ private:
     void DrawBanner();
     void DrawNavigation();
     void DrawSelfPage();
+    void DrawSelfPageLegacy();
     void DrawWeaponsPage();
     void DrawVehiclePage();
     void DrawTeleportPage();
