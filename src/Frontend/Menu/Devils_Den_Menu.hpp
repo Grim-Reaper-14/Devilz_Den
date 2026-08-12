@@ -25,6 +25,7 @@ private:
     };
 
     void DrawBanner();
+    void DrawBannerLegacy();
     void DrawNavigation();
     void DrawSelfPage();
     void DrawSelfPageLegacy();
@@ -34,6 +35,7 @@ private:
     void DrawTeleportPageLegacy();
     void DrawWorldPage();
     void DrawSettingsPage();
+    void DrawSettingsPageLegacy();
     void DrawPlaceholderPage(const char* title, const char* detail);
     void DrawPlaceholderPageLegacy(const char* title, const char* detail);
 

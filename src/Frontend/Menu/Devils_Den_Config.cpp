@@ -126,11 +126,22 @@ bool ReadFloat(std::string_view text, std::string_view key, float& output)
     }
 }
 
+void ParseAppearance(std::string_view text, Devils_Den_Config& config)
+{
+    (void)ReadInteger(text, "menuTheme", config.menuTheme);
+    (void)ReadBool(text, "bannerEnabled", config.bannerEnabled);
+    (void)ReadString(text, "bannerImagePath", config.bannerImagePath);
+    (void)ReadFloat(text, "bannerOpacity", config.bannerOpacity);
+    config.menuTheme = std::clamp(config.menuTheme, 0, 2);
+    config.bannerOpacity = std::clamp(config.bannerOpacity, 0.10F, 1.0F);
+}
+
 bool ParseConfig(std::string_view text, Devils_Den_Config& config)
 {
     if (!ReadString(text, "name", config.name))
         return false;
     (void)ReadInteger(text, "version", config.version);
+    ParseAppearance(text, config);
     (void)ReadBool(text, "godMode", config.godMode);
     (void)ReadBool(text, "neverWanted", config.neverWanted);
     (void)ReadBool(text, "superJump", config.superJump);
@@ -153,6 +164,38 @@ bool ParseConfig(std::string_view text, Devils_Den_Config& config)
     (void)ReadBool(text, "spawnVehicleClean", config.spawnVehicleClean);
     return !config.name.empty();
 }
+
+bool ReadFile(const std::filesystem::path& path, std::string& text)
+{
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream)
+        return false;
+    std::ostringstream contents;
+    contents << stream.rdbuf();
+    text = contents.str();
+    return true;
+}
+
+bool EnsureRoot(std::string* error)
+{
+    std::error_code ec;
+    std::filesystem::create_directories(Devils_Den_Config_Store::RootDirectory(), ec);
+    if (ec) {
+        if (error) *error = "Could not create Configs directory.";
+        return false;
+    }
+    return true;
+}
+
+void WriteAppearance(std::ostream& stream, const Devils_Den_Config& config, bool trailingComma)
+{
+    const auto flag = [](bool value) { return value ? "true" : "false"; };
+    stream << "  \"menuTheme\": " << std::clamp(config.menuTheme, 0, 2) << ",\n";
+    stream << "  \"bannerEnabled\": " << flag(config.bannerEnabled) << ",\n";
+    stream << "  \"bannerImagePath\": \"" << EscapeJson(config.bannerImagePath) << "\",\n";
+    stream << "  \"bannerOpacity\": " << std::clamp(config.bannerOpacity, 0.10F, 1.0F);
+    stream << (trailingComma ? ",\n" : "\n");
+}
 }
 
 std::filesystem::path Devils_Den_Config_Store::RootDirectory()
@@ -160,6 +203,11 @@ std::filesystem::path Devils_Den_Config_Store::RootDirectory()
     if (const char* localAppData = std::getenv("LOCALAPPDATA"); localAppData && *localAppData)
         return std::filesystem::path(localAppData) / "Devilz_Den" / "Configs";
     return std::filesystem::current_path() / "Devilz_Den" / "Configs";
+}
+
+std::filesystem::path Devils_Den_Config_Store::SettingsPath()
+{
+    return RootDirectory().parent_path() / "Settings.json";
 }
 
 std::vector<Devils_Den_Config> Devils_Den_Config_Store::LoadAll()
@@ -174,13 +222,10 @@ std::vector<Devils_Den_Config> Devils_Den_Config_Store::LoadAll()
         if (ec) break;
         if (!entry.is_regular_file() || entry.path().extension() != ".json")
             continue;
-        std::ifstream stream(entry.path(), std::ios::binary);
-        if (!stream) continue;
-        std::ostringstream contents;
-        contents << stream.rdbuf();
+        std::string text;
+        if (!ReadFile(entry.path(), text)) continue;
         Devils_Den_Config config{};
-        if (!ParseConfig(contents.str(), config))
-            continue;
+        if (!ParseConfig(text, config)) continue;
         config.sourcePath = entry.path();
         configs.push_back(std::move(config));
     }
@@ -197,16 +242,10 @@ bool Devils_Den_Config_Store::Save(const Devils_Den_Config& config, std::string*
         if (error) *error = "Config needs a name.";
         return false;
     }
-
-    const auto root = RootDirectory();
-    std::error_code ec;
-    std::filesystem::create_directories(root, ec);
-    if (ec) {
-        if (error) *error = "Could not create Configs directory.";
+    if (!EnsureRoot(error))
         return false;
-    }
 
-    const auto path = root / (SafeFilename(config.name) + ".json");
+    const auto path = RootDirectory() / (SafeFilename(config.name) + ".json");
     std::ofstream stream(path, std::ios::binary | std::ios::trunc);
     if (!stream) {
         if (error) *error = "Could not open config JSON for writing.";
@@ -215,8 +254,9 @@ bool Devils_Den_Config_Store::Save(const Devils_Den_Config& config, std::string*
 
     const auto flag = [](bool value) { return value ? "true" : "false"; };
     stream << "{\n";
-    stream << "  \"version\": " << config.version << ",\n";
+    stream << "  \"version\": 2,\n";
     stream << "  \"name\": \"" << EscapeJson(config.name) << "\",\n";
+    WriteAppearance(stream, config, true);
     stream << "  \"godMode\": " << flag(config.godMode) << ",\n";
     stream << "  \"neverWanted\": " << flag(config.neverWanted) << ",\n";
     stream << "  \"superJump\": " << flag(config.superJump) << ",\n";
@@ -256,6 +296,44 @@ bool Devils_Den_Config_Store::Remove(const Devils_Den_Config& config, std::strin
     const bool removed = std::filesystem::remove(config.sourcePath, ec);
     if (!removed || ec) {
         if (error) *error = "Could not delete config JSON.";
+        return false;
+    }
+    return true;
+}
+
+bool Devils_Den_Config_Store::LoadAppearance(Devils_Den_Config& config, std::string* error)
+{
+    std::string text;
+    if (!ReadFile(SettingsPath(), text)) {
+        if (error) *error = "Settings.json does not exist yet.";
+        return false;
+    }
+    (void)ReadInteger(text, "version", config.version);
+    ParseAppearance(text, config);
+    return true;
+}
+
+bool Devils_Den_Config_Store::SaveAppearance(const Devils_Den_Config& config, std::string* error)
+{
+    std::error_code ec;
+    std::filesystem::create_directories(SettingsPath().parent_path(), ec);
+    if (ec) {
+        if (error) *error = "Could not create Devilz_Den settings directory.";
+        return false;
+    }
+
+    std::ofstream stream(SettingsPath(), std::ios::binary | std::ios::trunc);
+    if (!stream) {
+        if (error) *error = "Could not open Settings.json for writing.";
+        return false;
+    }
+
+    stream << "{\n";
+    stream << "  \"version\": 2,\n";
+    WriteAppearance(stream, config, false);
+    stream << "}\n";
+    if (!stream.good()) {
+        if (error) *error = "Writing Settings.json failed.";
         return false;
     }
     return true;

@@ -8,8 +8,13 @@ namespace Devilz::Frontend
 {
 struct Devils_Den_Config
 {
-    int version = 1;
+    int version = 2;
     std::string name;
+
+    int menuTheme = 0;
+    bool bannerEnabled = false;
+    std::string bannerImagePath;
+    float bannerOpacity = 1.0F;
 
     bool godMode = false;
     bool neverWanted = false;
@@ -41,8 +46,11 @@ class Devils_Den_Config_Store final
 {
 public:
     [[nodiscard]] static std::filesystem::path RootDirectory();
+    [[nodiscard]] static std::filesystem::path SettingsPath();
     [[nodiscard]] static std::vector<Devils_Den_Config> LoadAll();
     [[nodiscard]] static bool Save(const Devils_Den_Config& config, std::string* error = nullptr);
     [[nodiscard]] static bool Remove(const Devils_Den_Config& config, std::string* error = nullptr);
+    [[nodiscard]] static bool LoadAppearance(Devils_Den_Config& config, std::string* error = nullptr);
+    [[nodiscard]] static bool SaveAppearance(const Devils_Den_Config& config, std::string* error = nullptr);
 };
 }

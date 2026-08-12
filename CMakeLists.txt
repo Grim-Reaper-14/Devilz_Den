@@ -21,6 +21,7 @@ list(APPEND DEVILZ_DEN_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Lua/Lua_Page.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Network/Network_Page.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Themes/Menu_Theme.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Renderer/D3D12_Image_Loader.cpp"
 )
 list(REMOVE_DUPLICATES DEVILZ_DEN_SOURCES)
 
@@ -66,7 +67,7 @@ if(WIN32)
     )
     target_link_libraries(Devilz_Den_ImGui PUBLIC d3d12 d3dcompiler dxgi)
 
-    target_link_libraries(Devilz_Den PRIVATE psapi Devilz_Den_ImGui)
+    target_link_libraries(Devilz_Den PRIVATE psapi ole32 windowscodecs uuid Devilz_Den_ImGui)
 
     add_executable(Devilz_Den_Smoke_Test tests/Runtime_Smoke_Test.cpp)
     target_compile_definitions(Devilz_Den_Smoke_Test PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
