@@ -115,7 +115,7 @@ void Devils_Den_Menu::Draw(bool& open)
             break;
         case Page::Lua:
             detailTitle = "LUA SCRIPTING";
-            detailText = "Reserved for embedded Lua scripts using the same backend APIs as the native menu.";
+            detailText = "Embedded Lua 5.4 runtime powered by Sol2, with protected execution ready for future bindings.";
             detailTag = "LUA / SCRIPTS";
             detailIcon = Themes::Menu_Icon::Lua;
             break;

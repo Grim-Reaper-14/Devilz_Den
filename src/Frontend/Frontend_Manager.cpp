@@ -4,6 +4,7 @@
 #include "Frontend/Menu/Menu_Appearance.hpp"
 #include "Frontend/Renderer/D3D12_Image_Loader.hpp"
 #include "Frontend/Renderer/D3D12_Targets.hpp"
+#include "Scripting/Lua/Lua_Runtime.hpp"
 
 #include <chrono>
 #include <utility>
@@ -51,6 +52,7 @@ void Frontend_Manager::Stop() noexcept
     m_renderer.Shutdown();
     Renderer::D3D12_Image_Loader::Instance().Shutdown();
     Menu_Appearance_State::Instance().Shutdown();
+    Scripting::Lua::Lua_Runtime::Instance().Shutdown();
 }
 
 void Frontend_Manager::Bootstrap(

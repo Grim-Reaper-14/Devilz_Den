@@ -1,14 +1,15 @@
-# Future Lua Runtime
+# Lua Runtime
 
-This directory is reserved for the embedded Devil's Den Lua runtime.
+The first Sol2 integration owns a single embedded Lua 5.4 state. The Lua menu page initializes it lazily and can run a protected self-test. The state currently opens the base, coroutine, math, string, table, and UTF-8 libraries; filesystem, operating-system, debug, and game bindings are not exposed.
 
 Planned ownership:
 
 ```text
 Scripting/Lua/
-  Lua_Manager.*
-  Lua_Context.*
-  Lua_Script.*
+  Lua_Runtime.*
+  Lua_Manager.*          # future script discovery and ownership
+  Lua_Context.*          # future per-script environment
+  Lua_Script.*           # future loaded-script model
   Events/
   Bindings/
     Self/
@@ -20,6 +21,6 @@ Scripting/Lua/
   API/
 ```
 
-The Lua runtime should expose controlled feature APIs and events while keeping GTA Enhanced native execution inside the validated runtime/game-thread layer.
+Future Lua bindings should expose controlled feature APIs and events while keeping GTA Enhanced native execution inside the validated runtime/game-thread layer.
 
 Expected lifecycle: discover scripts, load, execute, coroutine/tick scheduling, reload, unload, error reporting, and per-script settings.
