@@ -60,6 +60,7 @@ void Devils_Den_Menu::Draw(bool& open)
         case Page::Teleport: DrawTeleportPage(); break;
         case Page::World: DrawPlaceholderPage("WORLD", "World and environment controls will live here."); break;
         case Page::Network: Network::DrawNetworkPage(); break;
+        case Page::Unlocks: Unlocks::DrawUnlocksPage(); break;
         case Page::Lua: Lua::DrawLuaPage(); break;
         case Page::Settings: DrawSettingsPage(); break;
         }
@@ -112,6 +113,12 @@ void Devils_Den_Menu::Draw(bool& open)
             detailText = "Sessions, players and protections are organized in the Network domain.";
             detailTag = "NETWORK / SESSIONS";
             detailIcon = Themes::Menu_Icon::Network;
+            break;
+        case Page::Unlocks:
+            detailTitle = "UNLOCKS";
+            detailText = "Progression, awards, clothing, vehicles, weapons, heists and verified content unlocks.";
+            detailTag = "PLAYER / UNLOCKS";
+            detailIcon = Themes::Menu_Icon::Settings;
             break;
         case Page::Lua:
             detailTitle = "LUA SCRIPTING";

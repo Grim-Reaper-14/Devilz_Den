@@ -1,5 +1,6 @@
 #include "Frontend/Menu/Devils_Den_Menu.hpp"
 #include "Frontend/Menu/Menu_Appearance.hpp"
+#include "Frontend/Menu/Unlocks/Unlocks_Page.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
