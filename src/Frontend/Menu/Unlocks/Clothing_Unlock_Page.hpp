@@ -45,11 +45,13 @@ struct Item_Status
     bool failed = false;
 };
 
-inline Unlock_Item PackedItem(std::int32_t index)
+inline Unlock_Item PackedItem(std::int32_t index, std::string label = {})
 {
+    if (label.empty())
+        label = "Packed clothing flag " + std::to_string(index);
     return {
         "packed:" + std::to_string(index),
-        "Packed clothing flag " + std::to_string(index),
+        std::move(label),
         {GTA_Unlock_Operation::PackedBool(index)}
     };
 }
@@ -60,10 +62,31 @@ inline void AddPackedRange(DLC_Group& group, std::int32_t first, std::int32_t la
         group.items.push_back(PackedItem(index));
 }
 
+inline void AddChristmas2018Tees(DLC_Group& group)
+{
+    for (std::int32_t tee = 0; tee <= 67; ++tee) {
+        char label[64]{};
+        std::snprintf(label, sizeof(label), "Christmas 2018 Tee %03d", tee);
+        group.items.push_back(PackedItem(25032 + tee, label));
+    }
+}
+
 inline const std::vector<DLC_Group>& Catalog()
 {
     static const auto catalog = [] {
         std::vector<DLC_Group> groups;
+
+        DLC_Group festive2018{"Festive Surprise 2018", {}};
+        AddChristmas2018Tees(festive2018);
+        groups.push_back(std::move(festive2018));
+
+        DLC_Group valentines{"Valentine's Day", {}};
+        valentines.items.push_back({
+            "global:274256",
+            "Valentine clothing catalog gate",
+            {GTA_Unlock_Operation::TunableInt(274256, 1)}
+        });
+        groups.push_back(std::move(valentines));
 
         DLC_Group drugWars{"Los Santos Drug Wars", {}};
         AddPackedRange(drugWars, 36699, 36770);
@@ -209,7 +232,7 @@ inline void DrawClothingUnlocks()
         "DLC groups use a multi-gate unlock engine. One clothing checkbox can contain packed flags, normal stats, "
         "or verified script-global/tunable operations without changing the menu workflow.");
     ImGui::TextDisabled(
-        "Current executable catalog: 192 verified packed clothing gates. Older DLC gates stay out until their Enhanced script mappings are verified.");
+        "Current executable catalog: 260 verified packed clothing gates plus 1 build-guarded Enhanced global gate. Unverified mappings stay out.");
 
     ImGui::SetNextItemWidth(460.0F);
     ImGui::InputTextWithHint("##ClothingSearch", "Search DLC, clothing label, stat, packed index, or tunable", search, sizeof(search));

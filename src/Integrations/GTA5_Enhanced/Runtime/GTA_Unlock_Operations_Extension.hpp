@@ -21,6 +21,10 @@ inline constexpr std::uint64_t StatSetInt = 0x1164A75E490C27B6ULL;
 inline constexpr std::uint64_t StatSetBool = 0xF1D0B0CE940F620DULL;
 inline constexpr std::uint64_t GetPackedStatBoolCode = 0xA6D3C21763E25496ULL;
 inline constexpr std::uint64_t SetPackedStatBoolCode = 0xA595AA1819B05EA0ULL;
+// Absolute script-global/tunable offsets are only valid for the currently
+// verified Enhanced executable. Fail closed after a GTA update until those
+// mappings are re-verified against the new build.
+inline constexpr std::uint64_t VerifiedScriptGlobalFingerprint = 0x6A4F97F605B81000ULL;
 inline constexpr std::array<int, 17> ScriptGlobalsPattern{
     0x48, 0x8B, 0x8E, 0xB8, 0x00, 0x00, 0x00, 0x48, 0x8D, 0x15,
     -1, -1, -1, -1, 0x49, 0x89, 0xD8
@@ -243,6 +247,11 @@ void ExecuteCommand(
     }
 
     if (operation.type == GTA_Unlock_Operation_Type::TunableInt) {
+        if (natives.Fingerprint() != VerifiedScriptGlobalFingerprint) {
+            CompleteFailure(state, command, "Script-global/tunable mapping is not verified for this Enhanced build");
+            return;
+        }
+
         auto* value = ResolveGlobalInt(operation.index);
         if (!value) {
             CompleteFailure(state, command, "Script global/tunable is unavailable on this Enhanced build");
