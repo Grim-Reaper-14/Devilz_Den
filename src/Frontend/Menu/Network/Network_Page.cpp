@@ -51,7 +51,7 @@ void DrawNetworkPage()
 
     ImGui::TextColored(palette.emberRed, "NETWORK");
     ImGui::SameLine();
-    ImGui::TextDisabled("- sessions, random events, players and protections");
+    ImGui::TextDisabled("- sessions, random events and players");
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
 
     ImGui::TextColored(palette.bronze, "SESSIONS");
@@ -102,9 +102,5 @@ void DrawNetworkPage()
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "PLAYERS");
     ImGui::TextDisabled("Player list module reserved for the Network/Players domain.");
-
-    Themes::Menu_Theme_Manager::Instance().DrawDivider();
-    ImGui::TextColored(palette.bronze, "PROTECTIONS");
-    ImGui::TextDisabled("Network protections will be kept separate from session/player presentation code.");
 }
 }
