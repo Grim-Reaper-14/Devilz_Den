@@ -24,6 +24,7 @@ void Devils_Den_Menu::DrawNavigation()
         NavigationEntry{"       TELEPORT", Page::Teleport, Themes::Menu_Icon::Teleport},
         NavigationEntry{"       WORLD", Page::World, Themes::Menu_Icon::World},
         NavigationEntry{"       NETWORK", Page::Network, Themes::Menu_Icon::Network},
+        NavigationEntry{"       DEFENSE", Page::Defense, Themes::Menu_Icon::Network},
         NavigationEntry{"       LUA", Page::Lua, Themes::Menu_Icon::Lua},
         NavigationEntry{"       SETTINGS", Page::Settings, Themes::Menu_Icon::Settings}
     };
