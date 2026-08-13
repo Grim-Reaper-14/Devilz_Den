@@ -20,6 +20,7 @@ private:
         Teleport,
         World,
         Network,
+        Defense,
         Lua,
         Settings
     };
