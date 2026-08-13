@@ -27,9 +27,9 @@ inline constexpr std::uint64_t SetPackedStatBoolCode = 0xA595AA1819B05EA0ULL;
 // GTA natives or script-global memory until the read path is explicitly
 // re-enabled. Packed-bool writes remain available for controlled isolation;
 // direct stat and tunable operations stay disabled until separately verified.
-inline constexpr bool EnableStatusReads = false;
+inline constexpr bool EnableStatusReads = true;
 inline constexpr bool EnablePackedBoolOperations = true;
-inline constexpr bool EnableStatOperations = false;
+inline constexpr bool EnableStatOperations = true;
 inline constexpr bool EnableTunableOperations = false;
 
 // Absolute script-global/tunable offsets are only valid for the currently
