@@ -220,7 +220,11 @@ if(WIN32)
 endif()
 
 if(MSVC)
-    target_compile_options(Devilz_Den PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(Devilz_Den PRIVATE
+        /W4 /permissive- /EHsc /utf-8
+        $<$<CONFIG:Release>:/Zi>
+    )
+    target_link_options(Devilz_Den PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
     target_compile_options(Devilz_Den_Lua_Runtime_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_ImGui PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Smoke_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
