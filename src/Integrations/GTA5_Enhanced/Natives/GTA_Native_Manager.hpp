@@ -9,7 +9,6 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Utility_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Stats_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Extension.hpp"
-#include "Integrations/GTA5_Enhanced/Runtime/GTA_Unlock_Operations_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 
@@ -170,7 +169,7 @@ public:
             TickWorldEnvironmentExtension(*this);
             TickStatsExtension(*this);
             DrainPackedStatsQueue();
-            TickUnlockOperationsExtension(*this);
+            
         }
 
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
