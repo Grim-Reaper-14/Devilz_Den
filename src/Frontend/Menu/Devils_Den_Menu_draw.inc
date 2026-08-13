@@ -113,12 +113,6 @@ void Devils_Den_Menu::Draw(bool& open)
             detailTag = "NETWORK / SESSIONS";
             detailIcon = Themes::Menu_Icon::Network;
             break;
-        case Page::Unlocks:
-            detailTitle = "UNLOCKS";
-            detailText = "Progression, awards, clothing, vehicles, weapons, heists and verified content unlocks.";
-            detailTag = "PLAYER / UNLOCKS";
-            detailIcon = Themes::Menu_Icon::Settings;
-            break;
         case Page::Lua:
             detailTitle = "LUA SCRIPTING";
             detailText = "Embedded Lua 5.4 runtime powered by Sol2, with protected execution ready for future bindings.";
