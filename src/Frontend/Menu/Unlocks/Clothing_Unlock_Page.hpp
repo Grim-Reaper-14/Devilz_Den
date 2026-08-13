@@ -179,9 +179,26 @@ inline void AddAfterHoursClothing(DLC_Group& group)
     }
 }
 
+inline void AddLosSantosSummerSpecialTees(DLC_Group& group)
+{
+    for (std::int32_t tee = 0; tee <= 29; ++tee) {
+        char label[72]{};
+        std::snprintf(label, sizeof(label), "Los Santos Summer Special Tee %03d", tee);
+        group.items.push_back(PackedItem(30260 + tee, label));
+    }
+
+    group.items.push_back(PackedItem(28255, "Los Santos Summer Special Tee 030"));
+
+    for (std::int32_t tee = 31; tee <= 34; ++tee) {
+        char label[72]{};
+        std::snprintf(label, sizeof(label), "Los Santos Summer Special Tee %03d", tee);
+        group.items.push_back(PackedFallbackItem(30254 + (tee - 31), label));
+    }
+}
+
 inline void AddCayoPericoTees(DLC_Group& group)
 {
-    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 21> mappings{{
+    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 48> mappings{{
         {30, 30533},
         {32, 30534},
         {28, 30535},
@@ -195,8 +212,35 @@ inline void AddCayoPericoTees(DLC_Group& group)
         {4, 30543},
         {5, 30544},
         {6, 30545},
+        {27, 30546},
+        {26, 30547},
+        {25, 30548},
+        {24, 30549},
+        {2, 30550},
+        {1, 30551},
+        {0, 30552},
+        {7, 30553},
+        {8, 30554},
+        {9, 30555},
+        {10, 30556},
+        {11, 30557},
+        {12, 30524},
+        {13, 30525},
+        {14, 30526},
+        {15, 30527},
+        {16, 30528},
+        {17, 30529},
+        {18, 30530},
         {19, 30531},
         {33, 30532},
+        {45, 30570},
+        {46, 30571},
+        {48, 30568},
+        {47, 30569},
+        {49, 30634},
+        {51, 30635},
+        {53, 30636},
+        {54, 30637},
         {55, 30703},
         {57, 30704},
         {59, 30700},
@@ -228,8 +272,28 @@ inline void AddLosSantosTunersTees(DLC_Group& group)
         group.items.push_back(PackedFallbackItem(packedIndex, label));
     }
 
-    group.items.push_back(PackedItem(31768, "Los Santos Tuners Tee 008"));
-    group.items.push_back(PackedItem(31769, "Los Santos Tuners Tee 010"));
+    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 8> directMappings{{
+        {8, 31768},
+        {10, 31769},
+        {11, 31770},
+        {12, 31771},
+        {13, 31772},
+        {14, 31773},
+        {15, 31774},
+        {16, 31775}
+    }};
+
+    for (const auto& [tee, packedIndex] : directMappings) {
+        char label[72]{};
+        std::snprintf(label, sizeof(label), "Los Santos Tuners Tee %03d", tee);
+        group.items.push_back(PackedItem(packedIndex, label));
+    }
+}
+
+inline void AddCriminalEnterprisesTees(DLC_Group& group)
+{
+    group.items.push_back(PackedItem(34505, "Criminal Enterprises Tee 000"));
+    group.items.push_back(PackedItem(34375, "Criminal Enterprises Tee 001"));
 }
 
 inline const std::vector<DLC_Group>& Catalog()
@@ -252,6 +316,10 @@ inline const std::vector<DLC_Group>& Catalog()
         AddChristmas2018Tees(festive2018);
         groups.push_back(std::move(festive2018));
 
+        DLC_Group summerSpecial{"Los Santos Summer Special", {}};
+        AddLosSantosSummerSpecialTees(summerSpecial);
+        groups.push_back(std::move(summerSpecial));
+
         DLC_Group cayoPerico{"The Cayo Perico Heist", {}};
         AddCayoPericoTees(cayoPerico);
         groups.push_back(std::move(cayoPerico));
@@ -259,6 +327,10 @@ inline const std::vector<DLC_Group>& Catalog()
         DLC_Group tuners{"Los Santos Tuners", {}};
         AddLosSantosTunersTees(tuners);
         groups.push_back(std::move(tuners));
+
+        DLC_Group criminalEnterprises{"The Criminal Enterprises", {}};
+        AddCriminalEnterprisesTees(criminalEnterprises);
+        groups.push_back(std::move(criminalEnterprises));
 
         DLC_Group drugWars{"Los Santos Drug Wars", {}};
         AddPackedRange(drugWars, 36699, 36770);
@@ -442,7 +514,7 @@ inline void DrawClothingUnlocks()
         "DLC groups use verified Enhanced unlock gates. Status can model Rockstar OR conditions separately from the operation the menu applies, "
         "so alternate flags and progression unlocks do not produce false Locked states.");
     ImGui::TextDisabled(
-        "Current executable catalog: 353 verified packed clothing gates plus 1 build-guarded Enhanced global gate. Unverified mappings stay out.");
+        "Current executable catalog: 423 verified packed clothing gates plus 1 build-guarded Enhanced global gate. Unverified mappings stay out.");
 
     ImGui::SetNextItemWidth(460.0F);
     ImGui::InputTextWithHint("##ClothingSearch", "Search DLC, clothing label, stat, packed index, or tunable", search, sizeof(search));
