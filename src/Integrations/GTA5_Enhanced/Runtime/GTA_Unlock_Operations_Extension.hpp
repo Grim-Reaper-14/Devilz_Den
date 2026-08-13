@@ -21,6 +21,17 @@ inline constexpr std::uint64_t StatSetInt = 0x1164A75E490C27B6ULL;
 inline constexpr std::uint64_t StatSetBool = 0xF1D0B0CE940F620DULL;
 inline constexpr std::uint64_t GetPackedStatBoolCode = 0xA6D3C21763E25496ULL;
 inline constexpr std::uint64_t SetPackedStatBoolCode = 0xA595AA1819B05EA0ULL;
+
+// Unlocks are fail-closed while operation paths are isolated. Rendering an
+// Unlocks page may enqueue status reads, but those commands must never reach
+// GTA natives or script-global memory until the read path is explicitly
+// re-enabled. Packed-bool writes remain available for controlled isolation;
+// direct stat and tunable operations stay disabled until separately verified.
+inline constexpr bool EnableStatusReads = false;
+inline constexpr bool EnablePackedBoolOperations = true;
+inline constexpr bool EnableStatOperations = false;
+inline constexpr bool EnableTunableOperations = false;
+
 // Absolute script-global/tunable offsets are only valid for the currently
 // verified Enhanced executable. Fail closed after a GTA update until those
 // mappings are re-verified against the new build.
@@ -224,6 +235,27 @@ void ExecuteCommand(
 {
     const auto& operation = command.operation;
     const bool write = command.kind == GTA_Unlock_Operations_State::Command_Kind::Write;
+
+    if (!write && !EnableStatusReads) {
+        CompleteFailure(state, command, "Unlock status reads are disabled by runtime safety policy");
+        return;
+    }
+
+    if (operation.type == GTA_Unlock_Operation_Type::PackedBool && !EnablePackedBoolOperations) {
+        CompleteFailure(state, command, "Packed-bool unlock operations are disabled by runtime safety policy");
+        return;
+    }
+
+    if ((operation.type == GTA_Unlock_Operation_Type::StatBool ||
+         operation.type == GTA_Unlock_Operation_Type::StatInt) && !EnableStatOperations) {
+        CompleteFailure(state, command, "Stat unlock operations are disabled by runtime safety policy");
+        return;
+    }
+
+    if (operation.type == GTA_Unlock_Operation_Type::TunableInt && !EnableTunableOperations) {
+        CompleteFailure(state, command, "Script-global/tunable unlock operations are disabled by runtime safety policy");
+        return;
+    }
 
     if (operation.type == GTA_Unlock_Operation_Type::PackedBool) {
         if (!write) {
