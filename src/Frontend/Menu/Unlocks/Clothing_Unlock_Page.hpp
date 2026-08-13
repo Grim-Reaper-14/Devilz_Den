@@ -10,9 +10,11 @@
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace Devilz::Frontend::Unlocks
@@ -24,11 +26,15 @@ using Integrations::GTA5_Enhanced::GTA_Unlock_Operation;
 using Integrations::GTA5_Enhanced::GTA_Unlock_Operation_Type;
 using Integrations::GTA5_Enhanced::GTA_Unlock_Operations_State;
 
+using Unlock_Condition = std::vector<GTA_Unlock_Operation>;
+
 struct Unlock_Item
 {
     std::string id;
     std::string label;
-    std::vector<GTA_Unlock_Operation> operations;
+    std::vector<GTA_Unlock_Operation> applyOperations;
+    std::vector<Unlock_Condition> statusAnyOf;
+    bool hasExternalStatusAlternative = false;
 };
 
 struct DLC_Group
@@ -45,15 +51,50 @@ struct Item_Status
     bool failed = false;
 };
 
+inline Unlock_Item OperationItem(std::string id, std::string label, GTA_Unlock_Operation operation)
+{
+    const auto statusOperation = operation;
+    return {
+        std::move(id),
+        std::move(label),
+        {std::move(operation)},
+        {{statusOperation}},
+        false
+    };
+}
+
 inline Unlock_Item PackedItem(std::int32_t index, std::string label = {})
 {
     if (label.empty())
         label = "Packed clothing flag " + std::to_string(index);
-    return {
+    return OperationItem(
         "packed:" + std::to_string(index),
         std::move(label),
-        {GTA_Unlock_Operation::PackedBool(index)}
-    };
+        GTA_Unlock_Operation::PackedBool(index));
+}
+
+inline Unlock_Item PackedAnyOfItem(
+    std::string id,
+    std::string label,
+    std::int32_t applyIndex,
+    std::initializer_list<std::int32_t> statusIndices)
+{
+    Unlock_Item item{};
+    item.id = std::move(id);
+    item.label = std::move(label);
+    item.applyOperations.push_back(GTA_Unlock_Operation::PackedBool(applyIndex));
+    item.statusAnyOf.reserve(statusIndices.size());
+    for (const auto index : statusIndices)
+        item.statusAnyOf.push_back({GTA_Unlock_Operation::PackedBool(index)});
+    return item;
+}
+
+inline Unlock_Item PackedFallbackItem(std::int32_t index, std::string label)
+{
+    auto item = PackedItem(index, std::move(label));
+    item.id = "packed-fallback:" + std::to_string(index);
+    item.hasExternalStatusAlternative = true;
+    return item;
 }
 
 inline void AddPackedRange(DLC_Group& group, std::int32_t first, std::int32_t last)
@@ -71,22 +112,104 @@ inline void AddChristmas2018Tees(DLC_Group& group)
     }
 }
 
+inline void AddAfterHoursClothing(DLC_Group& group)
+{
+    group.items.push_back(PackedAnyOfItem(
+        "after-hours:battle-clothing-000",
+        "After Hours Battle Clothing 000",
+        22108,
+        {22108, 25006}));
+
+    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 10> mappings{{
+        {2, 9481},
+        {3, 9470},
+        {4, 9475},
+        {5, 9472},
+        {6, 9465},
+        {7, 9463},
+        {8, 9464},
+        {9, 9468},
+        {10, 9469},
+        {11, 9479}
+    }};
+
+    for (const auto& [clothing, packedIndex] : mappings) {
+        char label[72]{};
+        std::snprintf(label, sizeof(label), "After Hours Battle Clothing %03d", clothing);
+        group.items.push_back(PackedItem(packedIndex, label));
+    }
+}
+
+inline void AddCayoPericoTees(DLC_Group& group)
+{
+    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 11> mappings{{
+        {30, 30533},
+        {32, 30534},
+        {28, 30535},
+        {29, 30536},
+        {31, 30537},
+        {22, 30538},
+        {23, 30539},
+        {20, 30540},
+        {21, 30541},
+        {3, 30542},
+        {4, 30543}
+    }};
+
+    for (const auto& [tee, packedIndex] : mappings) {
+        char label[64]{};
+        std::snprintf(label, sizeof(label), "Cayo Perico Tee %03d", tee);
+        group.items.push_back(PackedItem(packedIndex, label));
+    }
+}
+
+inline void AddLosSantosTunersTees(DLC_Group& group)
+{
+    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 5> progressionFallbacks{{
+        {0, 31760},
+        {2, 31761},
+        {3, 31762},
+        {5, 31763},
+        {6, 31764}
+    }};
+
+    for (const auto& [tee, packedIndex] : progressionFallbacks) {
+        char label[72]{};
+        std::snprintf(label, sizeof(label), "Los Santos Tuners Tee %03d", tee);
+        group.items.push_back(PackedFallbackItem(packedIndex, label));
+    }
+
+    group.items.push_back(PackedItem(31768, "Los Santos Tuners Tee 008"));
+    group.items.push_back(PackedItem(31769, "Los Santos Tuners Tee 010"));
+}
+
 inline const std::vector<DLC_Group>& Catalog()
 {
     static const auto catalog = [] {
         std::vector<DLC_Group> groups;
 
+        DLC_Group valentines{"Valentine's Day", {}};
+        valentines.items.push_back(OperationItem(
+            "global:274256",
+            "Valentine clothing catalog gate",
+            GTA_Unlock_Operation::TunableInt(274256, 1)));
+        groups.push_back(std::move(valentines));
+
+        DLC_Group afterHours{"After Hours", {}};
+        AddAfterHoursClothing(afterHours);
+        groups.push_back(std::move(afterHours));
+
         DLC_Group festive2018{"Festive Surprise 2018", {}};
         AddChristmas2018Tees(festive2018);
         groups.push_back(std::move(festive2018));
 
-        DLC_Group valentines{"Valentine's Day", {}};
-        valentines.items.push_back({
-            "global:274256",
-            "Valentine clothing catalog gate",
-            {GTA_Unlock_Operation::TunableInt(274256, 1)}
-        });
-        groups.push_back(std::move(valentines));
+        DLC_Group cayoPerico{"The Cayo Perico Heist", {}};
+        AddCayoPericoTees(cayoPerico);
+        groups.push_back(std::move(cayoPerico));
+
+        DLC_Group tuners{"Los Santos Tuners", {}};
+        AddLosSantosTunersTees(tuners);
+        groups.push_back(std::move(tuners));
 
         DLC_Group drugWars{"Los Santos Drug Wars", {}};
         AddPackedRange(drugWars, 36699, 36770);
@@ -111,9 +234,12 @@ inline const std::vector<DLC_Group>& Catalog()
 inline std::vector<GTA_Unlock_Operation> AllOperations()
 {
     std::vector<GTA_Unlock_Operation> operations;
-    for (const auto& group : Catalog())
-        for (const auto& item : group.items)
-            operations.insert(operations.end(), item.operations.begin(), item.operations.end());
+    for (const auto& group : Catalog()) {
+        for (const auto& item : group.items) {
+            for (const auto& alternative : item.statusAnyOf)
+                operations.insert(operations.end(), alternative.begin(), alternative.end());
+        }
+    }
     return operations;
 }
 
@@ -157,29 +283,64 @@ inline bool ItemMatches(const Unlock_Item& item, std::string_view query)
 {
     if (query.empty() || ContainsInsensitive(item.label, query))
         return true;
-    for (const auto& operation : item.operations)
+
+    for (const auto& operation : item.applyOperations) {
         if (ContainsInsensitive(OperationSearchText(operation), query))
             return true;
+    }
+    for (const auto& alternative : item.statusAnyOf) {
+        for (const auto& operation : alternative) {
+            if (ContainsInsensitive(OperationSearchText(operation), query))
+                return true;
+        }
+    }
     return false;
 }
 
 inline Item_Status GetItemStatus(const Unlock_Item& item, const GTA_Unlock_Operations_State& state)
 {
     Item_Status status{};
-    if (item.operations.empty())
+    if (item.statusAnyOf.empty())
         return status;
 
-    status.known = true;
-    status.unlocked = true;
-    for (const auto& operation : item.operations) {
-        const auto record = state.Snapshot(operation);
-        status.queued = status.queued || record.queued;
-        status.failed = status.failed || record.failed;
-        if (!record.known)
-            status.known = false;
-        if (!record.known || !record.matched)
-            status.unlocked = false;
+    bool sawAlternative = false;
+    bool allAlternativesKnown = true;
+    bool anyAlternativeMatched = false;
+
+    for (const auto& alternative : item.statusAnyOf) {
+        if (alternative.empty())
+            continue;
+
+        sawAlternative = true;
+        bool alternativeKnown = true;
+        bool alternativeMatched = true;
+        for (const auto& operation : alternative) {
+            const auto record = state.Snapshot(operation);
+            status.queued = status.queued || record.queued;
+            status.failed = status.failed || record.failed;
+            if (!record.known)
+                alternativeKnown = false;
+            if (!record.known || !record.matched)
+                alternativeMatched = false;
+        }
+
+        if (!alternativeKnown)
+            allAlternativesKnown = false;
+        if (alternativeKnown && alternativeMatched)
+            anyAlternativeMatched = true;
     }
+
+    if (!sawAlternative)
+        return status;
+
+    if (anyAlternativeMatched) {
+        status.known = true;
+        status.unlocked = true;
+    } else if (allAlternativesKnown && !item.hasExternalStatusAlternative) {
+        status.known = true;
+        status.unlocked = false;
+    }
+
     return status;
 }
 
@@ -188,12 +349,12 @@ inline void DrawStatus(const Item_Status& status)
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
     if (status.queued) {
         ImGui::TextDisabled("Queued");
+    } else if (status.known && status.unlocked) {
+        ImGui::TextColored(palette.bronze, "Unlocked");
     } else if (status.failed) {
         ImGui::TextColored(palette.emberRed, "Failed");
     } else if (!status.known) {
         ImGui::TextDisabled("Unknown");
-    } else if (status.unlocked) {
-        ImGui::TextColored(palette.bronze, "Unlocked");
     } else {
         ImGui::TextDisabled("Locked");
     }
@@ -206,7 +367,7 @@ inline std::vector<GTA_Unlock_Operation> SelectedOperations(const std::unordered
         for (const auto& item : group.items) {
             if (!selected.contains(item.id))
                 continue;
-            operations.insert(operations.end(), item.operations.begin(), item.operations.end());
+            operations.insert(operations.end(), item.applyOperations.begin(), item.applyOperations.end());
         }
     }
     return operations;
@@ -229,10 +390,10 @@ inline void DrawClothingUnlocks()
 
     ImGui::TextColored(palette.bronze, "CLOTHING UNLOCKS");
     ImGui::TextWrapped(
-        "DLC groups use a multi-gate unlock engine. One clothing checkbox can contain packed flags, normal stats, "
-        "or verified script-global/tunable operations without changing the menu workflow.");
+        "DLC groups use verified Enhanced unlock gates. Status can model Rockstar OR conditions separately from the operation the menu applies, "
+        "so alternate flags and progression unlocks do not produce false Locked states.");
     ImGui::TextDisabled(
-        "Current executable catalog: 260 verified packed clothing gates plus 1 build-guarded Enhanced global gate. Unverified mappings stay out.");
+        "Current executable catalog: 290 verified packed clothing gates plus 1 build-guarded Enhanced global gate. Unverified mappings stay out.");
 
     ImGui::SetNextItemWidth(460.0F);
     ImGui::InputTextWithHint("##ClothingSearch", "Search DLC, clothing label, stat, packed index, or tunable", search, sizeof(search));
@@ -338,12 +499,22 @@ inline void DrawClothingUnlocks()
                         selected.erase(item.id);
                 }
 
-                if (ImGui::IsItemHovered() && !item.operations.empty()) {
-                    const auto operation = OperationSearchText(item.operations.front());
-                    if (item.operations.size() == 1)
+                if (ImGui::IsItemHovered() && !item.applyOperations.empty()) {
+                    const auto operation = OperationSearchText(item.applyOperations.front());
+                    if (item.statusAnyOf.size() > 1) {
+                        ImGui::SetTooltip(
+                            "Applies: %s\nStatus: any of %zu verified gates",
+                            operation.c_str(),
+                            item.statusAnyOf.size());
+                    } else if (item.hasExternalStatusAlternative) {
+                        ImGui::SetTooltip(
+                            "Applies: %s\nStatus may also be satisfied by an in-game progression condition",
+                            operation.c_str());
+                    } else if (item.applyOperations.size() == 1) {
                         ImGui::SetTooltip("%s", operation.c_str());
-                    else
-                        ImGui::SetTooltip("%zu verified unlock operations", item.operations.size());
+                    } else {
+                        ImGui::SetTooltip("%zu verified unlock operations", item.applyOperations.size());
+                    }
                 }
 
                 ImGui::SameLine(430.0F);
