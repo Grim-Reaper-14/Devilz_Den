@@ -23,30 +23,52 @@ struct alignas(8) GTA_Stats_Manager_View
 
     [[nodiscard]] GTA_Stat_Data* GetStat(std::uint32_t stat) noexcept
     {
-        if (!initialized || !stats.data)
+        if (!initialized || !stats.data || stats.size == 0)
             return nullptr;
 
-        for (std::uint16_t index = 0; index < stats.count; ++index) {
-            GTA_Stat_Map& entry = stats.data[index];
-            if (entry.hash == stat)
-                return entry.data;
+        std::size_t first = 0;
+        std::size_t count = stats.size;
+        while (count != 0) {
+            const std::size_t step = count / 2;
+            const std::size_t index = first + step;
+            const auto hash = stats.data[index].hash;
+
+            if (hash < stat) {
+                first = index + 1;
+                count -= step + 1;
+            } else {
+                count = step;
+            }
         }
 
-        return nullptr;
+        if (first >= stats.size || stats.data[first].hash != stat)
+            return nullptr;
+        return stats.data[first].data;
     }
 
     [[nodiscard]] const GTA_Stat_Data* GetStat(std::uint32_t stat) const noexcept
     {
-        if (!initialized || !stats.data)
+        if (!initialized || !stats.data || stats.size == 0)
             return nullptr;
 
-        for (std::uint16_t index = 0; index < stats.count; ++index) {
-            const GTA_Stat_Map& entry = stats.data[index];
-            if (entry.hash == stat)
-                return entry.data;
+        std::size_t first = 0;
+        std::size_t count = stats.size;
+        while (count != 0) {
+            const std::size_t step = count / 2;
+            const std::size_t index = first + step;
+            const auto hash = stats.data[index].hash;
+
+            if (hash < stat) {
+                first = index + 1;
+                count -= step + 1;
+            } else {
+                count = step;
+            }
         }
 
-        return nullptr;
+        if (first >= stats.size || stats.data[first].hash != stat)
+            return nullptr;
+        return stats.data[first].data;
     }
 
     [[nodiscard]] bool HasStat(std::uint32_t stat) const noexcept
@@ -56,7 +78,7 @@ struct alignas(8) GTA_Stats_Manager_View
 
     [[nodiscard]] std::uint16_t StatCount() const noexcept
     {
-        return stats.count;
+        return stats.size;
     }
 };
 
