@@ -1,5 +1,6 @@
 #include "Unlocks_Page.hpp"
 
+#include "Businesses_Unlock_Page.hpp"
 #include "Clothing_Unlock_Page.hpp"
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Stats_Extension.hpp"
@@ -128,8 +129,8 @@ void DrawUnlocksPage()
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
 
     ImGui::TextWrapped(
-        "Unlock tools use validated GTA V Enhanced native paths. Clothing uses a bounded game-thread batch "
-        "queue so large DLC selections cannot overwrite one another.");
+        "Unlock tools use validated GTA V Enhanced native paths. Preset packs use a bounded game-thread "
+        "batch queue so large selections cannot overwrite one another.");
 
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
 
@@ -143,6 +144,11 @@ void DrawUnlocksPage()
 
     if (ImGui::BeginTabItem("CLOTHING")) {
         Clothing::DrawClothingUnlocks();
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("BUSINESSES")) {
+        Businesses::DrawBusinessesUnlocks();
         ImGui::EndTabItem();
     }
 
