@@ -20,7 +20,6 @@ private:
         Teleport,
         World,
         Network,
-        Unlocks,
         Lua,
         Settings
     };
