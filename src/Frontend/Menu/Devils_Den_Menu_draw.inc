@@ -60,7 +60,6 @@ void Devils_Den_Menu::Draw(bool& open)
         case Page::Teleport: DrawTeleportPage(); break;
         case Page::World: DrawPlaceholderPage("WORLD", "World and environment controls will live here."); break;
         case Page::Network: Network::DrawNetworkPage(); break;
-        case Page::Unlocks: Unlocks::DrawUnlocksPage(); break;
         case Page::Lua: Lua::DrawLuaPage(); break;
         case Page::Settings: DrawSettingsPage(); break;
         }
