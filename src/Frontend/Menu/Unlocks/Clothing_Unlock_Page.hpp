@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
-#include "Integrations/GTA5_Enhanced/Runtime/GTA_Packed_Stats_State.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Unlock_Operations_State.hpp"
 
 #include <imgui.h>
 
@@ -19,10 +19,16 @@ namespace Devilz::Frontend::Unlocks
 {
 namespace Clothing
 {
+using Integrations::GTA5_Enhanced::GTA_Unlock_Batch_Kind;
+using Integrations::GTA5_Enhanced::GTA_Unlock_Operation;
+using Integrations::GTA5_Enhanced::GTA_Unlock_Operation_Type;
+using Integrations::GTA5_Enhanced::GTA_Unlock_Operations_State;
+
 struct Unlock_Item
 {
-    std::int32_t packedIndex = 0;
+    std::string id;
     std::string label;
+    std::vector<GTA_Unlock_Operation> operations;
 };
 
 struct DLC_Group
@@ -31,10 +37,27 @@ struct DLC_Group
     std::vector<Unlock_Item> items;
 };
 
-inline void AddRange(DLC_Group& group, std::int32_t first, std::int32_t last)
+struct Item_Status
+{
+    bool known = false;
+    bool unlocked = false;
+    bool queued = false;
+    bool failed = false;
+};
+
+inline Unlock_Item PackedItem(std::int32_t index)
+{
+    return {
+        "packed:" + std::to_string(index),
+        "Packed clothing flag " + std::to_string(index),
+        {GTA_Unlock_Operation::PackedBool(index)}
+    };
+}
+
+inline void AddPackedRange(DLC_Group& group, std::int32_t first, std::int32_t last)
 {
     for (auto index = first; index <= last; ++index)
-        group.items.push_back({index, "Packed clothing flag " + std::to_string(index)});
+        group.items.push_back(PackedItem(index));
 }
 
 inline const std::vector<DLC_Group>& Catalog()
@@ -43,18 +66,18 @@ inline const std::vector<DLC_Group>& Catalog()
         std::vector<DLC_Group> groups;
 
         DLC_Group drugWars{"Los Santos Drug Wars", {}};
-        AddRange(drugWars, 36699, 36770);
+        AddPackedRange(drugWars, 36699, 36770);
         groups.push_back(std::move(drugWars));
 
         DLC_Group mercenaries{"San Andreas Mercenaries", {}};
-        AddRange(mercenaries, 41943, 41945);
+        AddPackedRange(mercenaries, 41943, 41945);
         groups.push_back(std::move(mercenaries));
 
         DLC_Group chopShop{"The Chop Shop", {}};
-        AddRange(chopShop, 42154, 42247);
-        AddRange(chopShop, 42130, 42146);
+        AddPackedRange(chopShop, 42154, 42247);
+        AddPackedRange(chopShop, 42130, 42146);
         for (const auto index : std::array<std::int32_t, 6>{42111, 42153, 42055, 42152, 42063, 42119})
-            chopShop.items.push_back({index, "Packed clothing flag " + std::to_string(index)});
+            chopShop.items.push_back(PackedItem(index));
         groups.push_back(std::move(chopShop));
 
         return groups;
@@ -62,22 +85,28 @@ inline const std::vector<DLC_Group>& Catalog()
     return catalog;
 }
 
-inline std::vector<std::int32_t> AllIndices()
+inline std::vector<GTA_Unlock_Operation> AllOperations()
 {
-    std::vector<std::int32_t> indices;
+    std::vector<GTA_Unlock_Operation> operations;
     for (const auto& group : Catalog())
         for (const auto& item : group.items)
-            indices.push_back(item.packedIndex);
-    std::sort(indices.begin(), indices.end());
-    indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
-    return indices;
+            operations.insert(operations.end(), item.operations.begin(), item.operations.end());
+    return operations;
+}
+
+inline std::size_t ItemCount()
+{
+    std::size_t count = 0;
+    for (const auto& group : Catalog())
+        count += group.items.size();
+    return count;
 }
 
 inline bool ContainsInsensitive(std::string_view text, std::string_view query)
 {
     if (query.empty())
         return true;
-    auto lower = [](unsigned char c) { return static_cast<char>(std::tolower(c)); };
+    auto lower = [](unsigned char character) { return static_cast<char>(std::tolower(character)); };
     std::string haystack(text);
     std::string needle(query);
     std::transform(haystack.begin(), haystack.end(), haystack.begin(), lower);
@@ -85,87 +114,141 @@ inline bool ContainsInsensitive(std::string_view text, std::string_view query)
     return haystack.find(needle) != std::string::npos;
 }
 
-inline void DrawStatus(const Integrations::GTA5_Enhanced::GTA_Packed_Stat_Record& record)
+inline std::string OperationSearchText(const GTA_Unlock_Operation& operation)
+{
+    switch (operation.type) {
+    case GTA_Unlock_Operation_Type::PackedBool:
+        return "packed " + std::to_string(operation.index);
+    case GTA_Unlock_Operation_Type::TunableInt:
+        return "global tunable " + std::to_string(operation.index);
+    case GTA_Unlock_Operation_Type::StatBool:
+        return "stat bool " + operation.statName;
+    case GTA_Unlock_Operation_Type::StatInt:
+        return "stat int " + operation.statName;
+    default:
+        return {};
+    }
+}
+
+inline bool ItemMatches(const Unlock_Item& item, std::string_view query)
+{
+    if (query.empty() || ContainsInsensitive(item.label, query))
+        return true;
+    for (const auto& operation : item.operations)
+        if (ContainsInsensitive(OperationSearchText(operation), query))
+            return true;
+    return false;
+}
+
+inline Item_Status GetItemStatus(const Unlock_Item& item, const GTA_Unlock_Operations_State& state)
+{
+    Item_Status status{};
+    if (item.operations.empty())
+        return status;
+
+    status.known = true;
+    status.unlocked = true;
+    for (const auto& operation : item.operations) {
+        const auto record = state.Snapshot(operation);
+        status.queued = status.queued || record.queued;
+        status.failed = status.failed || record.failed;
+        if (!record.known)
+            status.known = false;
+        if (!record.known || !record.matched)
+            status.unlocked = false;
+    }
+    return status;
+}
+
+inline void DrawStatus(const Item_Status& status)
 {
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
-    if (record.queued) {
+    if (status.queued) {
         ImGui::TextDisabled("Queued");
-    } else if (record.failed) {
+    } else if (status.failed) {
         ImGui::TextColored(palette.emberRed, "Failed");
-    } else if (!record.known) {
+    } else if (!status.known) {
         ImGui::TextDisabled("Unknown");
-    } else if (record.value) {
+    } else if (status.unlocked) {
         ImGui::TextColored(palette.bronze, "Unlocked");
     } else {
         ImGui::TextDisabled("Locked");
     }
 }
 
+inline std::vector<GTA_Unlock_Operation> SelectedOperations(const std::unordered_set<std::string>& selected)
+{
+    std::vector<GTA_Unlock_Operation> operations;
+    for (const auto& group : Catalog()) {
+        for (const auto& item : group.items) {
+            if (!selected.contains(item.id))
+                continue;
+            operations.insert(operations.end(), item.operations.begin(), item.operations.end());
+        }
+    }
+    return operations;
+}
+
 inline void DrawClothingUnlocks()
 {
-    using Integrations::GTA5_Enhanced::GTA_Packed_Stat_Batch_Kind;
-    using Integrations::GTA5_Enhanced::GTA_Packed_Stats_State;
-
-    static std::unordered_set<std::int32_t> selected;
-    static char search[64]{};
+    static std::unordered_set<std::string> selected;
+    static char search[96]{};
     static bool initialRefreshQueued = false;
 
-    auto& stats = GTA_Packed_Stats_State::Instance();
+    auto& unlocks = GTA_Unlock_Operations_State::Instance();
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
-    const auto allIndices = AllIndices();
+    const auto allOperations = AllOperations();
 
     if (!initialRefreshQueued) {
-        (void)stats.RequestReads(allIndices);
+        (void)unlocks.RequestRefresh(allOperations);
         initialRefreshQueued = true;
     }
 
     ImGui::TextColored(palette.bronze, "CLOTHING UNLOCKS");
     ImGui::TextWrapped(
-        "Verified packed clothing flags are grouped by DLC. Selection is separate from live unlock status: "
-        "unchecking an item never re-locks it. Older DLCs stay hidden until their mappings are verified.");
+        "DLC groups use a multi-gate unlock engine. One clothing checkbox can contain packed flags, normal stats, "
+        "or verified script-global/tunable operations without changing the menu workflow.");
     ImGui::TextDisabled(
-        "The public mappings used here identify these flags by DLC/index, not by stable localized clothing names.");
+        "Current executable catalog: 192 verified packed clothing gates. Older DLC gates stay out until their Enhanced script mappings are verified.");
 
-    ImGui::SetNextItemWidth(420.0F);
-    ImGui::InputTextWithHint("##ClothingSearch", "Search DLC or packed index", search, sizeof(search));
+    ImGui::SetNextItemWidth(460.0F);
+    ImGui::InputTextWithHint("##ClothingSearch", "Search DLC, clothing label, stat, packed index, or tunable", search, sizeof(search));
 
-    if (ImGui::Button("SELECT ALL", ImVec2(130.0F, 34.0F)))
-        selected.insert(allIndices.begin(), allIndices.end());
+    if (ImGui::Button("SELECT ALL", ImVec2(130.0F, 34.0F))) {
+        for (const auto& group : Catalog())
+            for (const auto& item : group.items)
+                selected.insert(item.id);
+    }
     ImGui::SameLine();
     if (ImGui::Button("CLEAR", ImVec2(100.0F, 34.0F)))
         selected.clear();
     ImGui::SameLine();
     if (ImGui::Button("REFRESH STATUS", ImVec2(160.0F, 34.0F)))
-        (void)stats.RequestReads(allIndices);
+        (void)unlocks.RequestRefresh(allOperations);
 
-    std::vector<std::int32_t> selectedIndices;
-    selectedIndices.reserve(selected.size());
-    for (const auto index : selected)
-        selectedIndices.push_back(index);
-    std::sort(selectedIndices.begin(), selectedIndices.end());
-
+    const auto selectedOperations = SelectedOperations(selected);
     ImGui::SameLine();
-    ImGui::BeginDisabled(selectedIndices.empty());
+    ImGui::BeginDisabled(selectedOperations.empty());
     if (ImGui::Button("UNLOCK SELECTED", ImVec2(180.0F, 34.0F)))
-        (void)stats.RequestWrites(selectedIndices, true);
+        (void)unlocks.RequestApply(selectedOperations);
     ImGui::EndDisabled();
 
-    const auto batch = stats.BatchSnapshot();
-    if (batch.kind != GTA_Packed_Stat_Batch_Kind::None && batch.total != 0) {
+    const auto batch = unlocks.BatchSnapshot();
+    if (batch.kind != GTA_Unlock_Batch_Kind::None && batch.total != 0) {
         const float progress = static_cast<float>(batch.completed) / static_cast<float>(batch.total);
         char overlay[96]{};
         std::snprintf(
             overlay,
             sizeof(overlay),
             "%s %zu / %zu%s",
-            batch.kind == GTA_Packed_Stat_Batch_Kind::Refresh ? "Refreshing" : "Applying",
+            batch.kind == GTA_Unlock_Batch_Kind::Refresh ? "Refreshing" : "Applying",
             batch.completed,
             batch.total,
             batch.failed ? " (failures)" : "");
         ImGui::ProgressBar(progress, ImVec2(-1.0F, 0.0F), overlay);
     }
 
-    ImGui::TextDisabled("Selected: %zu / %zu", selected.size(), allIndices.size());
+    ImGui::TextDisabled("Selected: %zu / %zu clothing entries", selected.size(), ItemCount());
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
 
     const std::string_view query(search);
@@ -176,15 +259,15 @@ inline void DrawClothingUnlocks()
         bool groupMatches = ContainsInsensitive(group.name, query);
 
         for (const auto& item : group.items) {
-            if (selected.contains(item.packedIndex))
+            if (selected.contains(item.id))
                 ++selectedCount;
-            const auto record = stats.Snapshot(item.packedIndex);
-            if (record.known) {
+            const auto status = GetItemStatus(item, unlocks);
+            if (status.known) {
                 ++knownCount;
-                if (record.value)
+                if (status.unlocked)
                     ++unlockedCount;
             }
-            if (!groupMatches && ContainsInsensitive(std::to_string(item.packedIndex), query))
+            if (!groupMatches && ItemMatches(item, query))
                 groupMatches = true;
         }
 
@@ -196,9 +279,9 @@ inline void DrawClothingUnlocks()
         if (ImGui::Checkbox("##DLCSelect", &allSelected)) {
             for (const auto& item : group.items) {
                 if (allSelected)
-                    selected.insert(item.packedIndex);
+                    selected.insert(item.id);
                 else
-                    selected.erase(item.packedIndex);
+                    selected.erase(item.id);
             }
         }
         ImGui::SameLine();
@@ -207,7 +290,7 @@ inline void DrawClothingUnlocks()
             ImGui::SameLine();
         }
 
-        char header[160]{};
+        char header[192]{};
         std::snprintf(
             header,
             sizeof(header),
@@ -220,22 +303,28 @@ inline void DrawClothingUnlocks()
         const bool open = ImGui::TreeNodeEx("##DLCItems", ImGuiTreeNodeFlags_SpanAvailWidth, "%s", header);
         if (open) {
             for (const auto& item : group.items) {
-                if (!query.empty() &&
-                    !ContainsInsensitive(group.name, query) &&
-                    !ContainsInsensitive(std::to_string(item.packedIndex), query)) {
+                if (!query.empty() && !ContainsInsensitive(group.name, query) && !ItemMatches(item, query))
                     continue;
-                }
 
-                ImGui::PushID(item.packedIndex);
-                bool isSelected = selected.contains(item.packedIndex);
+                ImGui::PushID(item.id.c_str());
+                bool isSelected = selected.contains(item.id);
                 if (ImGui::Checkbox(item.label.c_str(), &isSelected)) {
                     if (isSelected)
-                        selected.insert(item.packedIndex);
+                        selected.insert(item.id);
                     else
-                        selected.erase(item.packedIndex);
+                        selected.erase(item.id);
                 }
+
+                if (ImGui::IsItemHovered() && !item.operations.empty()) {
+                    const auto operation = OperationSearchText(item.operations.front());
+                    if (item.operations.size() == 1)
+                        ImGui::SetTooltip("%s", operation.c_str());
+                    else
+                        ImGui::SetTooltip("%zu verified unlock operations", item.operations.size());
+                }
+
                 ImGui::SameLine(430.0F);
-                DrawStatus(stats.Snapshot(item.packedIndex));
+                DrawStatus(GetItemStatus(item, unlocks));
                 ImGui::PopID();
             }
             ImGui::TreePop();

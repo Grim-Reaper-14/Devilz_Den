@@ -9,6 +9,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Utility_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Stats_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Unlock_Operations_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 
@@ -48,9 +49,9 @@ class GTA_Native_Manager final
 public:
     // Validated Enhanced handlers which do not need a public named-id yet live
     // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self,
-    // Weapons, Garage, World, Outfit Editor, and Stats use the final handlers
-    // for their game-thread actions.
-    static constexpr std::array<GTA_Native_Hash, 76> BootstrapProbeHashes{
+    // Weapons, Garage, World, Outfit Editor, Stats, and Unlocks use the final
+    // handlers for their game-thread actions.
+    static constexpr std::array<GTA_Native_Hash, 78> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -121,6 +122,8 @@ public:
         0x1D77F90D87ACD2BAULL, // GET_NUMBER_OF_PED_PROP_TEXTURE_VARIATIONS
         0x7F08C4791E6D6969ULL, // SET_PED_PROP_INDEX
         0x09397806857F5DFBULL, // CLEAR_PED_PROP
+        0x767FBC2AC802EF3DULL, // STAT_GET_INT
+        0x11B5E6D2AE73F48EULL, // STAT_GET_BOOL
         0x1164A75E490C27B6ULL, // STAT_SET_INT
         0x4F8678C02360C3D2ULL, // STAT_SET_FLOAT
         0xF1D0B0CE940F620DULL, // STAT_SET_BOOL
@@ -156,7 +159,8 @@ public:
     {
         // Vehicle Forge calls SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER every game
         // tick. Use that guaranteed game-thread point to service the online,
-        // Self, outfit, teleport, garage, world, and stat extensions without another hook.
+        // Self, outfit, teleport, garage, world, stat, and unlock extensions
+        // without another hook.
         if (hash == 0xA52E1AE3848A506BULL) {
             TickSelfOnlineExtension(*this);
             TickSelfUtilityExtension(*this);
@@ -166,6 +170,7 @@ public:
             TickWorldEnvironmentExtension(*this);
             TickStatsExtension(*this);
             DrainPackedStatsQueue();
+            TickUnlockOperationsExtension(*this);
         }
 
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
