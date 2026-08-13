@@ -120,7 +120,7 @@ inline void AddAfterHoursClothing(DLC_Group& group)
         22108,
         {22108, 25006}));
 
-    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 10> mappings{{
+    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 18> earlyMappings{{
         {2, 9481},
         {3, 9470},
         {4, 9475},
@@ -130,19 +130,58 @@ inline void AddAfterHoursClothing(DLC_Group& group)
         {8, 9464},
         {9, 9468},
         {10, 9469},
-        {11, 9479}
+        {11, 9479},
+        {12, 9473},
+        {13, 9480},
+        {14, 9476},
+        {15, 9477},
+        {16, 9471},
+        {17, 9474},
+        {18, 9467},
+        {19, 9478}
     }};
 
-    for (const auto& [clothing, packedIndex] : mappings) {
+    for (const auto& [clothing, packedIndex] : earlyMappings) {
         char label[72]{};
         std::snprintf(label, sizeof(label), "After Hours Battle Clothing %03d", clothing);
         group.items.push_back(PackedItem(packedIndex, label));
+    }
+
+    group.items.push_back(PackedAnyOfItem(
+        "after-hours:battle-clothing-020",
+        "After Hours Battle Clothing 020",
+        9462,
+        {9462, 27085, 27084}));
+
+    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 10> lateMappings{{
+        {21, 9466},
+        {22, 22126},
+        {23, 22127},
+        {24, 22128},
+        {25, 22124},
+        {26, 22130},
+        {27, 22125},
+        {28, 22129},
+        {29, 22131},
+        {30, 22132}
+    }};
+
+    for (const auto& [clothing, packedIndex] : lateMappings) {
+        char label[72]{};
+        std::snprintf(label, sizeof(label), "After Hours Battle Clothing %03d", clothing);
+        group.items.push_back(PackedItem(packedIndex, label));
+    }
+
+    for (std::int32_t clothing = 31; clothing <= 62; ++clothing) {
+        char label[72]{};
+        std::snprintf(label, sizeof(label), "After Hours Battle Clothing %03d", clothing);
+        group.items.push_back(PackedItem(22147 + (clothing - 31), label));
     }
 }
 
 inline void AddCayoPericoTees(DLC_Group& group)
 {
-    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 11> mappings{{
+    constexpr std::array<std::pair<std::int32_t, std::int32_t>, 21> mappings{{
         {30, 30533},
         {32, 30534},
         {28, 30535},
@@ -153,7 +192,17 @@ inline void AddCayoPericoTees(DLC_Group& group)
         {20, 30540},
         {21, 30541},
         {3, 30542},
-        {4, 30543}
+        {4, 30543},
+        {5, 30544},
+        {6, 30545},
+        {19, 30531},
+        {33, 30532},
+        {55, 30703},
+        {57, 30704},
+        {59, 30700},
+        {61, 30701},
+        {63, 30702},
+        {65, 30699}
     }};
 
     for (const auto& [tee, packedIndex] : mappings) {
@@ -393,7 +442,7 @@ inline void DrawClothingUnlocks()
         "DLC groups use verified Enhanced unlock gates. Status can model Rockstar OR conditions separately from the operation the menu applies, "
         "so alternate flags and progression unlocks do not produce false Locked states.");
     ImGui::TextDisabled(
-        "Current executable catalog: 290 verified packed clothing gates plus 1 build-guarded Enhanced global gate. Unverified mappings stay out.");
+        "Current executable catalog: 353 verified packed clothing gates plus 1 build-guarded Enhanced global gate. Unverified mappings stay out.");
 
     ImGui::SetNextItemWidth(460.0F);
     ImGui::InputTextWithHint("##ClothingSearch", "Search DLC, clothing label, stat, packed index, or tunable", search, sizeof(search));
