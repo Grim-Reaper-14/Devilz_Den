@@ -163,7 +163,7 @@ inline const std::vector<Unlock_Group>& BunkerCatalog()
 
 inline bool ContainsInsensitive(std::string_view text, std::string_view query)
 {
-    if (query.empty()
+    if (query.empty())
         return true;
 
     auto lower = [](unsigned char character) { return static_cast<char>(std::tolower(character)); };
