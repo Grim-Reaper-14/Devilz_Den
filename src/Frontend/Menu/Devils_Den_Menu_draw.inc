@@ -60,6 +60,11 @@ void Devils_Den_Menu::Draw(bool& open)
         case Page::Teleport: DrawTeleportPage(); break;
         case Page::World: DrawPlaceholderPage("WORLD", "World and environment controls will live here."); break;
         case Page::Network: Network::DrawNetworkPage(); break;
+        case Page::Defense:
+            DrawPlaceholderPage(
+                "DEFENSE",
+                "Defensive controls and activity logging will live here.");
+            break;
         case Page::Lua: Lua::DrawLuaPage(); break;
         case Page::Settings: DrawSettingsPage(); break;
         }
@@ -109,8 +114,14 @@ void Devils_Den_Menu::Draw(bool& open)
             break;
         case Page::Network:
             detailTitle = "NETWORK";
-            detailText = "Sessions, players and protections are organized in the Network domain.";
+            detailText = "Sessions, players and related network/session functionality are organized in the Network domain.";
             detailTag = "NETWORK / SESSIONS";
+            detailIcon = Themes::Menu_Icon::Network;
+            break;
+        case Page::Defense:
+            detailTitle = "DEFENSE";
+            detailText = "Defensive controls and activity logging will live here.";
+            detailTag = "DEFENSE / ACTIVITY";
             detailIcon = Themes::Menu_Icon::Network;
             break;
         case Page::Lua:
