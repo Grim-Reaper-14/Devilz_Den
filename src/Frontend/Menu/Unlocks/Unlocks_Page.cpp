@@ -1,5 +1,6 @@
 #include "Unlocks_Page.hpp"
 
+#include "Clothing_Unlock_Page.hpp"
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Stats_Extension.hpp"
 
@@ -104,6 +105,17 @@ void DrawStatEditor()
             snapshot.detail.c_str());
     }
 }
+
+void DrawOtherUnlocks()
+{
+    UnlockSection("PROGRESSION", "Rank, progression and character milestone unlocks.");
+    UnlockSection("AWARDS", "Awards, achievements and challenge completion flags.");
+    UnlockSection("VEHICLES", "Vehicle availability, trade-price and related content unlocks.");
+    UnlockSection("WEAPONS", "Weapon, component and equipment unlock flags.");
+    UnlockSection("HEISTS", "Heist access, setup progression and associated unlock states.");
+    UnlockSection("MISCELLANEOUS", "Additional verified unlockable content and progression flags.");
+    ImGui::TextDisabled("Additional preset packs appear here only after their mappings are verified.");
+}
 }
 
 void DrawUnlocksPage()
@@ -116,22 +128,29 @@ void DrawUnlocksPage()
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
 
     ImGui::TextWrapped(
-        "Unlock tools live in this domain. Runtime actions are enabled only through verified GTA V Enhanced "
-        "stat/native paths; category presets remain fail-closed until their individual mappings are verified.");
+        "Unlock tools use validated GTA V Enhanced native paths. Clothing uses a bounded game-thread batch "
+        "queue so large DLC selections cannot overwrite one another.");
 
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
-    DrawStatEditor();
 
-    Themes::Menu_Theme_Manager::Instance().DrawDivider();
-    UnlockSection("PROGRESSION", "Rank, progression and character milestone unlocks.");
-    UnlockSection("AWARDS", "Awards, achievements and challenge completion flags.");
-    UnlockSection("CLOTHING", "Outfits, clothing items, masks and appearance unlocks.");
-    UnlockSection("VEHICLES", "Vehicle availability, trade-price and related content unlocks.");
-    UnlockSection("WEAPONS", "Weapon, component and equipment unlock flags.");
-    UnlockSection("HEISTS", "Heist access, setup progression and associated unlock states.");
-    UnlockSection("MISCELLANEOUS", "Additional verified unlockable content and progression flags.");
+    if (!ImGui::BeginTabBar("##UnlocksTabs"))
+        return;
 
-    Themes::Menu_Theme_Manager::Instance().DrawDivider();
-    ImGui::TextDisabled("Preset unlock packs will appear here only after their stat mappings are verified.");
+    if (ImGui::BeginTabItem("STAT EDITOR")) {
+        DrawStatEditor();
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("CLOTHING")) {
+        Clothing::DrawClothingUnlocks();
+        ImGui::EndTabItem();
+    }
+
+    if (ImGui::BeginTabItem("OTHER")) {
+        DrawOtherUnlocks();
+        ImGui::EndTabItem();
+    }
+
+    ImGui::EndTabBar();
 }
 }

@@ -4,6 +4,7 @@
 #include "GTA_Native_Registry.hpp"
 #include "GTA_Native_Types.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Outfit_Editor_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Packed_Stats_State.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Utility_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Stats_Extension.hpp"
@@ -49,7 +50,7 @@ public:
     // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self,
     // Weapons, Garage, World, Outfit Editor, and Stats use the final handlers
     // for their game-thread actions.
-    static constexpr std::array<GTA_Native_Hash, 74> BootstrapProbeHashes{
+    static constexpr std::array<GTA_Native_Hash, 76> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -123,7 +124,9 @@ public:
         0x1164A75E490C27B6ULL, // STAT_SET_INT
         0x4F8678C02360C3D2ULL, // STAT_SET_FLOAT
         0xF1D0B0CE940F620DULL, // STAT_SET_BOOL
-        0xFE0BEB152470B0B8ULL  // STAT_SET_STRING
+        0xFE0BEB152470B0B8ULL, // STAT_SET_STRING
+        0xA6D3C21763E25496ULL, // GET_PACKED_STAT_BOOL_CODE
+        0xA595AA1819B05EA0ULL  // SET_PACKED_STAT_BOOL_CODE
     };
 
     [[nodiscard]] GTA_Native_Manager_Status Initialize(
@@ -162,6 +165,7 @@ public:
             TickVehicleGarageSave(*this);
             TickWorldEnvironmentExtension(*this);
             TickStatsExtension(*this);
+            DrainPackedStatsQueue();
         }
 
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
@@ -195,6 +199,36 @@ private:
             return true;
         else
             return frame.Return<Ret>();
+    }
+
+    void DrainPackedStatsQueue() noexcept
+    {
+        constexpr GTA_Native_Hash GetPackedStatBoolCode = 0xA6D3C21763E25496ULL;
+        constexpr GTA_Native_Hash SetPackedStatBoolCode = 0xA595AA1819B05EA0ULL;
+        constexpr std::size_t CommandsPerTick = 8;
+
+        auto& state = GTA_Packed_Stats_State::Instance();
+        for (std::size_t processed = 0; processed < CommandsPerTick; ++processed) {
+            GTA_Packed_Stats_State::Command command{};
+            if (!state.Consume(command))
+                break;
+
+            if (command.kind == GTA_Packed_Stats_State::Command_Kind::Read) {
+                const auto value = InvokeHandler<bool>(
+                    Find(GetPackedStatBoolCode),
+                    command.index,
+                    -1);
+                state.Complete(command, value.has_value(), value.value_or(false));
+                continue;
+            }
+
+            const bool success = InvokeHandler<void>(
+                Find(SetPackedStatBoolCode),
+                command.index,
+                command.value,
+                -1);
+            state.Complete(command, success, command.value);
+        }
     }
 
     [[nodiscard]] static bool IsExecutableImageAddress(
