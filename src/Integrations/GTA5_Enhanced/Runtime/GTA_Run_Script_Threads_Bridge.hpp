@@ -44,16 +44,23 @@ private:
     bool OnRunScriptThreads(int opsToExecute) noexcept;
     void TryNativeSmoke() noexcept;
     void RunGameplayTick() noexcept;
+    void TickFrameSensitiveMovement() noexcept;
     [[nodiscard]] void* FindValidatedScriptThread() const noexcept;
 
     std::atomic_bool m_installed{false};
     std::atomic_bool m_smokeCompleted{false};
     std::atomic_bool m_smokeAttempting{false};
     std::atomic_uint32_t m_activeCalls{0};
+    std::atomic_uint64_t m_nextGameplayTickMs{0};
+    mutable std::atomic<void*> m_cachedScriptThread{nullptr};
 
     std::uintptr_t m_targetAddress = 0;
     std::uintptr_t m_scriptThreadsStorageAddress = 0;
     std::uintptr_t m_expectedThreadDispatchAddress = 0;
+    std::uint64_t m_nextSlowExtensionTickMs = 0;
+    std::uint64_t m_nextVehicleExtensionTickMs = 0;
+    bool m_fastRunApplied = false;
+    bool m_fastSwimApplied = false;
     std::array<std::byte, PatchSize> m_originalBytes{};
     void* m_trampoline = nullptr;
     RunScriptThreads m_original = nullptr;
