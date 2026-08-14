@@ -1,7 +1,9 @@
 #include "Script_Global_Manager.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <limits>
+#include <utility>
 
 namespace Devilz::Integrations::GTA5_Enhanced
 {
@@ -33,6 +35,50 @@ Result<void> Script_Global_Manager::Configure(std::vector<Block> blocks, std::ui
     m_blocks = std::move(blocks);
     m_buildFingerprint = buildFingerprint;
     return Result<void>::Success();
+}
+
+Result<void> Script_Global_Manager::ConfigureFromTable(
+    Pointer table,
+    std::uint64_t buildFingerprint)
+{
+    constexpr std::uint32_t BlockCount = 64U;
+    constexpr std::uint32_t BlockShift = 18U;
+    constexpr std::uint32_t SlotsPerBlock = 1U << BlockShift;
+
+    if (table.IsNull())
+        return Result<void>::Failure(Error(ErrorCode::RuntimeFailure, ErrorCategory::Runtime,
+            "Script global table is null"));
+    if (buildFingerprint == 0)
+        return Result<void>::Failure(Error(ErrorCode::RuntimeFailure, ErrorCategory::Runtime,
+            "Script global table requires a valid build fingerprint"));
+
+    std::vector<Block> blocks;
+    blocks.reserve(BlockCount);
+
+    for (std::uint32_t blockIndex = 0; blockIndex < BlockCount; ++blockIndex) {
+        std::uintptr_t blockAddress = 0;
+        const auto entryAddress = table.Add(
+            static_cast<std::ptrdiff_t>(blockIndex * sizeof(std::uintptr_t)));
+        std::memcpy(
+            &blockAddress,
+            reinterpret_cast<const void*>(entryAddress.Address()),
+            sizeof(blockAddress));
+
+        if (blockAddress == 0)
+            continue;
+
+        Block block{};
+        block.firstIndex = blockIndex << BlockShift;
+        block.slotCount = SlotsPerBlock;
+        block.base = Pointer(blockAddress);
+        blocks.push_back(block);
+    }
+
+    if (blocks.empty())
+        return Result<void>::Failure(Error(ErrorCode::RuntimeFailure, ErrorCategory::Runtime,
+            "Script global table contains no available blocks"));
+
+    return Configure(std::move(blocks), buildFingerprint);
 }
 
 void Script_Global_Manager::Clear()
