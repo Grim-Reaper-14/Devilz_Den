@@ -22,7 +22,7 @@ public:
     GTA_Script& operator=(const GTA_Script&) = delete;
 
     void Tick() noexcept;
-    void Yield() noexcept;
+    void YieldNow() noexcept;
     void YieldFor(std::chrono::milliseconds delay) noexcept;
 
     [[nodiscard]] bool Done() const noexcept { return m_done; }

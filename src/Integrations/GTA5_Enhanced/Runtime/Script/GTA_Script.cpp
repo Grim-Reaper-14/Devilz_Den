@@ -50,7 +50,7 @@ void GTA_Script::Tick() noexcept
     g_currentScript = nullptr;
 }
 
-void GTA_Script::Yield() noexcept
+void GTA_Script::YieldNow() noexcept
 {
     m_wakeTime.reset();
     if (m_mainFiber)
