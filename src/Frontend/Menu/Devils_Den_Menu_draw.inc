@@ -1,4 +1,5 @@
 #include "Frontend/Menu/Menu_Appearance.hpp"
+#include "Frontend/Menu/Defense/Defense_Page.hpp"
 
 namespace Devilz::Frontend
 {
@@ -60,11 +61,7 @@ void Devils_Den_Menu::Draw(bool& open)
         case Page::Teleport: DrawTeleportPage(); break;
         case Page::World: DrawPlaceholderPage("WORLD", "World and environment controls will live here."); break;
         case Page::Network: Network::DrawNetworkPage(); break;
-        case Page::Defense:
-            DrawPlaceholderPage(
-                "DEFENSE",
-                "Defensive controls and activity logging will live here.");
-            break;
+        case Page::Defense: Defense::DrawDefensePage(); break;
         case Page::Lua: Lua::DrawLuaPage(); break;
         case Page::Settings: DrawSettingsPage(); break;
         }
@@ -120,8 +117,8 @@ void Devils_Den_Menu::Draw(bool& open)
             break;
         case Page::Defense:
             detailTitle = "DEFENSE";
-            detailText = "Defensive controls and activity logging will live here.";
-            detailTag = "DEFENSE / ACTIVITY";
+            detailText = "Local safety policies, defensive runtime status and activity monitoring.";
+            detailTag = "DEFENSE / PLAYER SAFETY";
             detailIcon = Themes::Menu_Icon::Network;
             break;
         case Page::Lua:
