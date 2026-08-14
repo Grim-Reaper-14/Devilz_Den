@@ -1,5 +1,6 @@
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Clothing_Unlocks.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Halloween_Unlocks.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Packed_Stats_State.hpp"
 
 #include <imgui.h>
@@ -14,21 +15,32 @@ namespace Devilz::Frontend::Recovery
 namespace
 {
 using Integrations::GTA5_Enhanced::GTAAllClothingUnlockIndices;
+using Integrations::GTA5_Enhanced::GTAAllVerifiedHalloweenUnlockIndices;
 using Integrations::GTA5_Enhanced::GTAClothingUnlockIndices;
+using Integrations::GTA5_Enhanced::GTAHalloweenGhostsExposed2023Indices;
+using Integrations::GTA5_Enhanced::GTAHalloweenGhostsExposed2024Indices;
+using Integrations::GTA5_Enhanced::GTAHalloweenGhostsExposed2025Indices;
+using Integrations::GTA5_Enhanced::GTAHalloweenJackOLanternIndices;
 using Integrations::GTA5_Enhanced::GTA_Clothing_Unlock_Groups;
 using Integrations::GTA5_Enhanced::GTA_Clothing_Unlock_Source_Version;
 using Integrations::GTA5_Enhanced::GTA_Clothing_Unlock_Unique_Count;
+using Integrations::GTA5_Enhanced::GTA_Halloween_Ghosts_Exposed_2023_Count;
+using Integrations::GTA5_Enhanced::GTA_Halloween_Ghosts_Exposed_2024_Count;
+using Integrations::GTA5_Enhanced::GTA_Halloween_Ghosts_Exposed_2025_Count;
+using Integrations::GTA5_Enhanced::GTA_Halloween_Jack_O_Lantern_Count;
+using Integrations::GTA5_Enhanced::GTA_Halloween_Unlock_Source;
+using Integrations::GTA5_Enhanced::GTA_Halloween_Verified_Unique_Count;
 using Integrations::GTA5_Enhanced::GTA_Packed_Stats_State;
 
-struct ClothingUnlockUiState
+struct UnlockBatchUiState
 {
     std::uint64_t batchId = 0;
     std::string label;
 };
 
-ClothingUnlockUiState& ClothingState()
+UnlockBatchUiState& UnlockState()
 {
-    static ClothingUnlockUiState state;
+    static UnlockBatchUiState state;
     return state;
 }
 
@@ -51,26 +63,26 @@ void DrawDisabledRow(const char* label, const char* description)
     ImGui::Spacing();
 }
 
-void QueueClothingUnlocks(
+void QueuePackedBoolUnlocks(
     std::string_view label,
     std::vector<std::int32_t> indices)
 {
     if (indices.empty())
         return;
 
-    auto& state = ClothingState();
+    auto& state = UnlockState();
     state.label.assign(label);
     state.batchId = GTA_Packed_Stats_State::Instance().RequestWrites(indices, true);
 }
 
-void DrawClothingBatchStatus()
+void DrawUnlockBatchStatus()
 {
     const auto batch = GTA_Packed_Stats_State::Instance().BatchSnapshot();
-    const auto& state = ClothingState();
+    const auto& state = UnlockState();
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
 
     if (state.batchId == 0) {
-        ImGui::TextDisabled("No clothing unlock batch has been queued this session.");
+        ImGui::TextDisabled("No unlock batch has been queued this session.");
         return;
     }
 
@@ -96,7 +108,7 @@ void DrawClothingBatchStatus()
         if (batch.failed == 0) {
             ImGui::TextColored(
                 ImVec4{0.42F, 0.78F, 0.42F, 1.0F},
-                "[SUCCEEDED] Clothing packed BOOLs were applied.");
+                "[SUCCEEDED] Packed BOOLs were applied.");
         } else {
             ImGui::TextColored(
                 ImVec4{0.92F, 0.32F, 0.28F, 1.0F},
@@ -104,6 +116,123 @@ void DrawClothingBatchStatus()
                 batch.failed);
         }
     }
+}
+
+void DrawHalloweenPresetRow(
+    std::string_view name,
+    std::string_view description,
+    std::size_t count,
+    bool batchActive,
+    std::vector<std::int32_t> (*buildIndices)())
+{
+    ImGui::PushID(name.data());
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::TextUnformatted(name.data(), name.data() + name.size());
+    ImGui::TextDisabled(
+        "%.*s",
+        static_cast<int>(description.size()),
+        description.data());
+
+    ImGui::TableSetColumnIndex(1);
+    ImGui::Text("%zu", count);
+
+    ImGui::TableSetColumnIndex(2);
+    ImGui::BeginDisabled(batchActive);
+    if (ImGui::Button("APPLY", ImVec2{92.0F, 28.0F}))
+        QueuePackedBoolUnlocks(name, buildIndices());
+    ImGui::EndDisabled();
+    ImGui::PopID();
+}
+
+void DrawHalloweenUnlocks()
+{
+    const auto batch = GTA_Packed_Stats_State::Instance().BatchSnapshot();
+    const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
+
+    ImGui::TextColored(palette.bronze, "HALLOWEEN UNLOCKS / PROGRESS");
+    ImGui::TextWrapped(
+        "Verified collectible packed BOOL paths traced from %.*s. These presets mark event "
+        "collection progress; they do not force live seasonal tunables, spawns, or reward transactions.",
+        static_cast<int>(GTA_Halloween_Unlock_Source.size()),
+        GTA_Halloween_Unlock_Source.data());
+    ImGui::Spacing();
+
+    ImGui::BeginDisabled(batch.active);
+    if (ImGui::Button("APPLY ALL HALLOWEEN FLAGS", ImVec2{230.0F, 36.0F}))
+        ImGui::OpenPopup("Confirm Halloween Unlock All");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu verified packed BOOLs", GTA_Halloween_Verified_Unique_Count);
+
+    if (ImGui::BeginPopupModal(
+            "Confirm Halloween Unlock All",
+            nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped(
+            "This will set %zu verified Halloween collectible packed BOOLs to true for the active "
+            "online character. Jack O' Lantern progress is event-scoped and may be reset by GTA's "
+            "daily/seasonal event logic.",
+            GTA_Halloween_Verified_Unique_Count);
+        ImGui::Spacing();
+        ImGui::BeginDisabled(batch.active);
+        if (ImGui::Button("CONFIRM APPLY", ImVec2{170.0F, 34.0F})) {
+            QueuePackedBoolUnlocks(
+                "All Halloween Progress",
+                GTAAllVerifiedHalloweenUnlockIndices());
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("CANCEL", ImVec2{110.0F, 34.0F}))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    constexpr auto tableFlags =
+        ImGuiTableFlags_BordersInnerH |
+        ImGuiTableFlags_RowBg |
+        ImGuiTableFlags_SizingStretchProp;
+
+    if (ImGui::BeginTable("##HalloweenUnlockTable", 3, tableFlags)) {
+        ImGui::TableSetupColumn("EVENT", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("BOOLS", ImGuiTableColumnFlags_WidthFixed, 72.0F);
+        ImGui::TableSetupColumn("ACTION", ImGuiTableColumnFlags_WidthFixed, 108.0F);
+        ImGui::TableHeadersRow();
+
+        DrawHalloweenPresetRow(
+            "Jack O' Lanterns",
+            "200 Halloween pumpkin location flags (event progress).",
+            GTA_Halloween_Jack_O_Lantern_Count,
+            batch.active,
+            &GTAHalloweenJackOLanternIndices);
+        DrawHalloweenPresetRow(
+            "Ghosts Exposed 2023",
+            "Ten original Ghosts Exposed photo progress flags.",
+            GTA_Halloween_Ghosts_Exposed_2023_Count,
+            batch.active,
+            &GTAHalloweenGhostsExposed2023Indices);
+        DrawHalloweenPresetRow(
+            "Ghosts Exposed 2024",
+            "Ten 2024 Ghosts Exposed photo progress flags.",
+            GTA_Halloween_Ghosts_Exposed_2024_Count,
+            batch.active,
+            &GTAHalloweenGhostsExposed2024Indices);
+        DrawHalloweenPresetRow(
+            "Ghosts Exposed 2025",
+            "Ten 2025 Ghosts Exposed photo progress flags.",
+            GTA_Halloween_Ghosts_Exposed_2025_Count,
+            batch.active,
+            &GTAHalloweenGhostsExposed2025Indices);
+
+        ImGui::EndTable();
+    }
+
+    ImGui::Spacing();
+    ImGui::TextDisabled(
+        "2026-only Ghosts Exposed flags are intentionally excluded from this target-build preset.");
+    ImGui::TextDisabled(
+        "UFOs, Slashers, Phantom Car, Cerberus, peyote effects, and Halloween weather are event state, not persistent unlocks.");
 }
 
 void DrawClothingUnlockTable(bool batchActive)
@@ -146,7 +275,7 @@ void DrawClothingUnlockTable(bool batchActive)
         ImGui::TableSetColumnIndex(2);
         ImGui::BeginDisabled(batchActive);
         if (ImGui::Button("UNLOCK", ImVec2{92.0F, 28.0F})) {
-            QueueClothingUnlocks(
+            QueuePackedBoolUnlocks(
                 group.name,
                 GTAClothingUnlockIndices(group));
         }
@@ -189,7 +318,7 @@ void DrawClothingUnlocks()
         ImGui::Spacing();
         ImGui::BeginDisabled(batch.active);
         if (ImGui::Button("CONFIRM UNLOCK", ImVec2{170.0F, 34.0F})) {
-            QueueClothingUnlocks(
+            QueuePackedBoolUnlocks(
                 "Unlock All Clothing",
                 GTAAllClothingUnlockIndices());
             ImGui::CloseCurrentPopup();
@@ -201,8 +330,6 @@ void DrawClothingUnlocks()
         ImGui::EndPopup();
     }
 
-    DrawDivider();
-    DrawClothingBatchStatus();
     DrawDivider();
     DrawClothingUnlockTable(batch.active);
 
@@ -244,6 +371,8 @@ void DrawRecoveryPage()
         }
 
         if (ImGui::BeginTabItem("UNLOCKS")) {
+            DrawHalloweenUnlocks();
+            DrawDivider();
             DrawClothingUnlocks();
             ImGui::EndTabItem();
         }
@@ -259,7 +388,7 @@ void DrawRecoveryPage()
         if (ImGui::BeginTabItem("ACTIVITY")) {
             ImGui::TextColored(palette.bronze, "RECOVERY ACTIVITY");
             DrawDivider();
-            DrawClothingBatchStatus();
+            DrawUnlockBatchStatus();
             ImGui::EndTabItem();
         }
 
