@@ -5,7 +5,10 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <iomanip>
 #include <limits>
+#include <sstream>
+#include <string_view>
 
 namespace Devilz::Integrations::GTA5_Enhanced
 {
@@ -55,6 +58,101 @@ bool IsReadableRange(std::uintptr_t address, std::size_t size) noexcept
         return false;
     const auto end = start + memory.RegionSize;
     return address >= start && address <= end && size <= end - address;
+}
+
+bool IsInsideModuleImage(
+    std::uintptr_t address,
+    std::uintptr_t moduleBase,
+    std::size_t moduleSize) noexcept
+{
+    if (moduleBase == 0 || moduleSize == 0 ||
+        moduleBase > (std::numeric_limits<std::uintptr_t>::max)() - moduleSize) {
+        return false;
+    }
+
+    return address >= moduleBase && address < moduleBase + moduleSize;
+}
+
+struct NativeHandlerInspection
+{
+    bool queried = false;
+    bool insideImage = false;
+    bool committed = false;
+    bool imageMemory = false;
+    bool executable = false;
+    bool guarded = false;
+    bool noAccess = false;
+    bool accepted = false;
+    DWORD protection = 0;
+};
+
+NativeHandlerInspection InspectNativeHandler(
+    std::uintptr_t address,
+    std::uintptr_t moduleBase,
+    std::size_t moduleSize) noexcept
+{
+    NativeHandlerInspection inspection{};
+    inspection.insideImage = IsInsideModuleImage(address, moduleBase, moduleSize);
+
+    MEMORY_BASIC_INFORMATION memory{};
+    inspection.queried =
+        ::VirtualQuery(reinterpret_cast<const void*>(address), &memory, sizeof(memory)) != 0;
+    if (!inspection.queried)
+        return inspection;
+
+    inspection.protection = memory.Protect;
+    inspection.committed = memory.State == MEM_COMMIT;
+    inspection.imageMemory = memory.Type == MEM_IMAGE;
+    inspection.guarded = (memory.Protect & PAGE_GUARD) != 0;
+    inspection.noAccess = (memory.Protect & PAGE_NOACCESS) != 0;
+    inspection.executable =
+        inspection.committed &&
+        !inspection.guarded &&
+        !inspection.noAccess &&
+        IsExecutableProtection(memory.Protect);
+    inspection.accepted =
+        inspection.insideImage &&
+        inspection.committed &&
+        inspection.imageMemory &&
+        inspection.executable;
+    return inspection;
+}
+
+constexpr std::string_view BootstrapProbeName(GTA_Native_Hash hash) noexcept
+{
+    switch (hash) {
+    case 0xDF7F16323520B858ULL: return "STAT_GET_INT";
+    case 0x2F0966A034F5ADC6ULL: return "STAT_GET_FLOAT";
+    case 0xF249567F2E83E093ULL: return "STAT_GET_BOOL";
+    case 0xCEA81DACD6DA3ADBULL: return "STAT_GET_STRING";
+    case 0x1164A75E490C27B6ULL: return "STAT_SET_INT";
+    case 0x4F8678C02360C3D2ULL: return "STAT_SET_FLOAT";
+    case 0xF1D0B0CE940F620DULL: return "STAT_SET_BOOL";
+    case 0x1A43F9BE4B6AAB67ULL: return "STAT_SET_STRING";
+    case 0xA6D3C21763E25496ULL: return "GET_PACKED_STAT_BOOL_CODE";
+    case 0x03CFFD51CE515454ULL: return "GET_PACKED_STAT_INT_CODE";
+    case 0xA595AA1819B05EA0ULL: return "SET_PACKED_STAT_BOOL_CODE";
+    case 0x0F575D68F532124CULL: return "SET_PACKED_STAT_INT_CODE";
+    default: return "BOOTSTRAP_PROBE";
+    }
+}
+
+std::string_view NativeProbeName(
+    std::size_t index,
+    GTA_Native_Hash hash,
+    std::uint64_t fingerprint) noexcept
+{
+    if (index < GTA_Native_Manager::BootstrapProbeHashes.size())
+        return BootstrapProbeName(hash);
+
+    const auto namedIndex = index - GTA_Native_Manager::BootstrapProbeHashes.size();
+    if (namedIndex >= GTA_Native_Registry::NamedIds.size())
+        return "UNKNOWN";
+
+    const auto definition = GTA_Native_Registry::Find(
+        fingerprint,
+        GTA_Native_Registry::NamedIds[namedIndex]);
+    return definition ? definition->name : std::string_view{"UNKNOWN"};
 }
 
 std::uintptr_t FindUniqueProgramTablePattern(
@@ -200,10 +298,31 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
 
     for (std::size_t i = 0; i < entries.size(); ++i) {
         const auto handlerAddress = reinterpret_cast<std::uintptr_t>(entries[i]);
-        if (handlerAddress == 0 ||
-            !IsExecutableImageAddress(handlerAddress, moduleBase, moduleSize)) {
+        const auto inspection = InspectNativeHandler(handlerAddress, moduleBase, moduleSize);
+        if (!inspection.accepted) {
             status.cachedHandlers = m_handlers.size();
-            status.detail = "Native bootstrap returned a handler outside executable GTA image memory";
+
+            const bool hashUnchanged =
+                handlerAddress == static_cast<std::uintptr_t>(requestedHashes[i]);
+            std::ostringstream detail;
+            detail << (hashUnchanged
+                           ? "InitNativeTables left native hash unresolved"
+                           : "Native bootstrap rejected handler")
+                   << " | Probe: " << std::dec << i
+                   << " | Name: " << NativeProbeName(i, requestedHashes[i], fingerprint)
+                   << " | Hash: 0x" << std::uppercase << std::hex << requestedHashes[i]
+                   << " | ReturnedHandler: 0x" << handlerAddress
+                   << " | HashUnchanged: " << (hashUnchanged ? "yes" : "no")
+                   << " | InsideGTAImage: " << (inspection.insideImage ? "yes" : "no")
+                   << " | VirtualQuery: " << (inspection.queried ? "yes" : "no")
+                   << " | Committed: " << (inspection.committed ? "yes" : "no")
+                   << " | Image: " << (inspection.imageMemory ? "yes" : "no")
+                   << " | Executable: " << (inspection.executable ? "yes" : "no")
+                   << " | Guarded: " << (inspection.guarded ? "yes" : "no")
+                   << " | NoAccess: " << (inspection.noAccess ? "yes" : "no")
+                   << " | Protect: 0x" << inspection.protection;
+            status.detail = detail.str();
+
             Reset();
             return status;
         }
@@ -264,22 +383,6 @@ bool GTA_Native_Manager::IsExecutableImageAddress(
     std::uintptr_t moduleBase,
     std::size_t moduleSize) noexcept
 {
-    if (address < moduleBase ||
-        moduleBase > (std::numeric_limits<std::uintptr_t>::max)() - moduleSize ||
-        address >= moduleBase + moduleSize) {
-        return false;
-    }
-
-    MEMORY_BASIC_INFORMATION memory{};
-    if (::VirtualQuery(reinterpret_cast<const void*>(address), &memory, sizeof(memory)) == 0)
-        return false;
-
-    if (memory.State != MEM_COMMIT || memory.Type != MEM_IMAGE)
-        return false;
-
-    if ((memory.Protect & PAGE_GUARD) != 0 || (memory.Protect & PAGE_NOACCESS) != 0)
-        return false;
-
-    return IsExecutableProtection(memory.Protect);
+    return InspectNativeHandler(address, moduleBase, moduleSize).accepted;
 }
 }
