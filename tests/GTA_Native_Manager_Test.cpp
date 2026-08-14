@@ -6,6 +6,7 @@
 
 #include <Windows.h>
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -15,6 +16,7 @@ namespace Devilz::Integrations::GTA5_Enhanced
 void SetSelfSpecialAbilities(bool) noexcept {}
 void SetSelfNoIdleKick(bool) noexcept {}
 void ResetSelfUtilityExtension() noexcept {}
+void ResetStatsExtension() noexcept {}
 void TickSelfUtilityExtension(GTA_Native_Manager&) noexcept {}
 void ConfigureVehicleLSCRestrictions(std::uintptr_t) noexcept {}
 void ResetVehicleLSCRestrictions() noexcept {}
@@ -193,6 +195,79 @@ bool TestRegistry()
     return true;
 }
 
+bool TestStatProbeHashes()
+{
+    constexpr std::array<GTA_Native_Hash, 12> required{
+        0xDF7F16323520B858ULL, // STAT_GET_INT
+        0x2F0966A034F5ADC6ULL, // STAT_GET_FLOAT
+        0xF249567F2E83E093ULL, // STAT_GET_BOOL
+        0xCEA81DACD6DA3ADBULL, // STAT_GET_STRING
+        0x1164A75E490C27B6ULL, // STAT_SET_INT
+        0x4F8678C02360C3D2ULL, // STAT_SET_FLOAT
+        0xF1D0B0CE940F620DULL, // STAT_SET_BOOL
+        0x1A43F9BE4B6AAB67ULL, // STAT_SET_STRING
+        0xA6D3C21763E25496ULL, // GET_PACKED_STAT_BOOL_CODE
+        0x03CFFD51CE515454ULL, // GET_PACKED_STAT_INT_CODE
+        0xA595AA1819B05EA0ULL, // SET_PACKED_STAT_BOOL_CODE
+        0x0F575D68F532124CULL  // SET_PACKED_STAT_INT_CODE
+    };
+
+    for (const auto expected : required) {
+        bool found = false;
+        for (const auto probe : GTA_Native_Manager::BootstrapProbeHashes) {
+            if (probe == expected) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            std::cerr << "Enhanced stat native is missing from the bootstrap probes\n";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool TestPackedStatState()
+{
+    auto& state = GTA_Packed_Stats_State::Instance();
+    state.Reset();
+
+    const auto batchId = state.RequestIntWrites({5, 5, -1, 6}, 42);
+    const auto batch = state.BatchSnapshot();
+    if (batch.batchId != batchId || batch.total != 2 ||
+        batch.valueType != GTA_Packed_Stat_Value_Type::Int) {
+        std::cerr << "Packed INT batch was not normalized correctly\n";
+        return false;
+    }
+
+    GTA_Packed_Stats_State::Command command{};
+    if (!state.Consume(command) || command.index != 5 ||
+        command.valueType != GTA_Packed_Stat_Value_Type::Int ||
+        command.value != 42) {
+        std::cerr << "Packed INT command transport is incorrect\n";
+        return false;
+    }
+    state.Complete(command, true, command.value);
+
+    if (!state.Consume(command) || command.index != 6) {
+        std::cerr << "Packed INT batch lost its second command\n";
+        return false;
+    }
+    state.Complete(command, true, command.value);
+
+    const auto record = state.Snapshot(6);
+    if (!record.known || record.failed ||
+        record.type != GTA_Packed_Stat_Value_Type::Int ||
+        record.intValue != 42) {
+        std::cerr << "Packed INT completion was not recorded\n";
+        return false;
+    }
+
+    state.Reset();
+    return true;
+}
+
 bool TestGoodBootstrapAndInvocation()
 {
     std::uintptr_t imageBase = 0;
@@ -307,6 +382,8 @@ int main()
 {
     if (!TestCallContextLayoutAndFrame() ||
         !TestRegistry() ||
+        !TestStatProbeHashes() ||
+        !TestPackedStatState() ||
         !TestGoodBootstrapAndInvocation() ||
         !TestBadBootstrapFailsClosed() ||
         !TestUnsupportedFingerprintFailsClosed()) {

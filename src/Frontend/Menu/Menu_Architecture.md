@@ -27,12 +27,12 @@ Frontend/Menu/
     Sessions/
     Players/
     Protections/
+  Debug/                   raw developer tools such as the regular/packed stat editor
   Lua/                     script manager/console/settings presentation
   Settings/
     Configs/
     Theme/
     Input/
-    Debug/
 ```
 
 ## Layer rule

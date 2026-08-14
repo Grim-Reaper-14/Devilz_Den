@@ -30,6 +30,7 @@ void Devils_Den_Menu::DrawNavigation()
         NavigationEntry{"       DEFENSE", Page::Defense, Supplemental::Page::None, Themes::Menu_Icon::Network},
         NavigationEntry{"       MISC", Page::Self, Supplemental::Page::Misc, Themes::Menu_Icon::World},
         NavigationEntry{"       RECOVERY", Page::Self, Supplemental::Page::Recovery, Themes::Menu_Icon::Settings},
+        NavigationEntry{"       DEBUG", Page::Self, Supplemental::Page::Debug, Themes::Menu_Icon::Settings},
         NavigationEntry{"       LUA", Page::Lua, Supplemental::Page::None, Themes::Menu_Icon::Lua},
         NavigationEntry{"       SETTINGS", Page::Settings, Supplemental::Page::None, Themes::Menu_Icon::Settings}
     };

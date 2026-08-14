@@ -6,7 +6,8 @@ enum class Page
 {
     None,
     Misc,
-    Recovery
+    Recovery,
+    Debug
 };
 
 inline Page SelectedPage = Page::None;

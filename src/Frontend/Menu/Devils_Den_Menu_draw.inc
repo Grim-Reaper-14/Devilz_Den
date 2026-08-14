@@ -1,5 +1,6 @@
 #include "Frontend/Menu/Menu_Appearance.hpp"
 #include "Frontend/Menu/Devils_Den_Menu_supplemental.hpp"
+#include "Frontend/Menu/Debug/Debug_Page.inc"
 #include "Frontend/Menu/Defense/Defense_Page.inc"
 #include "Frontend/Menu/Misc/Misc_Page.inc"
 #include "Frontend/Menu/Recovery/Recovery_Page.inc"
@@ -63,6 +64,9 @@ void Devils_Den_Menu::Draw(bool& open)
         else if (Supplemental::SelectedPage == Supplemental::Page::Recovery) {
             Recovery::DrawRecoveryPage();
         }
+        else if (Supplemental::SelectedPage == Supplemental::Page::Debug) {
+            Debug::DrawDebugPage();
+        }
         else {
             switch (m_page) {
             case Page::Self: Self::DrawSelfPage(); break;
@@ -100,6 +104,12 @@ void Devils_Den_Menu::Draw(bool& open)
             detailTitle = "RECOVERY";
             detailText = "Progression, unlock and collection status tools.";
             detailTag = "RECOVERY / PROGRESSION";
+            detailIcon = Themes::Menu_Icon::Settings;
+        }
+        else if (Supplemental::SelectedPage == Supplemental::Page::Debug) {
+            detailTitle = "DEBUG";
+            detailText = "Raw regular and packed stat inspection, editing and batch import tools.";
+            detailTag = "DEBUG / STAT EDITOR";
             detailIcon = Themes::Menu_Icon::Settings;
         }
         else {

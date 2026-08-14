@@ -2,7 +2,9 @@
 
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 
+#include <algorithm>
 #include <cerrno>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -15,10 +17,17 @@ namespace Devilz::Integrations::GTA5_Enhanced
 {
 namespace
 {
-constexpr GTA_Native_Hash StatGetInt = 0x767FBC2AC802EF3DULL;
-constexpr GTA_Native_Hash StatGetBool = 0x11B5E6D2AE73F48EULL;
+// Enhanced 1.73 native hashes, cross-checked against the current YimMenuV2
+// generated crossmap. Keep these in sync with GTA_Native_Manager's probes.
+constexpr GTA_Native_Hash StatGetInt = 0xDF7F16323520B858ULL;
+constexpr GTA_Native_Hash StatGetFloat = 0x2F0966A034F5ADC6ULL;
+constexpr GTA_Native_Hash StatGetBool = 0xF249567F2E83E093ULL;
+constexpr GTA_Native_Hash StatGetString = 0xCEA81DACD6DA3ADBULL;
 constexpr GTA_Native_Hash StatSetInt = 0x1164A75E490C27B6ULL;
+constexpr GTA_Native_Hash StatSetFloat = 0x4F8678C02360C3D2ULL;
 constexpr GTA_Native_Hash StatSetBool = 0xF1D0B0CE940F620DULL;
+constexpr GTA_Native_Hash StatSetString = 0x1A43F9BE4B6AAB67ULL;
+constexpr std::size_t MaxStatStringLength = 255;
 
 [[nodiscard]] char Lower(char value) noexcept
 {
@@ -69,7 +78,9 @@ struct NativeStatRead
     std::uint32_t hash = 0;
     GTA_Stat_Data::Type type = GTA_Stat_Data::Type::Int;
     std::int32_t intValue = 0;
+    float floatValue = 0.0F;
     bool boolValue = false;
+    std::string stringValue;
     std::string value;
 };
 
@@ -77,7 +88,7 @@ struct NativeStatRead
     GTA_Native_Manager& natives,
     std::uint32_t hash,
     GTA_Stat_Data::Type type,
-    NativeStatRead& result) noexcept
+    NativeStatRead& result)
 {
     result.hash = hash;
     result.type = type;
@@ -97,10 +108,32 @@ struct NativeStatRead
         result.value = result.boolValue ? "true" : "false";
         return true;
     }
+    if (type == GTA_Stat_Data::Type::Float) {
+        float value = 0.0F;
+        const auto read = natives.InvokeHash<bool>(StatGetFloat, hash, &value, -1);
+        if (!read.has_value() || !read.value() || !std::isfinite(value)) return false;
+        result.floatValue = value;
+        result.value = std::to_string(value);
+        return true;
+    }
+    if (type == GTA_Stat_Data::Type::String) {
+        const auto read = natives.InvokeHash<const char*>(StatGetString, hash, -1);
+        if (!read.has_value() || !read.value()) return false;
+
+        std::size_t length = 0;
+        while (length < MaxStatStringLength && read.value()[length] != '\0')
+            ++length;
+        if (length == MaxStatStringLength && read.value()[length] != '\0')
+            return false;
+
+        result.stringValue.assign(read.value(), length);
+        result.value = result.stringValue;
+        return true;
+    }
     return false;
 }
 
-[[nodiscard]] bool TryReadHash(GTA_Native_Manager& natives, std::string name, NativeStatRead& result) noexcept
+[[nodiscard]] bool TryReadHash(GTA_Native_Manager& natives, std::string name, NativeStatRead& result)
 {
     const auto hash = Joaat(name);
     if (!hash) return false;
@@ -113,8 +146,22 @@ struct NativeStatRead
     }
 
     candidate = {};
-    candidate.normalizedName = std::move(name);
+    candidate.normalizedName = name;
+    if (ReadExactType(natives, hash, GTA_Stat_Data::Type::Float, candidate)) {
+        result = std::move(candidate);
+        return true;
+    }
+
+    candidate = {};
+    candidate.normalizedName = name;
     if (ReadExactType(natives, hash, GTA_Stat_Data::Type::Bool, candidate)) {
+        result = std::move(candidate);
+        return true;
+    }
+
+    candidate = {};
+    candidate.normalizedName = name;
+    if (ReadExactType(natives, hash, GTA_Stat_Data::Type::String, candidate)) {
         result = std::move(candidate);
         return true;
     }
@@ -190,6 +237,25 @@ struct NativeStatRead
     return false;
 }
 
+[[nodiscard]] bool ParseFloat(std::string_view text, float& value) noexcept
+{
+    std::string copy(Trim(text));
+    if (copy.empty()) return false;
+    char* end = nullptr;
+    errno = 0;
+    const auto parsed = std::strtof(copy.c_str(), &end);
+    if (errno == ERANGE || end != copy.c_str() + copy.size() || !std::isfinite(parsed))
+        return false;
+    value = parsed;
+    return true;
+}
+
+[[nodiscard]] bool FloatsMatch(float left, float right) noexcept
+{
+    const auto scale = (std::max)(1.0F, (std::max)(std::fabs(left), std::fabs(right)));
+    return std::fabs(left - right) <= std::numeric_limits<float>::epsilon() * 4.0F * scale;
+}
+
 [[nodiscard]] GTA_Stat_Snapshot Execute(GTA_Native_Manager& natives, const GTA_Stats_State::Command& command)
 {
     GTA_Stat_Snapshot snapshot{};
@@ -213,7 +279,10 @@ struct NativeStatRead
     snapshot.hash = current.hash;
     snapshot.type = current.type;
     snapshot.typeKnown = true;
-    snapshot.writeSupported = current.type == GTA_Stat_Data::Type::Int || current.type == GTA_Stat_Data::Type::Bool;
+    snapshot.writeSupported = current.type == GTA_Stat_Data::Type::Int ||
+        current.type == GTA_Stat_Data::Type::Float ||
+        current.type == GTA_Stat_Data::Type::Bool ||
+        current.type == GTA_Stat_Data::Type::String;
     snapshot.value = current.value;
 
     if (command.kind == GTA_Stats_State::Command_Kind::Read) {
@@ -224,7 +293,9 @@ struct NativeStatRead
 
     bool dispatched = false;
     std::int32_t requestedInt = 0;
+    float requestedFloat = 0.0F;
     bool requestedBool = false;
+    std::string requestedString;
     if (current.type == GTA_Stat_Data::Type::Int) {
         if (!ParseInt(command.value, requestedInt)) {
             snapshot.status = GTA_Stat_Request_Status::InvalidValue;
@@ -232,6 +303,13 @@ struct NativeStatRead
             return snapshot;
         }
         dispatched = natives.InvokeHash<void>(StatSetInt, current.hash, requestedInt, true);
+    } else if (current.type == GTA_Stat_Data::Type::Float) {
+        if (!ParseFloat(command.value, requestedFloat)) {
+            snapshot.status = GTA_Stat_Request_Status::InvalidValue;
+            snapshot.detail = "Expected a finite floating-point value";
+            return snapshot;
+        }
+        dispatched = natives.InvokeHash<void>(StatSetFloat, current.hash, requestedFloat, true);
     } else if (current.type == GTA_Stat_Data::Type::Bool) {
         if (!ParseBool(command.value, requestedBool)) {
             snapshot.status = GTA_Stat_Request_Status::InvalidValue;
@@ -239,9 +317,21 @@ struct NativeStatRead
             return snapshot;
         }
         dispatched = natives.InvokeHash<void>(StatSetBool, current.hash, requestedBool, true);
+    } else if (current.type == GTA_Stat_Data::Type::String) {
+        if (command.value.size() > MaxStatStringLength) {
+            snapshot.status = GTA_Stat_Request_Status::InvalidValue;
+            snapshot.detail = "String values are limited to 255 characters";
+            return snapshot;
+        }
+        requestedString = command.value;
+        dispatched = natives.InvokeHash<void>(
+            StatSetString,
+            current.hash,
+            requestedString.c_str(),
+            true);
     } else {
         snapshot.status = GTA_Stat_Request_Status::UnsupportedType;
-        snapshot.detail = "Native stat editor currently supports INT and BOOL writes";
+        snapshot.detail = "Native stat editor currently supports INT, FLOAT, BOOL, and STRING writes";
         return snapshot;
     }
 
@@ -259,9 +349,23 @@ struct NativeStatRead
         return snapshot;
     }
 
-    const bool matched = current.type == GTA_Stat_Data::Type::Int
-        ? verified.intValue == requestedInt
-        : verified.boolValue == requestedBool;
+    bool matched = false;
+    switch (current.type) {
+    case GTA_Stat_Data::Type::Int:
+        matched = verified.intValue == requestedInt;
+        break;
+    case GTA_Stat_Data::Type::Float:
+        matched = FloatsMatch(verified.floatValue, requestedFloat);
+        break;
+    case GTA_Stat_Data::Type::Bool:
+        matched = verified.boolValue == requestedBool;
+        break;
+    case GTA_Stat_Data::Type::String:
+        matched = verified.stringValue == requestedString;
+        break;
+    default:
+        break;
+    }
     snapshot.value = verified.value;
     if (!matched) {
         snapshot.status = GTA_Stat_Request_Status::Failed;

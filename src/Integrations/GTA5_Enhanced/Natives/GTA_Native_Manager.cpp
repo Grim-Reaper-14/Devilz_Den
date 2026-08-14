@@ -231,6 +231,8 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
 
 void GTA_Native_Manager::Reset() noexcept
 {
+    ResetStatsExtension();
+    GTA_Packed_Stats_State::Instance().Reset();
     ResetVehicleLSCRestrictions();
 
     if (m_ready) {

@@ -51,7 +51,7 @@ public:
     // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self,
     // Weapons, Garage, World, Outfit Editor, Stats, and Unlocks use the final
     // handlers for their game-thread actions.
-    static constexpr std::array<GTA_Native_Hash, 78> BootstrapProbeHashes{
+    static constexpr std::array<GTA_Native_Hash, 82> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -122,14 +122,18 @@ public:
         0x1D77F90D87ACD2BAULL, // GET_NUMBER_OF_PED_PROP_TEXTURE_VARIATIONS
         0x7F08C4791E6D6969ULL, // SET_PED_PROP_INDEX
         0x09397806857F5DFBULL, // CLEAR_PED_PROP
-        0x767FBC2AC802EF3DULL, // STAT_GET_INT
-        0x11B5E6D2AE73F48EULL, // STAT_GET_BOOL
+        0xDF7F16323520B858ULL, // STAT_GET_INT
+        0x2F0966A034F5ADC6ULL, // STAT_GET_FLOAT
+        0xF249567F2E83E093ULL, // STAT_GET_BOOL
+        0xCEA81DACD6DA3ADBULL, // STAT_GET_STRING
         0x1164A75E490C27B6ULL, // STAT_SET_INT
         0x4F8678C02360C3D2ULL, // STAT_SET_FLOAT
         0xF1D0B0CE940F620DULL, // STAT_SET_BOOL
-        0xFE0BEB152470B0B8ULL, // STAT_SET_STRING
+        0x1A43F9BE4B6AAB67ULL, // STAT_SET_STRING
         0xA6D3C21763E25496ULL, // GET_PACKED_STAT_BOOL_CODE
-        0xA595AA1819B05EA0ULL  // SET_PACKED_STAT_BOOL_CODE
+        0x03CFFD51CE515454ULL, // GET_PACKED_STAT_INT_CODE
+        0xA595AA1819B05EA0ULL, // SET_PACKED_STAT_BOOL_CODE
+        0x0F575D68F532124CULL  // SET_PACKED_STAT_INT_CODE
     };
 
     [[nodiscard]] GTA_Native_Manager_Status Initialize(
@@ -209,7 +213,9 @@ private:
     void DrainPackedStatsQueue() noexcept
     {
         constexpr GTA_Native_Hash GetPackedStatBoolCode = 0xA6D3C21763E25496ULL;
+        constexpr GTA_Native_Hash GetPackedStatIntCode = 0x03CFFD51CE515454ULL;
         constexpr GTA_Native_Hash SetPackedStatBoolCode = 0xA595AA1819B05EA0ULL;
+        constexpr GTA_Native_Hash SetPackedStatIntCode = 0x0F575D68F532124CULL;
         constexpr std::size_t CommandsPerTick = 8;
 
         auto& state = GTA_Packed_Stats_State::Instance();
@@ -219,19 +225,33 @@ private:
                 break;
 
             if (command.kind == GTA_Packed_Stats_State::Command_Kind::Read) {
-                const auto value = InvokeHandler<bool>(
-                    Find(GetPackedStatBoolCode),
-                    command.index,
-                    -1);
-                state.Complete(command, value.has_value(), value.value_or(false));
+                if (command.valueType == GTA_Packed_Stat_Value_Type::Bool) {
+                    const auto value = InvokeHandler<bool>(
+                        Find(GetPackedStatBoolCode),
+                        command.index,
+                        -1);
+                    state.Complete(command, value.has_value(), value.value_or(false) ? 1 : 0);
+                } else {
+                    const auto value = InvokeHandler<std::int32_t>(
+                        Find(GetPackedStatIntCode),
+                        command.index,
+                        -1);
+                    state.Complete(command, value.has_value(), value.value_or(0));
+                }
                 continue;
             }
 
-            const bool success = InvokeHandler<void>(
-                Find(SetPackedStatBoolCode),
-                command.index,
-                command.value,
-                -1);
+            const bool success = command.valueType == GTA_Packed_Stat_Value_Type::Bool
+                ? InvokeHandler<void>(
+                    Find(SetPackedStatBoolCode),
+                    command.index,
+                    command.value != 0,
+                    -1)
+                : InvokeHandler<void>(
+                    Find(SetPackedStatIntCode),
+                    command.index,
+                    command.value,
+                    -1);
             state.Complete(command, success, command.value);
         }
     }
