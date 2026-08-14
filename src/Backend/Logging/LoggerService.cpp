@@ -1,5 +1,6 @@
 #include "LoggerService.hpp"
 
+#include <algorithm>
 #include <utility>
 
 namespace Devilz::Backend
@@ -44,6 +45,45 @@ void LoggerService::Flush()
     for (auto& sink : m_sinks) sink->Flush();
 }
 
+std::size_t LoggerService::PendingRecordCount() const noexcept
+{
+    std::scoped_lock lock(m_queueMutex);
+    return m_queue.size();
+}
+
+bool LoggerService::Enqueue(LogRecord record)
+{
+    {
+        std::scoped_lock lock(m_queueMutex);
+        if (!m_accepting)
+            return false;
+
+        if (m_queue.size() >= MaxQueuedRecords) {
+            if (record.level < LogLevel::Warning) {
+                m_droppedRecords.fetch_add(1, std::memory_order_relaxed);
+                return false;
+            }
+
+            const auto lowSeverity = std::find_if(
+                m_queue.begin(),
+                m_queue.end(),
+                [](const LogRecord& pending) { return pending.level < LogLevel::Warning; });
+
+            if (lowSeverity != m_queue.end())
+                m_queue.erase(lowSeverity);
+            else
+                m_queue.pop_front();
+
+            m_droppedRecords.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        m_queue.push_back(std::move(record));
+    }
+
+    m_cv.notify_one();
+    return true;
+}
+
 void LoggerService::Log(LogLevel level, std::string message, std::string service, std::source_location source)
 {
     LogRecord record;
@@ -55,12 +95,7 @@ void LoggerService::Log(LogLevel level, std::string message, std::string service
     record.threadId = std::this_thread::get_id();
     record.source = source;
 
-    {
-        std::scoped_lock lock(m_queueMutex);
-        if (!m_accepting) return;
-        m_queue.push_back(std::move(record));
-    }
-    m_cv.notify_one();
+    (void)Enqueue(std::move(record));
 }
 
 void LoggerService::LogError(LogLevel level, const Error& error, std::string service, std::source_location source)
@@ -75,12 +110,7 @@ void LoggerService::LogError(LogLevel level, const Error& error, std::string ser
     record.source = source;
     record.error = error;
 
-    {
-        std::scoped_lock lock(m_queueMutex);
-        if (!m_accepting) return;
-        m_queue.push_back(std::move(record));
-    }
-    m_cv.notify_one();
+    (void)Enqueue(std::move(record));
 }
 
 void LoggerService::Worker(std::stop_token stopToken)
