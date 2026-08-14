@@ -28,6 +28,9 @@ public:
 
     Devilz::Backend::Result<void> Configure(std::vector<Block> blocks,
                                             std::uint64_t buildFingerprint);
+    Devilz::Backend::Result<void> ConfigureFromTable(
+        Devilz::Backend::Pointer table,
+        std::uint64_t buildFingerprint);
     void Clear();
 
     [[nodiscard]] Script_Global Get(std::uint32_t index) noexcept { return Script_Global(this, index); }
