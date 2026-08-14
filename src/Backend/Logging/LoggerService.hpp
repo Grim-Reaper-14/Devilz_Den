@@ -35,6 +35,10 @@ public:
              std::source_location source = std::source_location::current());
     void LogError(LogLevel level, const Error& error, std::string service = {},
                   std::source_location source = std::source_location::current());
+    void LogWithContext(LogLevel level, std::string message, LogContext context,
+                        std::source_location source = std::source_location::current());
+    void LogErrorWithContext(LogLevel level, const Error& error, LogContext context,
+                             std::source_location source = std::source_location::current());
 
     [[nodiscard]] std::size_t PendingRecordCount() const noexcept;
     [[nodiscard]] std::uint64_t DroppedRecordCount() const noexcept

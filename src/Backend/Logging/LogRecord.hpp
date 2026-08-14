@@ -13,6 +13,14 @@ namespace Devilz::Backend
 {
 enum class LogLevel : std::uint8_t { Trace, Debug, Info, Notice, Warning, Error, Critical, Fatal };
 
+struct LogContext
+{
+    std::string service;
+    std::string threadName;
+    std::uint64_t taskId = 0;
+    std::uint64_t correlationId = 0;
+};
+
 struct LogRecord
 {
     std::uint64_t sequence = 0;

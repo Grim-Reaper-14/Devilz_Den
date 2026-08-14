@@ -86,13 +86,27 @@ bool LoggerService::Enqueue(LogRecord record)
 
 void LoggerService::Log(LogLevel level, std::string message, std::string service, std::source_location source)
 {
+    LogContext context;
+    context.service = std::move(service);
+    LogWithContext(level, std::move(message), std::move(context), source);
+}
+
+void LoggerService::LogWithContext(
+    LogLevel level,
+    std::string message,
+    LogContext context,
+    std::source_location source)
+{
     LogRecord record;
     record.sequence = ++m_sequence;
     record.level = level;
     record.timestamp = std::chrono::system_clock::now();
     record.message = std::move(message);
-    record.service = std::move(service);
+    record.service = std::move(context.service);
+    record.threadName = std::move(context.threadName);
     record.threadId = std::this_thread::get_id();
+    record.taskId = context.taskId;
+    record.correlationId = context.correlationId;
     record.source = source;
 
     (void)Enqueue(std::move(record));
@@ -100,13 +114,27 @@ void LoggerService::Log(LogLevel level, std::string message, std::string service
 
 void LoggerService::LogError(LogLevel level, const Error& error, std::string service, std::source_location source)
 {
+    LogContext context;
+    context.service = std::move(service);
+    LogErrorWithContext(level, error, std::move(context), source);
+}
+
+void LoggerService::LogErrorWithContext(
+    LogLevel level,
+    const Error& error,
+    LogContext context,
+    std::source_location source)
+{
     LogRecord record;
     record.sequence = ++m_sequence;
     record.level = level;
     record.timestamp = std::chrono::system_clock::now();
     record.message = error.Message();
-    record.service = std::move(service);
+    record.service = std::move(context.service);
+    record.threadName = std::move(context.threadName);
     record.threadId = std::this_thread::get_id();
+    record.taskId = context.taskId;
+    record.correlationId = context.correlationId;
     record.source = source;
     record.error = error;
 
