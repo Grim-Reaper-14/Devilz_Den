@@ -125,6 +125,56 @@ struct GTA_Nightclub_Action_Command
     int defendMissionIndex = -1;
 };
 
+enum class GTA_Resupply_Target : std::uint8_t
+{
+    McBusinessSlot0 = 0,
+    McBusinessSlot1 = 1,
+    McBusinessSlot2 = 2,
+    McBusinessSlot3 = 3,
+    McBusinessSlot4 = 4,
+    Bunker = 5,
+    AcidLab = 6,
+    Count = 7
+};
+
+inline constexpr std::size_t GTA_Resupply_Target_Count =
+    static_cast<std::size_t>(GTA_Resupply_Target::Count);
+
+enum class GTA_Resupply_Action_Kind : std::uint8_t
+{
+    None,
+    ResupplyTarget,
+    ResupplyAll
+};
+
+enum class GTA_Resupply_Action_Status : std::uint8_t
+{
+    Idle,
+    Queued,
+    Succeeded,
+    RuntimeUnavailable,
+    UnsupportedBuild,
+    InvalidTarget,
+    Failed
+};
+
+struct GTA_Resupply_Action_Snapshot
+{
+    std::uint64_t revision = 0;
+    std::uint64_t requestId = 0;
+    GTA_Resupply_Action_Kind kind = GTA_Resupply_Action_Kind::None;
+    GTA_Resupply_Target target = GTA_Resupply_Target::McBusinessSlot0;
+    GTA_Resupply_Action_Status status = GTA_Resupply_Action_Status::Idle;
+    std::string detail;
+};
+
+struct GTA_Resupply_Action_Command
+{
+    std::uint64_t id = 0;
+    GTA_Resupply_Action_Kind kind = GTA_Resupply_Action_Kind::None;
+    GTA_Resupply_Target target = GTA_Resupply_Target::McBusinessSlot0;
+};
+
 class GTA_Native_Manager;
 
 class GTA_Business_State final
@@ -149,6 +199,12 @@ public:
     {
         std::scoped_lock lock(m_mutex);
         return m_nightclubAction;
+    }
+
+    [[nodiscard]] GTA_Resupply_Action_Snapshot ResupplyAction() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_resupplyAction;
     }
 
     [[nodiscard]] bool RequestNightclubCoreValues(
@@ -237,6 +293,21 @@ public:
         return QueueNightclubAction(std::move(command));
     }
 
+    [[nodiscard]] bool RequestInstantResupply(GTA_Resupply_Target target)
+    {
+        GTA_Resupply_Action_Command command{};
+        command.kind = GTA_Resupply_Action_Kind::ResupplyTarget;
+        command.target = target;
+        return QueueResupplyAction(std::move(command));
+    }
+
+    [[nodiscard]] bool RequestInstantResupplyAll()
+    {
+        GTA_Resupply_Action_Command command{};
+        command.kind = GTA_Resupply_Action_Kind::ResupplyAll;
+        return QueueResupplyAction(std::move(command));
+    }
+
     void PublishNightclub(GTA_Nightclub_Snapshot snapshot)
     {
         std::scoped_lock lock(m_mutex);
@@ -250,6 +321,9 @@ public:
         m_pendingNightclubAction.reset();
         m_nightclubAction = {};
         m_nextNightclubActionId = 1;
+        m_pendingResupplyAction.reset();
+        m_resupplyAction = {};
+        m_nextResupplyActionId = 1;
     }
 
 private:
@@ -299,6 +373,51 @@ private:
         m_nightclubAction.detail = std::move(detail);
     }
 
+    [[nodiscard]] bool QueueResupplyAction(GTA_Resupply_Action_Command command)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_pendingResupplyAction ||
+            m_resupplyAction.status == GTA_Resupply_Action_Status::Queued) {
+            return false;
+        }
+
+        command.id = m_nextResupplyActionId++;
+        m_pendingResupplyAction = std::move(command);
+
+        ++m_resupplyAction.revision;
+        m_resupplyAction.requestId = m_pendingResupplyAction->id;
+        m_resupplyAction.kind = m_pendingResupplyAction->kind;
+        m_resupplyAction.target = m_pendingResupplyAction->target;
+        m_resupplyAction.status = GTA_Resupply_Action_Status::Queued;
+        m_resupplyAction.detail = "Queued for the GTA game thread.";
+        return true;
+    }
+
+    [[nodiscard]] bool ConsumeResupplyAction(GTA_Resupply_Action_Command& command)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_pendingResupplyAction)
+            return false;
+
+        command = std::move(*m_pendingResupplyAction);
+        m_pendingResupplyAction.reset();
+        return true;
+    }
+
+    void CompleteResupplyAction(
+        const GTA_Resupply_Action_Command& command,
+        GTA_Resupply_Action_Status status,
+        std::string detail)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_resupplyAction.requestId != command.id)
+            return;
+
+        ++m_resupplyAction.revision;
+        m_resupplyAction.status = status;
+        m_resupplyAction.detail = std::move(detail);
+    }
+
     friend void TickBusinessExtension(GTA_Native_Manager& natives) noexcept;
 
     mutable std::mutex m_mutex;
@@ -306,9 +425,15 @@ private:
     std::optional<GTA_Nightclub_Action_Command> m_pendingNightclubAction;
     GTA_Nightclub_Action_Snapshot m_nightclubAction{};
     std::uint64_t m_nextNightclubActionId = 1;
+    std::optional<GTA_Resupply_Action_Command> m_pendingResupplyAction;
+    GTA_Resupply_Action_Snapshot m_resupplyAction{};
+    std::uint64_t m_nextResupplyActionId = 1;
 };
 
 [[nodiscard]] const char* GTA_Nightclub_Good_Name(GTA_Nightclub_Good good) noexcept;
 [[nodiscard]] const char* GTA_Nightclub_Action_Name(GTA_Nightclub_Action_Kind kind) noexcept;
 [[nodiscard]] const char* GTA_Nightclub_Action_Status_Name(GTA_Nightclub_Action_Status status) noexcept;
+[[nodiscard]] const char* GTA_Resupply_Target_Name(GTA_Resupply_Target target) noexcept;
+[[nodiscard]] const char* GTA_Resupply_Action_Name(GTA_Resupply_Action_Kind kind) noexcept;
+[[nodiscard]] const char* GTA_Resupply_Action_Status_Name(GTA_Resupply_Action_Status status) noexcept;
 }

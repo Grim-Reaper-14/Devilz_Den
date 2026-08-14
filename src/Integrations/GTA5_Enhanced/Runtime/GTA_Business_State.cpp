@@ -47,4 +47,41 @@ const char* GTA_Nightclub_Action_Status_Name(GTA_Nightclub_Action_Status status)
     default: return "UNKNOWN";
     }
 }
+
+const char* GTA_Resupply_Target_Name(GTA_Resupply_Target target) noexcept
+{
+    switch (target) {
+    case GTA_Resupply_Target::McBusinessSlot0: return "MC business slot 0";
+    case GTA_Resupply_Target::McBusinessSlot1: return "MC business slot 1";
+    case GTA_Resupply_Target::McBusinessSlot2: return "MC business slot 2";
+    case GTA_Resupply_Target::McBusinessSlot3: return "MC business slot 3";
+    case GTA_Resupply_Target::McBusinessSlot4: return "MC business slot 4";
+    case GTA_Resupply_Target::Bunker: return "Bunker";
+    case GTA_Resupply_Target::AcidLab: return "Acid Lab";
+    default: return "Unknown business";
+    }
+}
+
+const char* GTA_Resupply_Action_Name(GTA_Resupply_Action_Kind kind) noexcept
+{
+    switch (kind) {
+    case GTA_Resupply_Action_Kind::ResupplyTarget: return "Instant resupply";
+    case GTA_Resupply_Action_Kind::ResupplyAll: return "Instant resupply all";
+    default: return "Resupply action";
+    }
+}
+
+const char* GTA_Resupply_Action_Status_Name(GTA_Resupply_Action_Status status) noexcept
+{
+    switch (status) {
+    case GTA_Resupply_Action_Status::Idle: return "IDLE";
+    case GTA_Resupply_Action_Status::Queued: return "QUEUED";
+    case GTA_Resupply_Action_Status::Succeeded: return "SUCCEEDED";
+    case GTA_Resupply_Action_Status::RuntimeUnavailable: return "RUNTIME UNAVAILABLE";
+    case GTA_Resupply_Action_Status::UnsupportedBuild: return "UNSUPPORTED BUILD";
+    case GTA_Resupply_Action_Status::InvalidTarget: return "INVALID TARGET";
+    case GTA_Resupply_Action_Status::Failed: return "FAILED";
+    default: return "UNKNOWN";
+    }
+}
 }

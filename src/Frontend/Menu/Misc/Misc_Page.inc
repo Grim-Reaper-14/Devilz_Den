@@ -25,6 +25,14 @@ using Integrations::GTA5_Enhanced::GTA_Nightclub_Good_Name;
 using Integrations::GTA5_Enhanced::GTA_Nightclub_Safe_Capacity;
 using Integrations::GTA5_Enhanced::GTA_Nightclub_Sale_Values;
 using Integrations::GTA5_Enhanced::GTA_Nightclub_Snapshot;
+using Integrations::GTA5_Enhanced::GTA_Resupply_Action_Kind;
+using Integrations::GTA5_Enhanced::GTA_Resupply_Action_Name;
+using Integrations::GTA5_Enhanced::GTA_Resupply_Action_Snapshot;
+using Integrations::GTA5_Enhanced::GTA_Resupply_Action_Status;
+using Integrations::GTA5_Enhanced::GTA_Resupply_Action_Status_Name;
+using Integrations::GTA5_Enhanced::GTA_Resupply_Target;
+using Integrations::GTA5_Enhanced::GTA_Resupply_Target_Count;
+using Integrations::GTA5_Enhanced::GTA_Resupply_Target_Name;
 
 struct NightclubEditorState
 {
@@ -264,6 +272,33 @@ void DrawNightclubActionStatus(const GTA_Nightclub_Action_Snapshot& action)
         "[%s] %s",
         GTA_Nightclub_Action_Status_Name(action.status),
         GTA_Nightclub_Action_Name(action.kind));
+    if (!action.detail.empty())
+        ImGui::TextWrapped("%s", action.detail.c_str());
+    ImGui::Spacing();
+}
+
+void DrawResupplyActionStatus(const GTA_Resupply_Action_Snapshot& action)
+{
+    if (action.status == GTA_Resupply_Action_Status::Idle)
+        return;
+
+    ImVec4 color{0.90F, 0.58F, 0.18F, 1.0F};
+    if (action.status == GTA_Resupply_Action_Status::Succeeded)
+        color = ImVec4{0.42F, 0.78F, 0.42F, 1.0F};
+    else if (action.status != GTA_Resupply_Action_Status::Queued)
+        color = ImVec4{0.92F, 0.32F, 0.28F, 1.0F};
+
+    ImGui::TextColored(
+        color,
+        "[%s] %s",
+        GTA_Resupply_Action_Status_Name(action.status),
+        GTA_Resupply_Action_Name(action.kind));
+
+    if (action.kind == GTA_Resupply_Action_Kind::ResupplyTarget) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("- %s", GTA_Resupply_Target_Name(action.target));
+    }
+
     if (!action.detail.empty())
         ImGui::TextWrapped("%s", action.detail.c_str());
     ImGui::Spacing();
@@ -554,6 +589,78 @@ void DrawNightclubTunables(const GTA_Nightclub_Snapshot& nightclub)
         ImGui::EndTable();
     }
 }
+
+void DrawInstantResupplyControls(
+    const GTA_Nightclub_Snapshot& runtime,
+    const GTA_Resupply_Action_Snapshot& action)
+{
+    auto& theme = Themes::Menu_Theme_Manager::Instance();
+    const auto& palette = theme.Palette();
+    auto& business = GTA_Business_State::Instance();
+
+    ImGui::TextColored(palette.bronze, "INSTANT RESUPPLY");
+    DrawDivider();
+    ImGui::TextWrapped(
+        "Each action writes trigger value 1 to the Enhanced 1.73 freemode business "
+        "command block (Global_1673820 + 1 through + 7). The game consumes the trigger.");
+    ImGui::TextDisabled(
+        "Slots 0-4 are MC factory slots and can contain Cash, Coke, Weed, Meth, or Documents.");
+    ImGui::TextDisabled("Slot 5 is the Bunker; slot 6 is the Acid Lab.");
+    ImGui::Spacing();
+
+    DrawResupplyActionStatus(action);
+
+    if (!runtime.runtimeReady) {
+        ImGui::TextColored(
+            ImVec4{0.90F, 0.58F, 0.18F, 1.0F},
+            "Business runtime unavailable");
+        ImGui::TextWrapped("%s", runtime.detail.c_str());
+        return;
+    }
+
+    const bool actionQueued = action.status == GTA_Resupply_Action_Status::Queued;
+    if (actionQueued)
+        ImGui::TextDisabled("Waiting for the GTA game thread...");
+
+    ImGui::BeginDisabled(actionQueued);
+
+    constexpr ImGuiTableFlags tableFlags =
+        ImGuiTableFlags_Borders |
+        ImGuiTableFlags_RowBg |
+        ImGuiTableFlags_SizingStretchProp;
+
+    if (ImGui::BeginTable("##InstantResupplyTargets", 3, tableFlags)) {
+        ImGui::TableSetupColumn("TARGET");
+        ImGui::TableSetupColumn("GLOBAL");
+        ImGui::TableSetupColumn("ACTION");
+        ImGui::TableHeadersRow();
+
+        for (std::size_t index = 0; index < GTA_Resupply_Target_Count; ++index) {
+            const auto target = static_cast<GTA_Resupply_Target>(index);
+            ImGui::PushID(static_cast<int>(index));
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(GTA_Resupply_Target_Name(target));
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("Global_1673820 + %zu", index + 1U);
+            ImGui::TableSetColumnIndex(2);
+            if (ImGui::Button("RESUPPLY", ImVec2{130.0F, 0.0F}))
+                (void)business.RequestInstantResupply(target);
+            ImGui::PopID();
+        }
+
+        ImGui::EndTable();
+    }
+
+    ImGui::Spacing();
+    if (ImGui::Button("RESUPPLY ALL", ImVec2{180.0F, 34.0F}))
+        (void)business.RequestInstantResupplyAll();
+
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    ImGui::TextDisabled("Only owned, set-up businesses can consume a resupply trigger.");
+}
 }
 
 void DrawMiscPage()
@@ -563,6 +670,7 @@ void DrawMiscPage()
     auto& business = GTA_Business_State::Instance();
     const auto nightclub = business.Nightclub();
     const auto action = business.NightclubAction();
+    const auto resupplyAction = business.ResupplyAction();
     auto& editor = EditorState();
 
     if (nightclub.runtimeReady && nightclub.owned &&
@@ -589,7 +697,7 @@ void DrawMiscPage()
     }
 
     ImGui::TextWrapped(
-        "Nightclub data and queued write actions are provided by the GTA runtime backend. "
+        "Business data and queued write actions are provided by the GTA runtime backend. "
         "The registered globals target Enhanced 1.73 / b1158.13 only.");
     ImGui::Spacing();
 
@@ -602,6 +710,11 @@ void DrawMiscPage()
         if (ImGui::BeginTabItem("NIGHTCLUB")) {
             DrawNightclubGoods(nightclub);
             DrawNightclubControls(nightclub, action, editor);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("RESUPPLY")) {
+            DrawInstantResupplyControls(nightclub, resupplyAction);
             ImGui::EndTabItem();
         }
 

@@ -28,6 +28,9 @@ constexpr std::uint32_t GpbdFmBase = 1845347U;
 constexpr std::uint32_t GpbdFmPlayerStride = 884U;
 constexpr std::uint32_t GpbdFm3Base = 1893070U;
 constexpr std::uint32_t GpbdFm3PlayerStride = 615U;
+// Global_1673820 + 1..7: five MC factory slots, Bunker, then Acid Lab.
+constexpr std::uint32_t FreemodeBusinessBase = 1673820U;
+constexpr int InstantResupplyTrigger = 1;
 constexpr std::uint32_t PropertyDataOffset = 260U;
 constexpr std::uint32_t BusinessHubOffset = 321U;
 constexpr std::uint32_t ProductStocksOffset = BusinessHubOffset + 9U;
@@ -91,6 +94,12 @@ BusinessRuntime g_runtime{};
 struct NightclubActionResult
 {
     GTA_Nightclub_Action_Status status = GTA_Nightclub_Action_Status::Failed;
+    std::string detail;
+};
+
+struct ResupplyActionResult
+{
+    GTA_Resupply_Action_Status status = GTA_Resupply_Action_Status::Failed;
     std::string detail;
 };
 
@@ -557,6 +566,71 @@ NightclubActionResult ExecuteNightclubAction(
             "The requested Nightclub action is invalid."};
     }
 }
+
+ResupplyActionResult ExecuteResupplyAction(
+    const GTA_Resupply_Action_Command& command)
+{
+    auto* globals = g_runtime.globals;
+    if (!globals || !globals->Ready()) {
+        return {
+            GTA_Resupply_Action_Status::RuntimeUnavailable,
+            "Script globals are not configured."};
+    }
+
+    if (g_runtime.buildFingerprint != SupportedFingerprint) {
+        return {
+            GTA_Resupply_Action_Status::UnsupportedBuild,
+            "Instant-resupply globals are not registered for this GTA build."};
+    }
+
+    const auto writeTarget = [globals](GTA_Resupply_Target target) {
+        const auto index = static_cast<std::uint32_t>(target);
+        return WriteGlobalVerified(
+            *globals,
+            FreemodeBusinessBase + 1U + index,
+            InstantResupplyTrigger);
+    };
+
+    switch (command.kind) {
+    case GTA_Resupply_Action_Kind::ResupplyTarget: {
+        const auto index = static_cast<std::size_t>(command.target);
+        if (index >= GTA_Resupply_Target_Count) {
+            return {
+                GTA_Resupply_Action_Status::InvalidTarget,
+                "The requested resupply target is invalid."};
+        }
+
+        if (!writeTarget(command.target)) {
+            return {
+                GTA_Resupply_Action_Status::Failed,
+                "The instant-resupply trigger failed readback verification."};
+        }
+
+        return {
+            GTA_Resupply_Action_Status::Succeeded,
+            std::string{"Instant resupply triggered for "} +
+                GTA_Resupply_Target_Name(command.target) + "."};
+    }
+
+    case GTA_Resupply_Action_Kind::ResupplyAll:
+        for (std::size_t index = 0; index < GTA_Resupply_Target_Count; ++index) {
+            if (!writeTarget(static_cast<GTA_Resupply_Target>(index))) {
+                return {
+                    GTA_Resupply_Action_Status::Failed,
+                    "One or more instant-resupply triggers failed readback verification."};
+            }
+        }
+
+        return {
+            GTA_Resupply_Action_Status::Succeeded,
+            "Instant resupply triggered for all five MC slots, the Bunker, and the Acid Lab."};
+
+    default:
+        return {
+            GTA_Resupply_Action_Status::InvalidTarget,
+            "The requested resupply action is invalid."};
+    }
+}
 }
 
 void ConfigureBusinessExtension(
@@ -578,16 +652,32 @@ void ResetBusinessExtension() noexcept
 void TickBusinessExtension(GTA_Native_Manager& natives) noexcept
 {
     auto& state = GTA_Business_State::Instance();
-    GTA_Nightclub_Action_Command command{};
-    const bool actionProcessed = state.ConsumeNightclubAction(command);
+    GTA_Nightclub_Action_Command nightclubCommand{};
+    const bool nightclubActionProcessed =
+        state.ConsumeNightclubAction(nightclubCommand);
 
-    if (actionProcessed) {
-        auto result = ExecuteNightclubAction(natives, command);
+    if (nightclubActionProcessed) {
+        auto result = ExecuteNightclubAction(natives, nightclubCommand);
         state.CompleteNightclubAction(
-            command,
+            nightclubCommand,
             result.status,
             std::move(result.detail));
     }
+
+    GTA_Resupply_Action_Command resupplyCommand{};
+    const bool resupplyActionProcessed =
+        state.ConsumeResupplyAction(resupplyCommand);
+
+    if (resupplyActionProcessed) {
+        auto result = ExecuteResupplyAction(resupplyCommand);
+        state.CompleteResupplyAction(
+            resupplyCommand,
+            result.status,
+            std::move(result.detail));
+    }
+
+    const bool actionProcessed =
+        nightclubActionProcessed || resupplyActionProcessed;
 
     if (!g_runtime.globals)
         return;
