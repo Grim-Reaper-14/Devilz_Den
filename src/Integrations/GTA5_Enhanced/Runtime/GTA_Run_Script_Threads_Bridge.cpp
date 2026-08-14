@@ -297,15 +297,9 @@ bool GTA_Run_Script_Threads_Bridge::HookThunk(int opsToExecute)
 
 bool GTA_Run_Script_Threads_Bridge::OnRunScriptThreads(int opsToExecute) noexcept
 {
-    const bool result = m_original ? m_original(opsToExecute) : false;
-    if (!m_installed.load())
-        return result;
-
-    if (!m_smokeCompleted.load())
-        TryNativeSmoke();
-
-    RunSchedulerTick();
-    return result;
+    // Diagnostic A/B: keep the detour/trampoline installed but execute no
+    // Devilz_Den work after GTA's original RunScriptThreads implementation.
+    return m_original ? m_original(opsToExecute) : false;
 }
 
 void GTA_Run_Script_Threads_Bridge::TryNativeSmoke() noexcept
