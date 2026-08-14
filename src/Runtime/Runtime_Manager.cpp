@@ -4,6 +4,7 @@
 #include "Backend/Logging/Sinks/DebuggerSink.hpp"
 #include "Backend/Logging/Sinks/FileSink.hpp"
 #include "Backend/Process/Process_Module_Manager.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Business_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Network_Session_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.hpp"
 
@@ -159,6 +160,8 @@ void Runtime_Manager::Stop() noexcept
     try {
         m_frontend.Stop();
         m_gameThreadBridge.Uninstall();
+        Integrations::GTA5_Enhanced::ResetBusinessExtension();
+        m_scriptGlobals.Clear();
         m_natives.Reset();
         m_threads.Stop();
         m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL runtime stopped cleanly", "Runtime");
@@ -222,13 +225,17 @@ void Runtime_Manager::InitializeNativeManager(
 void Runtime_Manager::InitializeGameThreadBridge(
     const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
 {
+    using Integrations::GTA5_Enhanced::ConfigureBusinessExtension;
     using Integrations::GTA5_Enhanced::ConfigureNetworkSessionExtension;
     using Integrations::GTA5_Enhanced::ConfigureRandomEventsExtension;
+    using Integrations::GTA5_Enhanced::ResetBusinessExtension;
     using Integrations::GTA5_Enhanced::ResetNetworkSessionExtension;
     using Integrations::GTA5_Enhanced::ResetRandomEventsExtension;
 
+    ResetBusinessExtension();
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
+    m_scriptGlobals.Clear();
 
     if (!m_natives.Ready() || !status.targetReport) {
         m_logger.Log(Backend::LogLevel::Warning,
@@ -241,6 +248,7 @@ void Runtime_Manager::InitializeGameThreadBridge(
     std::uintptr_t scriptThreadsStorage = 0;
     std::uintptr_t expectedDispatch = 0;
     std::uintptr_t scriptGlobals = 0;
+    std::uintptr_t validatedScriptGlobals = 0;
     std::uintptr_t programTable = 0;
     std::uintptr_t scriptVm = 0;
 
@@ -253,13 +261,40 @@ void Runtime_Manager::InitializeGameThreadBridge(
             scriptThreadsStorage = target.address;
             expectedDispatch = target.evidence.objectDominantFirstQwordAddress;
         } else if (TargetResolved(target.status.state)) {
-            if (target.status.id == GTA_Runtime_Target_Id::ScriptGlobals)
+            if (target.status.id == GTA_Runtime_Target_Id::ScriptGlobals) {
                 scriptGlobals = target.address;
-            else if (target.status.id == GTA_Runtime_Target_Id::ProgramTable)
+                if (target.status.state == GTA_Runtime_Target_State::Validated)
+                    validatedScriptGlobals = target.address;
+            } else if (target.status.id == GTA_Runtime_Target_Id::ProgramTable) {
                 programTable = target.address;
-            else if (target.status.id == GTA_Runtime_Target_Id::ScriptVM)
+            } else if (target.status.id == GTA_Runtime_Target_Id::ScriptVM) {
                 scriptVm = target.address;
+            }
         }
+    }
+
+    bool businessGlobalsReady = false;
+    if (validatedScriptGlobals != 0 && status.build) {
+        auto configured = m_scriptGlobals.ConfigureFromTable(
+            Backend::Pointer(validatedScriptGlobals),
+            status.build->fingerprint);
+        if (configured) {
+            businessGlobalsReady = true;
+            m_logger.Log(
+                Backend::LogLevel::Info,
+                "Validated script global table configured for read-only business state",
+                "GTA5_Enhanced.Business");
+        } else {
+            m_logger.Log(
+                Backend::LogLevel::Warning,
+                "Business globals unavailable: " + configured.Failure().Message(),
+                "GTA5_Enhanced.Business");
+        }
+    } else {
+        m_logger.Log(
+            Backend::LogLevel::Warning,
+            "Business globals unavailable: ScriptGlobals is not semantically validated",
+            "GTA5_Enhanced.Business");
     }
 
     if (runScriptThreads == 0 || scriptThreadsStorage == 0 || expectedDispatch == 0) {
@@ -279,6 +314,10 @@ void Runtime_Manager::InitializeGameThreadBridge(
                      "RunScriptThreads bridge installation failed closed",
                      "GTA5_Enhanced.Natives");
         return;
+    }
+
+    if (businessGlobalsReady && status.build) {
+        ConfigureBusinessExtension(&m_scriptGlobals, status.build->fingerprint);
     }
 
     ConfigureNetworkSessionExtension(
