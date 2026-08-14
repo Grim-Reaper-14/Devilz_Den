@@ -1,4 +1,5 @@
 #include "Frontend/Menu/Menu_Appearance.hpp"
+#include "Frontend/Menu/Devils_Den_Menu_supplemental.hpp"
 
 namespace Devilz::Frontend
 {
@@ -15,22 +16,30 @@ void Devils_Den_Menu::DrawNavigation()
     {
         const char* label;
         Page page;
+        Supplemental::Page supplementalPage;
         Themes::Menu_Icon icon;
     };
+
     constexpr std::array entries{
-        NavigationEntry{"       SELF", Page::Self, Themes::Menu_Icon::Self},
-        NavigationEntry{"       WEAPONS", Page::Weapons, Themes::Menu_Icon::Weapons},
-        NavigationEntry{"       VEHICLE", Page::Vehicle, Themes::Menu_Icon::Vehicle},
-        NavigationEntry{"       TELEPORT", Page::Teleport, Themes::Menu_Icon::Teleport},
-        NavigationEntry{"       WORLD", Page::World, Themes::Menu_Icon::World},
-        NavigationEntry{"       NETWORK", Page::Network, Themes::Menu_Icon::Network},
-        NavigationEntry{"       DEFENSE", Page::Defense, Themes::Menu_Icon::Network},
-        NavigationEntry{"       LUA", Page::Lua, Themes::Menu_Icon::Lua},
-        NavigationEntry{"       SETTINGS", Page::Settings, Themes::Menu_Icon::Settings}
+        NavigationEntry{"       SELF", Page::Self, Supplemental::Page::None, Themes::Menu_Icon::Self},
+        NavigationEntry{"       WEAPONS", Page::Weapons, Supplemental::Page::None, Themes::Menu_Icon::Weapons},
+        NavigationEntry{"       VEHICLE", Page::Vehicle, Supplemental::Page::None, Themes::Menu_Icon::Vehicle},
+        NavigationEntry{"       TELEPORT", Page::Teleport, Supplemental::Page::None, Themes::Menu_Icon::Teleport},
+        NavigationEntry{"       WORLD", Page::World, Supplemental::Page::None, Themes::Menu_Icon::World},
+        NavigationEntry{"       NETWORK", Page::Network, Supplemental::Page::None, Themes::Menu_Icon::Network},
+        NavigationEntry{"       DEFENSE", Page::Defense, Supplemental::Page::None, Themes::Menu_Icon::Network},
+        NavigationEntry{"       MISC", Page::Self, Supplemental::Page::Misc, Themes::Menu_Icon::World},
+        NavigationEntry{"       RECOVERY", Page::Self, Supplemental::Page::Recovery, Themes::Menu_Icon::Settings},
+        NavigationEntry{"       LUA", Page::Lua, Supplemental::Page::None, Themes::Menu_Icon::Lua},
+        NavigationEntry{"       SETTINGS", Page::Settings, Supplemental::Page::None, Themes::Menu_Icon::Settings}
     };
 
     for (const auto& entry : entries) {
-        const bool selected = m_page == entry.page;
+        const bool isSupplemental = entry.supplementalPage != Supplemental::Page::None;
+        const bool selected = isSupplemental
+            ? Supplemental::SelectedPage == entry.supplementalPage
+            : Supplemental::SelectedPage == Supplemental::Page::None && m_page == entry.page;
+
         const ImVec2 itemMin = ImGui::GetCursorScreenPos();
         const float itemWidth = ImGui::GetContentRegionAvail().x;
         auto* foreground = ImGui::GetForegroundDrawList();
@@ -48,8 +57,13 @@ void Devils_Den_Menu::DrawNavigation()
         ImGui::PushStyleColor(ImGuiCol_ButtonActive,
             selected ? ImVec4{0.55F, 0.075F, 0.042F, 1.00F} : palette.stoneLight);
         ImGui::PushStyleColor(ImGuiCol_Text, selected ? palette.parchment : palette.bronze);
-        if (ImGui::Button(entry.label, ImVec2(itemWidth, 42.0F)))
-            m_page = entry.page;
+
+        if (ImGui::Button(entry.label, ImVec2(itemWidth, 42.0F))) {
+            Supplemental::SelectedPage = entry.supplementalPage;
+            if (!isSupplemental)
+                m_page = entry.page;
+        }
+
         ImGui::PopStyleColor(4);
         ImGui::Dummy(ImVec2(0.0F, 4.0F));
     }
