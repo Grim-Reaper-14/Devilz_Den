@@ -11,6 +11,8 @@
 #include <cmath>
 #include <cstddef>
 
+#include "Special_Cargo_Page.inc"
+
 namespace Devilz::Frontend::Misc
 {
 namespace
@@ -831,7 +833,7 @@ void DrawMiscPage()
 
     ImGui::TextColored(palette.emberRed, "MISC");
     ImGui::SameLine();
-    ImGui::TextDisabled("- GTA Online businesses and casino");
+    ImGui::TextDisabled("- GTA Online businesses, cargo and casino");
 
     DrawDivider();
 
@@ -863,6 +865,11 @@ void DrawMiscPage()
 
         if (ImGui::BeginTabItem("RESUPPLY")) {
             DrawInstantResupplyControls(nightclub, resupplyAction);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("SPECIAL CARGO")) {
+            DrawSpecialCargoControls();
             ImGui::EndTabItem();
         }
 

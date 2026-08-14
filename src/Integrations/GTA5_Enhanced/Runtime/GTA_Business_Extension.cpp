@@ -32,6 +32,18 @@ constexpr std::uint32_t GpbdFm3PlayerStride = 615U;
 constexpr std::uint32_t FreemodeBusinessBase = 1673820U;
 constexpr int InstantResupplyTrigger = 1;
 constexpr std::uint32_t PropertyDataOffset = 260U;
+
+// Enhanced 1.73 / b1158.13 Special Cargo controls.
+constexpr std::uint32_t SpecialCargoControlBase = 1882762U;
+constexpr std::uint32_t SpecialCargoSourcingAmountOffset = 13U;
+constexpr std::uint32_t SpecialCargoSpecialItemOffset = 14U;
+constexpr std::uint32_t SpecialCargoSpecialItemAvailabilityOffset = 15U;
+constexpr std::uint32_t SpecialCargoTypeOffset = 16U;
+constexpr std::uint32_t SpecialCargoWarehouseOffset = 128U;
+constexpr std::uint32_t SpecialCargoWarehouseStride = 3U;
+constexpr std::uint32_t SpecialCargoWarehousePropertyOffset = 0U;
+constexpr std::uint32_t SpecialCargoWarehouseHeldOffset = 1U;
+
 constexpr std::uint32_t BusinessHubOffset = 321U;
 constexpr std::uint32_t ProductStocksOffset = BusinessHubOffset + 9U;
 constexpr std::uint32_t NightclubDataOffset = 364U;
@@ -103,6 +115,12 @@ struct ResupplyActionResult
     std::string detail;
 };
 
+struct SpecialCargoActionResult
+{
+    GTA_Special_Cargo_Action_Status status = GTA_Special_Cargo_Action_Status::Failed;
+    std::string detail;
+};
+
 template <typename T>
 bool ReadGlobal(Script_Global_Manager& globals, std::uint32_t index, T& value)
 {
@@ -149,6 +167,15 @@ std::uint32_t PlayerGpbdFmEntry(int player) noexcept
 std::uint32_t PlayerPropertyData(int player) noexcept
 {
     return PlayerGpbdFmEntry(player) + PropertyDataOffset;
+}
+
+std::uint32_t PlayerSpecialCargoWarehouseEntry(
+    int player,
+    std::size_t warehouseSlot) noexcept
+{
+    return PlayerPropertyData(player) +
+        SpecialCargoWarehouseOffset +
+        static_cast<std::uint32_t>(warehouseSlot) * SpecialCargoWarehouseStride;
 }
 
 std::uint32_t PlayerGpbdFm3Entry(int player) noexcept
@@ -306,6 +333,78 @@ GTA_Nightclub_Snapshot BuildNightclubSnapshot(GTA_Native_Manager& natives)
     snapshot.detail = snapshot.owned
         ? "Nightclub business data ready."
         : "Nightclub runtime ready; no owned Nightclub detected.";
+    return snapshot;
+}
+
+GTA_Special_Cargo_Snapshot BuildSpecialCargoSnapshot(GTA_Native_Manager& natives)
+{
+    GTA_Special_Cargo_Snapshot snapshot{};
+    auto* globals = g_runtime.globals;
+
+    if (!globals || !globals->Ready()) {
+        snapshot.detail = "Script globals are not configured.";
+        return snapshot;
+    }
+
+    if (g_runtime.buildFingerprint != SupportedFingerprint) {
+        snapshot.detail = "Special Cargo globals are not registered for this GTA build.";
+        return snapshot;
+    }
+
+    const auto player = natives.Invoke<int>(GTA_Native_Id::PlayerId);
+    if (!player || *player < 0 || *player >= 32) {
+        snapshot.detail = "Local player index is unavailable.";
+        return snapshot;
+    }
+
+    snapshot.playerIndex = *player;
+    int specialItemAvailability = 0;
+
+    bool liveOk = true;
+    liveOk &= ReadGlobal(
+        *globals,
+        SpecialCargoControlBase + SpecialCargoSourcingAmountOffset,
+        snapshot.sourcingAmount);
+    liveOk &= ReadGlobal(
+        *globals,
+        SpecialCargoControlBase + SpecialCargoTypeOffset,
+        snapshot.cargoType);
+    liveOk &= ReadGlobal(
+        *globals,
+        SpecialCargoControlBase + SpecialCargoSpecialItemOffset,
+        snapshot.specialItem);
+    liveOk &= ReadGlobal(
+        *globals,
+        SpecialCargoControlBase + SpecialCargoSpecialItemAvailabilityOffset,
+        specialItemAvailability);
+    snapshot.specialItemAvailable = specialItemAvailability != 0;
+
+    for (std::size_t slot = 0; slot < GTA_Special_Cargo_Warehouse_Count; ++slot) {
+        auto& warehouse = snapshot.warehouses[slot];
+        const auto warehouseEntry = PlayerSpecialCargoWarehouseEntry(*player, slot);
+
+        bool warehouseOk = true;
+        warehouseOk &= ReadGlobal(
+            *globals,
+            warehouseEntry + SpecialCargoWarehousePropertyOffset,
+            warehouse.propertyId);
+        warehouseOk &= ReadGlobal(
+            *globals,
+            warehouseEntry + SpecialCargoWarehouseHeldOffset,
+            warehouse.cargoHeld);
+
+        warehouse.available = warehouseOk;
+        warehouse.owned = warehouseOk && warehouse.propertyId > 0;
+        liveOk &= warehouseOk;
+    }
+
+    if (!liveOk) {
+        snapshot.detail = "Special Cargo live globals could not be read.";
+        return snapshot;
+    }
+
+    snapshot.runtimeReady = true;
+    snapshot.detail = "Special Cargo controls and five warehouse slots are ready.";
     return snapshot;
 }
 
@@ -567,6 +666,122 @@ NightclubActionResult ExecuteNightclubAction(
     }
 }
 
+SpecialCargoActionResult ExecuteSpecialCargoAction(
+    GTA_Native_Manager& natives,
+    const GTA_Special_Cargo_Action_Command& command)
+{
+    auto* globals = g_runtime.globals;
+    if (!globals || !globals->Ready()) {
+        return {
+            GTA_Special_Cargo_Action_Status::RuntimeUnavailable,
+            "Script globals are not configured."};
+    }
+
+    if (g_runtime.buildFingerprint != SupportedFingerprint) {
+        return {
+            GTA_Special_Cargo_Action_Status::UnsupportedBuild,
+            "Special Cargo writes are not registered for this GTA build."};
+    }
+
+    const auto writeFailed = [] {
+        return SpecialCargoActionResult{
+            GTA_Special_Cargo_Action_Status::Failed,
+            "A Special Cargo global write failed readback verification."};
+    };
+
+    switch (command.kind) {
+    case GTA_Special_Cargo_Action_Kind::ApplySourcingSettings: {
+        if (command.sourcingAmount < GTA_Special_Cargo_Min_Sourcing_Amount ||
+            command.sourcingAmount > GTA_Special_Cargo_Max_Sourcing_Amount ||
+            command.cargoType < GTA_Special_Cargo_Min_Type ||
+            command.cargoType > GTA_Special_Cargo_Max_Type ||
+            command.specialItem < GTA_Special_Cargo_Min_Item ||
+            command.specialItem > GTA_Special_Cargo_Max_Item) {
+            return {
+                GTA_Special_Cargo_Action_Status::InvalidValue,
+                "Sourcing amount, cargo type, or special item is outside the registered range."};
+        }
+
+        const int specialItemAvailability = command.specialItemAvailable ? 1 : 0;
+        if (!WriteGlobalVerified(
+                *globals,
+                SpecialCargoControlBase + SpecialCargoSourcingAmountOffset,
+                command.sourcingAmount) ||
+            !WriteGlobalVerified(
+                *globals,
+                SpecialCargoControlBase + SpecialCargoTypeOffset,
+                command.cargoType) ||
+            !WriteGlobalVerified(
+                *globals,
+                SpecialCargoControlBase + SpecialCargoSpecialItemOffset,
+                command.specialItem) ||
+            !WriteGlobalVerified(
+                *globals,
+                SpecialCargoControlBase + SpecialCargoSpecialItemAvailabilityOffset,
+                specialItemAvailability)) {
+            return writeFailed();
+        }
+
+        return {
+            GTA_Special_Cargo_Action_Status::Succeeded,
+            "Special Cargo sourcing settings were applied and verified."};
+    }
+
+    case GTA_Special_Cargo_Action_Kind::SetWarehouseCargo: {
+        if (command.warehouseSlot >= GTA_Special_Cargo_Warehouse_Count ||
+            command.cargoHeld < 0 ||
+            command.cargoHeld > GTA_Special_Cargo_Max_Held) {
+            return {
+                GTA_Special_Cargo_Action_Status::InvalidValue,
+                "Warehouse slot or held-cargo value is outside the registered range."};
+        }
+
+        const auto player = natives.Invoke<int>(GTA_Native_Id::PlayerId);
+        if (!player || *player < 0 || *player >= 32) {
+            return {
+                GTA_Special_Cargo_Action_Status::RuntimeUnavailable,
+                "Local player index is unavailable."};
+        }
+
+        const auto warehouseEntry =
+            PlayerSpecialCargoWarehouseEntry(*player, command.warehouseSlot);
+        int propertyId = 0;
+        if (!ReadGlobal(
+                *globals,
+                warehouseEntry + SpecialCargoWarehousePropertyOffset,
+                propertyId)) {
+            return {
+                GTA_Special_Cargo_Action_Status::RuntimeUnavailable,
+                "Warehouse property global could not be read."};
+        }
+
+        if (propertyId <= 0) {
+            return {
+                GTA_Special_Cargo_Action_Status::NoWarehouse,
+                "No owned Special Cargo warehouse is registered in that slot."};
+        }
+
+        if (!WriteGlobalVerified(
+                *globals,
+                warehouseEntry + SpecialCargoWarehouseHeldOffset,
+                command.cargoHeld)) {
+            return writeFailed();
+        }
+
+        return {
+            GTA_Special_Cargo_Action_Status::Succeeded,
+            std::string{"Warehouse slot "} +
+                std::to_string(command.warehouseSlot + 1U) +
+                " cargo was applied and verified."};
+    }
+
+    default:
+        return {
+            GTA_Special_Cargo_Action_Status::InvalidValue,
+            "The requested Special Cargo action is invalid."};
+    }
+}
+
 ResupplyActionResult ExecuteResupplyAction(
     const GTA_Resupply_Action_Command& command)
 {
@@ -676,8 +891,22 @@ void TickBusinessExtension(GTA_Native_Manager& natives) noexcept
             std::move(result.detail));
     }
 
+    GTA_Special_Cargo_Action_Command specialCargoCommand{};
+    const bool specialCargoActionProcessed =
+        state.ConsumeSpecialCargoAction(specialCargoCommand);
+
+    if (specialCargoActionProcessed) {
+        auto result = ExecuteSpecialCargoAction(natives, specialCargoCommand);
+        state.CompleteSpecialCargoAction(
+            specialCargoCommand,
+            result.status,
+            std::move(result.detail));
+    }
+
     const bool actionProcessed =
-        nightclubActionProcessed || resupplyActionProcessed;
+        nightclubActionProcessed ||
+        resupplyActionProcessed ||
+        specialCargoActionProcessed;
 
     if (!g_runtime.globals)
         return;
@@ -691,5 +920,6 @@ void TickBusinessExtension(GTA_Native_Manager& natives) noexcept
 
     g_runtime.lastRefresh = now;
     state.PublishNightclub(BuildNightclubSnapshot(natives));
+    state.PublishSpecialCargo(BuildSpecialCargoSnapshot(natives));
 }
 }

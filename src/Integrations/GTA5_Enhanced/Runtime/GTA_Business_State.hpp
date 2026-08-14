@@ -175,6 +175,76 @@ struct GTA_Resupply_Action_Command
     GTA_Resupply_Target target = GTA_Resupply_Target::McBusinessSlot0;
 };
 
+inline constexpr std::size_t GTA_Special_Cargo_Warehouse_Count = 5;
+inline constexpr int GTA_Special_Cargo_Min_Sourcing_Amount = 1;
+inline constexpr int GTA_Special_Cargo_Max_Sourcing_Amount = 111;
+inline constexpr int GTA_Special_Cargo_Min_Type = -1;
+inline constexpr int GTA_Special_Cargo_Max_Type = 10;
+inline constexpr int GTA_Special_Cargo_Min_Item = 0;
+inline constexpr int GTA_Special_Cargo_Max_Item = 5;
+inline constexpr int GTA_Special_Cargo_Max_Held = 111;
+
+struct GTA_Special_Cargo_Warehouse_Snapshot
+{
+    bool available = false;
+    bool owned = false;
+    int propertyId = 0;
+    int cargoHeld = 0;
+};
+
+struct GTA_Special_Cargo_Snapshot
+{
+    bool runtimeReady = false;
+    int playerIndex = -1;
+    int sourcingAmount = GTA_Special_Cargo_Min_Sourcing_Amount;
+    int cargoType = GTA_Special_Cargo_Min_Type;
+    int specialItem = GTA_Special_Cargo_Min_Item;
+    bool specialItemAvailable = false;
+    std::array<GTA_Special_Cargo_Warehouse_Snapshot, GTA_Special_Cargo_Warehouse_Count> warehouses{};
+    std::string detail = "Special Cargo runtime is unavailable.";
+};
+
+enum class GTA_Special_Cargo_Action_Kind : std::uint8_t
+{
+    None,
+    ApplySourcingSettings,
+    SetWarehouseCargo
+};
+
+enum class GTA_Special_Cargo_Action_Status : std::uint8_t
+{
+    Idle,
+    Queued,
+    Succeeded,
+    RuntimeUnavailable,
+    UnsupportedBuild,
+    NoWarehouse,
+    InvalidValue,
+    Failed
+};
+
+struct GTA_Special_Cargo_Action_Snapshot
+{
+    std::uint64_t revision = 0;
+    std::uint64_t requestId = 0;
+    GTA_Special_Cargo_Action_Kind kind = GTA_Special_Cargo_Action_Kind::None;
+    std::size_t warehouseSlot = 0;
+    GTA_Special_Cargo_Action_Status status = GTA_Special_Cargo_Action_Status::Idle;
+    std::string detail;
+};
+
+struct GTA_Special_Cargo_Action_Command
+{
+    std::uint64_t id = 0;
+    GTA_Special_Cargo_Action_Kind kind = GTA_Special_Cargo_Action_Kind::None;
+    int sourcingAmount = GTA_Special_Cargo_Min_Sourcing_Amount;
+    int cargoType = GTA_Special_Cargo_Min_Type;
+    int specialItem = GTA_Special_Cargo_Min_Item;
+    bool specialItemAvailable = false;
+    std::size_t warehouseSlot = 0;
+    int cargoHeld = 0;
+};
+
 class GTA_Native_Manager;
 
 class GTA_Business_State final
@@ -205,6 +275,18 @@ public:
     {
         std::scoped_lock lock(m_mutex);
         return m_resupplyAction;
+    }
+
+    [[nodiscard]] GTA_Special_Cargo_Snapshot SpecialCargo() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_specialCargo;
+    }
+
+    [[nodiscard]] GTA_Special_Cargo_Action_Snapshot SpecialCargoAction() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_specialCargoAction;
     }
 
     [[nodiscard]] bool RequestNightclubCoreValues(
@@ -308,10 +390,42 @@ public:
         return QueueResupplyAction(std::move(command));
     }
 
+    [[nodiscard]] bool RequestSpecialCargoSourcingSettings(
+        int sourcingAmount,
+        int cargoType,
+        int specialItem,
+        bool specialItemAvailable)
+    {
+        GTA_Special_Cargo_Action_Command command{};
+        command.kind = GTA_Special_Cargo_Action_Kind::ApplySourcingSettings;
+        command.sourcingAmount = sourcingAmount;
+        command.cargoType = cargoType;
+        command.specialItem = specialItem;
+        command.specialItemAvailable = specialItemAvailable;
+        return QueueSpecialCargoAction(std::move(command));
+    }
+
+    [[nodiscard]] bool RequestSpecialCargoWarehouseCargo(
+        std::size_t warehouseSlot,
+        int cargoHeld)
+    {
+        GTA_Special_Cargo_Action_Command command{};
+        command.kind = GTA_Special_Cargo_Action_Kind::SetWarehouseCargo;
+        command.warehouseSlot = warehouseSlot;
+        command.cargoHeld = cargoHeld;
+        return QueueSpecialCargoAction(std::move(command));
+    }
+
     void PublishNightclub(GTA_Nightclub_Snapshot snapshot)
     {
         std::scoped_lock lock(m_mutex);
         m_nightclub = std::move(snapshot);
+    }
+
+    void PublishSpecialCargo(GTA_Special_Cargo_Snapshot snapshot)
+    {
+        std::scoped_lock lock(m_mutex);
+        m_specialCargo = std::move(snapshot);
     }
 
     void Reset()
@@ -324,6 +438,10 @@ public:
         m_pendingResupplyAction.reset();
         m_resupplyAction = {};
         m_nextResupplyActionId = 1;
+        m_specialCargo = {};
+        m_pendingSpecialCargoAction.reset();
+        m_specialCargoAction = {};
+        m_nextSpecialCargoActionId = 1;
     }
 
 private:
@@ -418,6 +536,51 @@ private:
         m_resupplyAction.detail = std::move(detail);
     }
 
+    [[nodiscard]] bool QueueSpecialCargoAction(GTA_Special_Cargo_Action_Command command)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_pendingSpecialCargoAction ||
+            m_specialCargoAction.status == GTA_Special_Cargo_Action_Status::Queued) {
+            return false;
+        }
+
+        command.id = m_nextSpecialCargoActionId++;
+        m_pendingSpecialCargoAction = std::move(command);
+
+        ++m_specialCargoAction.revision;
+        m_specialCargoAction.requestId = m_pendingSpecialCargoAction->id;
+        m_specialCargoAction.kind = m_pendingSpecialCargoAction->kind;
+        m_specialCargoAction.warehouseSlot = m_pendingSpecialCargoAction->warehouseSlot;
+        m_specialCargoAction.status = GTA_Special_Cargo_Action_Status::Queued;
+        m_specialCargoAction.detail = "Queued for the GTA game thread.";
+        return true;
+    }
+
+    [[nodiscard]] bool ConsumeSpecialCargoAction(GTA_Special_Cargo_Action_Command& command)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_pendingSpecialCargoAction)
+            return false;
+
+        command = std::move(*m_pendingSpecialCargoAction);
+        m_pendingSpecialCargoAction.reset();
+        return true;
+    }
+
+    void CompleteSpecialCargoAction(
+        const GTA_Special_Cargo_Action_Command& command,
+        GTA_Special_Cargo_Action_Status status,
+        std::string detail)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_specialCargoAction.requestId != command.id)
+            return;
+
+        ++m_specialCargoAction.revision;
+        m_specialCargoAction.status = status;
+        m_specialCargoAction.detail = std::move(detail);
+    }
+
     friend void TickBusinessExtension(GTA_Native_Manager& natives) noexcept;
 
     mutable std::mutex m_mutex;
@@ -428,6 +591,10 @@ private:
     std::optional<GTA_Resupply_Action_Command> m_pendingResupplyAction;
     GTA_Resupply_Action_Snapshot m_resupplyAction{};
     std::uint64_t m_nextResupplyActionId = 1;
+    GTA_Special_Cargo_Snapshot m_specialCargo{};
+    std::optional<GTA_Special_Cargo_Action_Command> m_pendingSpecialCargoAction;
+    GTA_Special_Cargo_Action_Snapshot m_specialCargoAction{};
+    std::uint64_t m_nextSpecialCargoActionId = 1;
 };
 
 [[nodiscard]] const char* GTA_Nightclub_Good_Name(GTA_Nightclub_Good good) noexcept;
