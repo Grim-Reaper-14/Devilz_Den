@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <string>
 #include <string_view>
 
 namespace Devilz::Integrations::GTA5_Enhanced
@@ -18,6 +19,7 @@ constexpr std::array<std::uint8_t, 12> ProgramTablePattern{
     0x48, 0xC7, 0x84, 0xC8, 0xD8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 constexpr std::size_t ScriptProgramCount = 176;
+constexpr std::size_t ModulePathBufferSize = 32768;
 
 bool IsExecutableProtection(DWORD protection) noexcept
 {
@@ -84,6 +86,9 @@ struct NativeHandlerInspection
     bool noAccess = false;
     bool accepted = false;
     DWORD protection = 0;
+    std::uintptr_t allocationBase = 0;
+    std::uintptr_t regionBase = 0;
+    std::size_t regionSize = 0;
 };
 
 NativeHandlerInspection InspectNativeHandler(
@@ -101,6 +106,9 @@ NativeHandlerInspection InspectNativeHandler(
         return inspection;
 
     inspection.protection = memory.Protect;
+    inspection.allocationBase = reinterpret_cast<std::uintptr_t>(memory.AllocationBase);
+    inspection.regionBase = reinterpret_cast<std::uintptr_t>(memory.BaseAddress);
+    inspection.regionSize = memory.RegionSize;
     inspection.committed = memory.State == MEM_COMMIT;
     inspection.imageMemory = memory.Type == MEM_IMAGE;
     inspection.guarded = (memory.Protect & PAGE_GUARD) != 0;
@@ -116,6 +124,25 @@ NativeHandlerInspection InspectNativeHandler(
         inspection.imageMemory &&
         inspection.executable;
     return inspection;
+}
+
+std::string ResolveOwnerModulePath(std::uintptr_t allocationBase)
+{
+    if (allocationBase == 0)
+        return {};
+
+    std::array<char, ModulePathBufferSize> modulePath{};
+    const auto length = ::GetModuleFileNameA(
+        reinterpret_cast<HMODULE>(allocationBase),
+        modulePath.data(),
+        static_cast<DWORD>(modulePath.size()));
+    if (length == 0)
+        return {};
+
+    if (length >= modulePath.size())
+        return std::string{modulePath.data(), modulePath.size() - 1};
+
+    return std::string{modulePath.data(), length};
 }
 
 constexpr std::string_view BootstrapProbeName(GTA_Native_Hash hash) noexcept
@@ -304,6 +331,7 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
 
             const bool hashUnchanged =
                 handlerAddress == static_cast<std::uintptr_t>(requestedHashes[i]);
+            const auto ownerModule = ResolveOwnerModulePath(inspection.allocationBase);
             std::ostringstream detail;
             detail << (hashUnchanged
                            ? "InitNativeTables left native hash unresolved"
@@ -320,7 +348,12 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
                    << " | Executable: " << (inspection.executable ? "yes" : "no")
                    << " | Guarded: " << (inspection.guarded ? "yes" : "no")
                    << " | NoAccess: " << (inspection.noAccess ? "yes" : "no")
-                   << " | Protect: 0x" << inspection.protection;
+                   << " | Protect: 0x" << inspection.protection
+                   << " | AllocationBase: 0x" << inspection.allocationBase
+                   << " | RegionBase: 0x" << inspection.regionBase
+                   << " | RegionSize: 0x" << inspection.regionSize
+                   << " | OwnerModule: "
+                   << (ownerModule.empty() ? "<unresolved>" : ownerModule);
             status.detail = detail.str();
 
             Reset();
