@@ -3,6 +3,7 @@
 #include "GTA_Native_Call_Context.hpp"
 #include "GTA_Native_Registry.hpp"
 #include "GTA_Native_Types.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Business_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Outfit_Editor_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Packed_Stats_State.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
@@ -158,18 +159,18 @@ public:
     {
         // Vehicle Forge calls SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER every game
         // tick. Use that guaranteed game-thread point to service the online,
-        // Self, outfit, teleport, garage, world, stat, and unlock extensions
-        // without another hook.
+        // Self, business, outfit, teleport, garage, world, stat, and unlock
+        // extensions without another hook.
         if (hash == 0xA52E1AE3848A506BULL) {
             TickSelfOnlineExtension(*this);
             TickSelfUtilityExtension(*this);
+            TickBusinessExtension(*this);
             TickOutfitEditorExtension(*this);
             TickTeleportExtension(*this);
             TickVehicleGarageSave(*this);
             TickWorldEnvironmentExtension(*this);
             TickStatsExtension(*this);
             DrainPackedStatsQueue();
-            
         }
 
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
