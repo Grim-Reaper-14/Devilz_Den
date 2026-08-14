@@ -38,7 +38,8 @@ private:
     void Dispatch(const LogRecord& record);
 
     std::atomic<std::uint64_t> m_sequence{0};
-    std::mutex m_mutex;
+    std::mutex m_queueMutex;
+    std::mutex m_sinkMutex;
     std::condition_variable_any m_cv;
     std::deque<LogRecord> m_queue;
     std::vector<std::unique_ptr<ILogSink>> m_sinks;

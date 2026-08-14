@@ -11,13 +11,13 @@ LoggerService::~LoggerService()
 
 void LoggerService::AddSink(std::unique_ptr<ILogSink> sink)
 {
-    std::scoped_lock lock(m_mutex);
+    std::scoped_lock lock(m_sinkMutex);
     m_sinks.push_back(std::move(sink));
 }
 
 void LoggerService::Start()
 {
-    std::scoped_lock lock(m_mutex);
+    std::scoped_lock lock(m_queueMutex);
     if (m_accepting) return;
     m_accepting = true;
     m_worker = std::jthread([this](std::stop_token token) { Worker(token); });
@@ -26,7 +26,7 @@ void LoggerService::Start()
 void LoggerService::Stop()
 {
     {
-        std::scoped_lock lock(m_mutex);
+        std::scoped_lock lock(m_queueMutex);
         if (!m_accepting && !m_worker.joinable()) return;
         m_accepting = false;
     }
@@ -40,7 +40,7 @@ void LoggerService::Stop()
 
 void LoggerService::Flush()
 {
-    std::scoped_lock lock(m_mutex);
+    std::scoped_lock lock(m_sinkMutex);
     for (auto& sink : m_sinks) sink->Flush();
 }
 
@@ -56,7 +56,7 @@ void LoggerService::Log(LogLevel level, std::string message, std::string service
     record.source = source;
 
     {
-        std::scoped_lock lock(m_mutex);
+        std::scoped_lock lock(m_queueMutex);
         if (!m_accepting) return;
         m_queue.push_back(std::move(record));
     }
@@ -76,7 +76,7 @@ void LoggerService::LogError(LogLevel level, const Error& error, std::string ser
     record.error = error;
 
     {
-        std::scoped_lock lock(m_mutex);
+        std::scoped_lock lock(m_queueMutex);
         if (!m_accepting) return;
         m_queue.push_back(std::move(record));
     }
@@ -88,7 +88,7 @@ void LoggerService::Worker(std::stop_token stopToken)
     for (;;) {
         LogRecord record;
         {
-            std::unique_lock lock(m_mutex);
+            std::unique_lock lock(m_queueMutex);
             m_cv.wait(lock, stopToken, [this] { return !m_queue.empty() || !m_accepting; });
             if (m_queue.empty()) {
                 if (stopToken.stop_requested() || !m_accepting) break;
@@ -103,7 +103,7 @@ void LoggerService::Worker(std::stop_token stopToken)
     for (;;) {
         LogRecord record;
         {
-            std::scoped_lock lock(m_mutex);
+            std::scoped_lock lock(m_queueMutex);
             if (m_queue.empty()) break;
             record = std::move(m_queue.front());
             m_queue.pop_front();
@@ -114,7 +114,7 @@ void LoggerService::Worker(std::stop_token stopToken)
 
 void LoggerService::Dispatch(const LogRecord& record)
 {
-    std::scoped_lock lock(m_mutex);
+    std::scoped_lock lock(m_sinkMutex);
     for (auto& sink : m_sinks) sink->Write(record);
 }
 }
