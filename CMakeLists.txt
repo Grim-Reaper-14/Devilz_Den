@@ -127,8 +127,14 @@ add_executable(Devilz_Den_Lua_Runtime_Test
 target_include_directories(Devilz_Den_Lua_Runtime_Test PRIVATE src)
 target_link_libraries(Devilz_Den_Lua_Runtime_Test PRIVATE Devilz_Den_Lua Devilz_Den_Sol2)
 
+add_executable(Devilz_Den_Clothing_Unlocks_Test
+    tests/GTA_Clothing_Unlocks_Test.cpp
+)
+target_include_directories(Devilz_Den_Clothing_Unlocks_Test PRIVATE src)
+
 if(BUILD_TESTING)
     add_test(NAME Devilz_Den.LuaRuntime COMMAND Devilz_Den_Lua_Runtime_Test)
+    add_test(NAME Devilz_Den.ClothingUnlocks COMMAND Devilz_Den_Clothing_Unlocks_Test)
 endif()
 
 if(WIN32)
@@ -228,6 +234,7 @@ if(MSVC)
     )
     target_link_options(Devilz_Den PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
     target_compile_options(Devilz_Den_Lua_Runtime_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(Devilz_Den_Clothing_Unlocks_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_ImGui PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Smoke_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Address_Resolver_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
