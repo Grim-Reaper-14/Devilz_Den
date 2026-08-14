@@ -35,6 +35,40 @@ const char* LevelName(LogLevel level) noexcept
     }
 }
 
+bool ServiceMatchesPrefix(std::string_view service, std::string_view prefix) noexcept
+{
+    return service == prefix ||
+           (service.size() > prefix.size() && service.starts_with(prefix) &&
+            service[prefix.size()] == '.');
+}
+
+std::string Uppercase(std::string_view text)
+{
+    std::string result(text);
+    for (char& character : result) {
+        if (character >= 'a' && character <= 'z')
+            character = static_cast<char>(character - 'a' + 'A');
+    }
+    return result;
+}
+
+std::string_view LastServiceSegment(std::string_view service) noexcept
+{
+    const auto separator = service.rfind('.');
+    return separator == std::string_view::npos ? service : service.substr(separator + 1U);
+}
+
+std::string_view FirstGtaServiceSegment(std::string_view service) noexcept
+{
+    constexpr std::string_view prefix = "GTA5_Enhanced.";
+    if (!service.starts_with(prefix) || service.size() <= prefix.size())
+        return {};
+
+    const auto remainder = service.substr(prefix.size());
+    const auto separator = remainder.find('.');
+    return separator == std::string_view::npos ? remainder : remainder.substr(0, separator);
+}
+
 std::string ServiceName(std::string_view service)
 {
     if (service == "Runtime") return "RUNTIME";
@@ -45,17 +79,25 @@ std::string ServiceName(std::string_view service)
     if (service == "GTA5_Enhanced.Natives") return "NATIVES";
     if (service == "GTA5_Enhanced.Frontend") return "FRONTEND";
     if (service == "GTA5_Enhanced.Features") return "FEATURES";
+
+    if (service.starts_with("GTA5_Enhanced."))
+        return Uppercase(LastServiceSegment(service));
+
     return std::string(service);
 }
 
 std::string SectionName(std::string_view service)
 {
     if (service == "GTA5_Enhanced") return "GTA RUNTIME";
-    if (service == "GTA5_Enhanced.Targets" || service == "GTA5_Enhanced.Evidence") return "TARGETS";
-    if (service == "GTA5_Enhanced.Natives") return "NATIVES";
-    if (service == "GTA5_Enhanced.Frontend") return "FRONTEND";
-    if (service == "GTA5_Enhanced.Features") return "FEATURES";
-    return {};
+    if (ServiceMatchesPrefix(service, "GTA5_Enhanced.Targets") ||
+        ServiceMatchesPrefix(service, "GTA5_Enhanced.Evidence"))
+        return "TARGETS";
+    if (ServiceMatchesPrefix(service, "GTA5_Enhanced.Natives")) return "NATIVES";
+    if (ServiceMatchesPrefix(service, "GTA5_Enhanced.Frontend")) return "FRONTEND";
+    if (ServiceMatchesPrefix(service, "GTA5_Enhanced.Features")) return "FEATURES";
+
+    const auto segment = FirstGtaServiceSegment(service);
+    return segment.empty() ? std::string{} : Uppercase(segment);
 }
 
 std::vector<std::string_view> SplitFields(std::string_view text)
@@ -226,7 +268,7 @@ void ConsoleSink::Write(const LogRecord& record)
     ::SetConsoleTextAttribute(m_output, ColorFor(record.level));
     WriteText(m_output, prefix.str());
 
-    if (record.service == "GTA5_Enhanced.Evidence") {
+    if (ServiceMatchesPrefix(record.service, "GTA5_Enhanced.Evidence")) {
         const auto colon = record.message.find(": ");
         if (colon != std::string::npos) {
             WriteText(m_output, record.message.substr(0, colon));
