@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <mutex>
 #include <utility>
 
 namespace Devilz::Integrations::GTA5_Enhanced
