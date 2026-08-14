@@ -100,6 +100,7 @@ list(APPEND DEVILZ_DEN_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Business_State.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Business_Extension.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Casino_Extension.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Themes/Menu_Theme.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Menu_Appearance.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Renderer/D3D12_Image_Loader.cpp"
@@ -132,9 +133,15 @@ add_executable(Devilz_Den_Clothing_Unlocks_Test
 )
 target_include_directories(Devilz_Den_Clothing_Unlocks_Test PRIVATE src)
 
+add_executable(Devilz_Den_Casino_Lucky_Wheel_Test
+    tests/GTA_Casino_Lucky_Wheel_Test.cpp
+)
+target_include_directories(Devilz_Den_Casino_Lucky_Wheel_Test PRIVATE src)
+
 if(BUILD_TESTING)
     add_test(NAME Devilz_Den.LuaRuntime COMMAND Devilz_Den_Lua_Runtime_Test)
     add_test(NAME Devilz_Den.ClothingUnlocks COMMAND Devilz_Den_Clothing_Unlocks_Test)
+    add_test(NAME Devilz_Den.CasinoLuckyWheel COMMAND Devilz_Den_Casino_Lucky_Wheel_Test)
 endif()
 
 if(WIN32)
@@ -235,6 +242,7 @@ if(MSVC)
     target_link_options(Devilz_Den PRIVATE $<$<CONFIG:Release>:/DEBUG:FULL>)
     target_compile_options(Devilz_Den_Lua_Runtime_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Clothing_Unlocks_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(Devilz_Den_Casino_Lucky_Wheel_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_ImGui PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Smoke_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Address_Resolver_Test PRIVATE /W4 /permissive- /EHsc /utf-8)

@@ -2,6 +2,7 @@
 
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Business_State.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Casino_Extension.hpp"
 
 #include <imgui.h>
 
@@ -15,6 +16,12 @@ namespace Devilz::Frontend::Misc
 namespace
 {
 using Integrations::GTA5_Enhanced::GTA_Business_State;
+using Integrations::GTA5_Enhanced::CasinoSnapshot;
+using Integrations::GTA5_Enhanced::GTA_Casino_Snapshot;
+using Integrations::GTA5_Enhanced::GTA_Lucky_Wheel_Outcome_Count;
+using Integrations::GTA5_Enhanced::GTA_Lucky_Wheel_Outcome_Name;
+using Integrations::GTA5_Enhanced::GTA_Lucky_Wheel_Settings_Status;
+using Integrations::GTA5_Enhanced::GTA_Lucky_Wheel_Settings_Status_Name;
 using Integrations::GTA5_Enhanced::GTA_Nightclub_Action_Name;
 using Integrations::GTA5_Enhanced::GTA_Nightclub_Action_Snapshot;
 using Integrations::GTA5_Enhanced::GTA_Nightclub_Action_Status;
@@ -33,6 +40,10 @@ using Integrations::GTA5_Enhanced::GTA_Resupply_Action_Status_Name;
 using Integrations::GTA5_Enhanced::GTA_Resupply_Target;
 using Integrations::GTA5_Enhanced::GTA_Resupply_Target_Count;
 using Integrations::GTA5_Enhanced::GTA_Resupply_Target_Name;
+using Integrations::GTA5_Enhanced::RequestApplyLuckyWheelSpinSettings;
+using Integrations::GTA5_Enhanced::SetForceLuckyWheelOutcome;
+using Integrations::GTA5_Enhanced::SetLuckyWheelSelectedOutcome;
+using Integrations::GTA5_Enhanced::SetLuckyWheelSpinSettings;
 
 struct NightclubEditorState
 {
@@ -661,6 +672,141 @@ void DrawInstantResupplyControls(
     ImGui::SameLine();
     ImGui::TextDisabled("Only owned, set-up businesses can consume a resupply trigger.");
 }
+
+void DrawLuckyWheelControls(const GTA_Casino_Snapshot& casino)
+{
+    auto& theme = Themes::Menu_Theme_Manager::Instance();
+    const auto& palette = theme.Palette();
+
+    ImGui::TextColored(palette.bronze, "CASINO LUCKY WHEEL");
+    DrawDivider();
+    ImGui::TextWrapped(
+        "Enhanced 1.73 / b1158.13 Lucky Wheel tunables and the per-player "
+        "casino_lucky_wheel outcome local.");
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Verified Build");
+    ImGui::SameLine(190.0F);
+    if (casino.buildSupported)
+        ImGui::TextColored(ImVec4{0.42F, 0.78F, 0.42F, 1.0F}, "YES");
+    else
+        ImGui::TextColored(ImVec4{0.90F, 0.35F, 0.25F, 1.0F}, "NO");
+
+    ImGui::TextDisabled("Script Globals");
+    ImGui::SameLine(190.0F);
+    ImGui::TextUnformatted(casino.globalsReady ? "READY" : "UNAVAILABLE");
+
+    ImGui::TextDisabled("Wheel Script");
+    ImGui::SameLine(190.0F);
+    if (casino.luckyWheelScriptActive)
+        ImGui::TextColored(ImVec4{0.42F, 0.78F, 0.42F, 1.0F}, "ACTIVE");
+    else
+        ImGui::TextColored(ImVec4{0.90F, 0.58F, 0.18F, 1.0F}, "WAITING");
+
+    DrawDivider();
+    ImGui::TextColored(palette.bronze, "DAILY SPIN TUNABLES");
+    ImGui::TextDisabled(
+        "Global_262145.f_26855, f_26856, and f_37458");
+
+    if (casino.liveSettingsAvailable) {
+        ImGui::Text(
+            "Live: Standard %d | Additional %s | GTA+ %d",
+            casino.liveMaxSpins,
+            casino.liveAdditionalSpins ? "ON" : "OFF",
+            casino.liveGtaPlusMaxSpins);
+    } else {
+        ImGui::TextDisabled("Live tunable values are unavailable.");
+    }
+
+    int maxSpins = casino.requestedMaxSpins;
+    bool additionalSpins = casino.requestedAdditionalSpins;
+    int gtaPlusMaxSpins = casino.requestedGtaPlusMaxSpins;
+    bool settingsChanged = false;
+
+    ImGui::SetNextItemWidth(260.0F);
+    if (ImGui::SliderInt("Max Spins Per Day", &maxSpins, 1, 4))
+        settingsChanged = true;
+    if (ImGui::Checkbox("Enable Additional Spins", &additionalSpins))
+        settingsChanged = true;
+    ImGui::SetNextItemWidth(260.0F);
+    if (ImGui::SliderInt("GTA+ Max Spins Per Day", &gtaPlusMaxSpins, 1, 4))
+        settingsChanged = true;
+
+    if (settingsChanged) {
+        SetLuckyWheelSpinSettings(maxSpins, additionalSpins, gtaPlusMaxSpins);
+    }
+
+    const bool settingsQueued =
+        casino.settingsStatus == GTA_Lucky_Wheel_Settings_Status::Queued;
+    ImGui::BeginDisabled(
+        settingsQueued || !casino.buildSupported || !casino.globalsReady);
+    if (ImGui::Button("APPLY SPIN SETTINGS", ImVec2{210.0F, 34.0F}))
+        (void)RequestApplyLuckyWheelSpinSettings();
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    ImGui::TextDisabled(
+        "%s",
+        GTA_Lucky_Wheel_Settings_Status_Name(casino.settingsStatus));
+    if (!casino.settingsDetail.empty())
+        ImGui::TextWrapped("%s", casino.settingsDetail.c_str());
+
+    DrawDivider();
+    ImGui::TextColored(palette.bronze, "FORCED OUTCOME");
+    ImGui::TextWrapped(
+        "Select a prize and enable the override before spinning. The runtime "
+        "pins the selected value after the wheel script assigns its random result.");
+
+    int selectedOutcome = casino.selectedOutcome;
+    ImGui::SetNextItemWidth(320.0F);
+    if (ImGui::BeginCombo(
+            "Outcome",
+            GTA_Lucky_Wheel_Outcome_Name(selectedOutcome))) {
+        for (int outcome = 0; outcome < GTA_Lucky_Wheel_Outcome_Count; ++outcome) {
+            const bool selected = outcome == selectedOutcome;
+            ImGui::PushID(outcome);
+            if (ImGui::Selectable(
+                    GTA_Lucky_Wheel_Outcome_Name(outcome),
+                    selected)) {
+                selectedOutcome = outcome;
+                SetLuckyWheelSelectedOutcome(outcome);
+            }
+            if (selected)
+                ImGui::SetItemDefaultFocus();
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+
+    bool forceOutcome = casino.forceOutcome;
+    ImGui::BeginDisabled(!casino.buildSupported || !casino.scriptThreadsReady);
+    if (ImGui::Checkbox("Force Selected Outcome", &forceOutcome))
+        SetForceLuckyWheelOutcome(forceOutcome);
+    ImGui::EndDisabled();
+
+    if (casino.outcomeLocalReady) {
+        ImGui::TextDisabled("Resolved Player Local");
+        ImGui::SameLine(190.0F);
+        ImGui::Text("%u", casino.currentOutcomeLocal);
+
+        ImGui::TextDisabled("Current Outcome");
+        ImGui::SameLine(190.0F);
+        if (casino.currentOutcome >= 0 &&
+            casino.currentOutcome < GTA_Lucky_Wheel_Outcome_Count) {
+            ImGui::Text(
+                "%d - %s",
+                casino.currentOutcome,
+                GTA_Lucky_Wheel_Outcome_Name(casino.currentOutcome));
+        } else {
+            ImGui::Text("%d - Not assigned", casino.currentOutcome);
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::TextWrapped("%s", casino.runtimeDetail.c_str());
+    ImGui::TextDisabled(
+        "Local 150 is the array header; outcome address = 151 + (PLAYER_ID x 5).");
+}
 }
 
 void DrawMiscPage()
@@ -671,6 +817,7 @@ void DrawMiscPage()
     const auto nightclub = business.Nightclub();
     const auto action = business.NightclubAction();
     const auto resupplyAction = business.ResupplyAction();
+    const auto casino = CasinoSnapshot();
     auto& editor = EditorState();
 
     if (nightclub.runtimeReady && nightclub.owned &&
@@ -684,20 +831,21 @@ void DrawMiscPage()
 
     ImGui::TextColored(palette.emberRed, "MISC");
     ImGui::SameLine();
-    ImGui::TextDisabled("- GTA Online businesses");
+    ImGui::TextDisabled("- GTA Online businesses and casino");
 
     DrawDivider();
 
-    ImGui::TextColored(palette.bronze, "BUSINESS RUNTIME");
+    ImGui::TextColored(palette.bronze, "ONLINE RUNTIME");
     ImGui::SameLine();
-    if (nightclub.runtimeReady) {
+    if (nightclub.runtimeReady ||
+        (casino.buildSupported && casino.scriptThreadsReady)) {
         ImGui::TextColored(ImVec4{0.42F, 0.78F, 0.42F, 1.0F}, "[CONNECTED]");
     } else {
         ImGui::TextColored(ImVec4{0.90F, 0.58F, 0.18F, 1.0F}, "[WAITING]");
     }
 
     ImGui::TextWrapped(
-        "Business data and queued write actions are provided by the GTA runtime backend. "
+        "Business, casino, and queued write actions are provided by the GTA runtime backend. "
         "The registered globals target Enhanced 1.73 / b1158.13 only.");
     ImGui::Spacing();
 
@@ -715,6 +863,11 @@ void DrawMiscPage()
 
         if (ImGui::BeginTabItem("RESUPPLY")) {
             DrawInstantResupplyControls(nightclub, resupplyAction);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("CASINO")) {
+            DrawLuckyWheelControls(casino);
             ImGui::EndTabItem();
         }
 

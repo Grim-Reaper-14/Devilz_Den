@@ -5,6 +5,7 @@
 #include "Backend/Logging/Sinks/FileSink.hpp"
 #include "Backend/Process/Process_Module_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Business_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Casino_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Network_Session_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
@@ -162,6 +163,7 @@ void Runtime_Manager::Stop() noexcept
         m_frontend.Stop();
         m_gameThreadBridge.Uninstall();
         Integrations::GTA5_Enhanced::ResetBusinessExtension();
+        Integrations::GTA5_Enhanced::ResetCasinoExtension();
         Integrations::GTA5_Enhanced::ResetWorldEnvironmentExtension();
         m_scriptGlobals.Clear();
         m_natives.Reset();
@@ -228,15 +230,18 @@ void Runtime_Manager::InitializeGameThreadBridge(
     const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
 {
     using Integrations::GTA5_Enhanced::ConfigureBusinessExtension;
+    using Integrations::GTA5_Enhanced::ConfigureCasinoExtension;
     using Integrations::GTA5_Enhanced::ConfigureNetworkSessionExtension;
     using Integrations::GTA5_Enhanced::ConfigureRandomEventsExtension;
     using Integrations::GTA5_Enhanced::ConfigureWorldEnvironmentExtension;
     using Integrations::GTA5_Enhanced::ResetBusinessExtension;
+    using Integrations::GTA5_Enhanced::ResetCasinoExtension;
     using Integrations::GTA5_Enhanced::ResetNetworkSessionExtension;
     using Integrations::GTA5_Enhanced::ResetRandomEventsExtension;
     using Integrations::GTA5_Enhanced::ResetWorldEnvironmentExtension;
 
     ResetBusinessExtension();
+    ResetCasinoExtension();
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
     ResetWorldEnvironmentExtension();
@@ -287,7 +292,7 @@ void Runtime_Manager::InitializeGameThreadBridge(
             scriptGlobalsReady = true;
             m_logger.Log(
                 Backend::LogLevel::Info,
-                "Validated script global table configured for queued business and World actions",
+                "Validated script global table configured for queued business, Casino, and World actions",
                 "GTA5_Enhanced.ScriptGlobals");
         } else {
             m_logger.Log(
@@ -309,12 +314,19 @@ void Runtime_Manager::InitializeGameThreadBridge(
         return;
     }
 
+    ConfigureCasinoExtension(
+        scriptGlobalsReady ? &m_scriptGlobals : nullptr,
+        scriptThreadsStorage,
+        status.build ? status.build->fingerprint : 0,
+        &m_logger);
+
     if (!m_gameThreadBridge.Install(
             runScriptThreads,
             scriptThreadsStorage,
             expectedDispatch,
             m_natives,
             m_logger)) {
+        ResetCasinoExtension();
         m_logger.Log(Backend::LogLevel::Warning,
                      "RunScriptThreads bridge installation failed closed",
                      "GTA5_Enhanced.Natives");

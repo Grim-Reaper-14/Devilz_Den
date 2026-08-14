@@ -1,6 +1,7 @@
 #include "GTA_Run_Script_Threads_Bridge.hpp"
 
 #include "GTA_Business_Extension.hpp"
+#include "GTA_Casino_Extension.hpp"
 #include "GTA_Explosive_Ammo_Extension.hpp"
 #include "GTA_Gameplay_State.hpp"
 #include "GTA_Network_Session_Extension.hpp"
@@ -332,6 +333,7 @@ void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
     TickNetworkSessionExtension();
     TickRandomEventsExtension(*m_natives);
     TickBusinessExtension(*m_natives);
+    TickCasinoExtension(*m_natives);
 
     // Explosive ammo owns its dedicated Yim-style spoofed extension path. Keep
     // the legacy gameplay runner from emitting an unspoofed duplicate.
