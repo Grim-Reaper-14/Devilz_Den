@@ -43,7 +43,8 @@ private:
     static bool HookThunk(int opsToExecute);
     bool OnRunScriptThreads(int opsToExecute) noexcept;
     void TryNativeSmoke() noexcept;
-    void RunGameplayTick() noexcept;
+    void RunSchedulerTick() noexcept;
+    void RunLegacyGameplayTick() noexcept;
     void TickFrameSensitiveMovement() noexcept;
     [[nodiscard]] void* FindValidatedScriptThread() const noexcept;
 
@@ -51,7 +52,6 @@ private:
     std::atomic_bool m_smokeCompleted{false};
     std::atomic_bool m_smokeAttempting{false};
     std::atomic_uint32_t m_activeCalls{0};
-    std::atomic_uint64_t m_nextGameplayTickMs{0};
     mutable std::atomic<void*> m_cachedScriptThread{nullptr};
 
     std::uintptr_t m_targetAddress = 0;

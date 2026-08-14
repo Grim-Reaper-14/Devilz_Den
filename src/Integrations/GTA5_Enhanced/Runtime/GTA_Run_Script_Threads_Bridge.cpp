@@ -8,12 +8,16 @@
 #include "GTA_Network_Session_Extension.hpp"
 #include "GTA_Random_Events_Extension.hpp"
 #include "GTA_Vehicle_Forge_Extensions.hpp"
+#include "Script/GTA_Script.hpp"
+#include "Script/GTA_Script_Manager.hpp"
+#include "State/GTA_Self_Cache.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
 #include <intrin.h>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -22,6 +26,8 @@ namespace Devilz::Integrations::GTA5_Enhanced
 {
 namespace
 {
+using namespace std::chrono_literals;
+
 struct GTA_Tls_Context_View
 {
     std::byte pad00[0x7A0]{};
@@ -38,7 +44,6 @@ constexpr std::array<std::byte, GTA_Run_Script_Threads_Bridge::PatchSize> Verifi
     std::byte{0x85}, std::byte{0xC9}, std::byte{0xBE}, std::byte{0x40},
     std::byte{0x5D}, std::byte{0xC6}, std::byte{0x00}
 };
-constexpr ULONGLONG GameplayTickIntervalMs = 16;
 constexpr ULONGLONG SlowExtensionTickIntervalMs = 50;
 constexpr ULONGLONG VehicleExtensionTickIntervalMs = 200;
 constexpr GTA_Native_Hash SetRunSprintMultiplierHash = 0xA52E1AE3848A506BULL;
@@ -172,7 +177,6 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_smokeCompleted.store(false);
     m_smokeAttempting.store(false);
     m_activeCalls.store(0);
-    m_nextGameplayTickMs.store(0);
     m_cachedScriptThread.store(nullptr);
     m_nextSlowExtensionTickMs = 0;
     m_nextVehicleExtensionTickMs = 0;
@@ -180,11 +184,36 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_fastSwimApplied = false;
     m_gameplay.Configure(natives, logger);
     GTA_Gameplay_State::Instance().Reset();
+    GTA_Self_Cache::Instance().Reset();
     ConfigureBunkerExtension(scriptThreadsStorageAddress, natives.Fingerprint());
+
+    auto& scheduler = GTA_Script_Manager::Instance();
+    scheduler.Reset();
+    scheduler.AddScript("SelfCache", [this] {
+        while (Installed()) {
+            if (m_natives)
+                GTA_Self_Cache::Instance().Update(*m_natives);
+            auto* script = GTA_Script::Current();
+            if (!script)
+                return;
+            script->YieldFor(16ms);
+        }
+    });
+    scheduler.AddScript("LegacyRuntime", [this] {
+        while (Installed()) {
+            RunLegacyGameplayTick();
+            auto* script = GTA_Script::Current();
+            if (!script)
+                return;
+            script->YieldFor(16ms);
+        }
+    });
 
     s_active = this;
     if (!WriteExecutableBytes(m_targetAddress, patch.data(), patch.size())) {
         s_active = nullptr;
+        scheduler.Reset();
+        GTA_Self_Cache::Instance().Reset();
         ResetBunkerExtension();
         m_gameplay.Reset();
         m_original = nullptr;
@@ -201,7 +230,7 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_installed.store(true);
     logger.Log(
         Backend::LogLevel::Info,
-        "RunScriptThreads bridge installed | Mode: throttled native smoke + gameplay features",
+        "RunScriptThreads bridge installed | Mode: fiber scheduler + Self cache + legacy compatibility script",
         "GTA5_Enhanced.Natives");
     return true;
 }
@@ -229,6 +258,8 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     if (s_active == this)
         s_active = nullptr;
 
+    GTA_Script_Manager::Instance().Reset();
+    GTA_Self_Cache::Instance().Reset();
     ResetBunkerExtension();
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
@@ -240,7 +271,6 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     m_targetAddress = 0;
     m_scriptThreadsStorageAddress = 0;
     m_expectedThreadDispatchAddress = 0;
-    m_nextGameplayTickMs.store(0);
     m_cachedScriptThread.store(nullptr);
     m_nextSlowExtensionTickMs = 0;
     m_nextVehicleExtensionTickMs = 0;
@@ -274,15 +304,7 @@ bool GTA_Run_Script_Threads_Bridge::OnRunScriptThreads(int opsToExecute) noexcep
     if (!m_smokeCompleted.load())
         TryNativeSmoke();
 
-    const auto now = ::GetTickCount64();
-    auto nextTick = m_nextGameplayTickMs.load(std::memory_order_relaxed);
-    if (now >= nextTick &&
-        m_nextGameplayTickMs.compare_exchange_strong(
-            nextTick,
-            now + GameplayTickIntervalMs,
-            std::memory_order_relaxed)) {
-        RunGameplayTick();
-    }
+    RunSchedulerTick();
     return result;
 }
 
@@ -337,6 +359,34 @@ void GTA_Run_Script_Threads_Bridge::TryNativeSmoke() noexcept
     m_smokeAttempting.store(false);
 }
 
+void GTA_Run_Script_Threads_Bridge::RunSchedulerTick() noexcept
+{
+    if (!m_natives || !m_natives->Ready())
+        return;
+
+    void* scriptThread = FindValidatedScriptThread();
+    if (!scriptThread)
+        return;
+
+    const auto tlsArray = static_cast<std::uintptr_t>(__readgsqword(0x58));
+    if (!IsReadableAddress(tlsArray, sizeof(void*)))
+        return;
+
+    GTA_Tls_Context_View* tls = nullptr;
+    std::memcpy(&tls, reinterpret_cast<const void*>(tlsArray), sizeof(tls));
+    if (!tls || !IsReadableAddress(reinterpret_cast<std::uintptr_t>(tls), sizeof(GTA_Tls_Context_View)))
+        return;
+
+    void* previousThread = tls->currentScriptThread;
+    const bool previousActive = tls->scriptThreadActive;
+
+    tls->currentScriptThread = scriptThread;
+    tls->scriptThreadActive = true;
+    GTA_Script_Manager::Instance().Tick();
+    tls->scriptThreadActive = previousActive;
+    tls->currentScriptThread = previousThread;
+}
+
 void GTA_Run_Script_Threads_Bridge::TickFrameSensitiveMovement() noexcept
 {
     if (!m_natives || !m_natives->Ready())
@@ -367,29 +417,10 @@ void GTA_Run_Script_Threads_Bridge::TickFrameSensitiveMovement() noexcept
     m_fastSwimApplied = fastSwim;
 }
 
-void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
+void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick() noexcept
 {
     if (!m_natives || !m_natives->Ready())
         return;
-
-    void* scriptThread = FindValidatedScriptThread();
-    if (!scriptThread)
-        return;
-
-    const auto tlsArray = static_cast<std::uintptr_t>(__readgsqword(0x58));
-    if (!IsReadableAddress(tlsArray, sizeof(void*)))
-        return;
-
-    GTA_Tls_Context_View* tls = nullptr;
-    std::memcpy(&tls, reinterpret_cast<const void*>(tlsArray), sizeof(tls));
-    if (!tls || !IsReadableAddress(reinterpret_cast<std::uintptr_t>(tls), sizeof(GTA_Tls_Context_View)))
-        return;
-
-    void* previousThread = tls->currentScriptThread;
-    const bool previousActive = tls->scriptThreadActive;
-
-    tls->currentScriptThread = scriptThread;
-    tls->scriptThreadActive = true;
 
     const auto now = ::GetTickCount64();
     if (now >= m_nextSlowExtensionTickMs) {
@@ -401,8 +432,6 @@ void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
         TickCasinoExtension(*m_natives);
     }
 
-    // Explosive ammo owns its dedicated Yim-style spoofed extension path. Keep
-    // the legacy gameplay runner from emitting an unspoofed duplicate.
     auto& gameplayState = GTA_Gameplay_State::Instance();
     const bool explosiveAmmo = gameplayState.ExplosiveBullets();
     if (explosiveAmmo)
@@ -411,18 +440,14 @@ void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
     if (explosiveAmmo)
         gameplayState.SetExplosiveBullets(true);
 
-    TickExplosiveAmmoExtension(*m_natives, scriptThread);
+    if (void* scriptThread = FindValidatedScriptThread())
+        TickExplosiveAmmoExtension(*m_natives, scriptThread);
     TickFrameSensitiveMovement();
 
     if (now >= m_nextVehicleExtensionTickMs) {
         m_nextVehicleExtensionTickMs = now + VehicleExtensionTickIntervalMs;
-        // Vehicle catalog enrichment and forge snapshot inspection are expensive
-        // when idle, so keep this extension off the 16 ms gameplay cadence.
         TickVehicleForgeExtensions(*m_natives);
     }
-
-    tls->scriptThreadActive = previousActive;
-    tls->currentScriptThread = previousThread;
 }
 
 void* GTA_Run_Script_Threads_Bridge::FindValidatedScriptThread() const noexcept
