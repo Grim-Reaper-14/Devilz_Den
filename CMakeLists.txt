@@ -174,7 +174,7 @@ if(WIN32)
     )
     target_link_libraries(Devilz_Den_ImGui PUBLIC d3d12 d3dcompiler dxgi)
 
-    target_link_libraries(Devilz_Den PRIVATE psapi ole32 shell32 windowscodecs uuid Devilz_Den_ImGui)
+    target_link_libraries(Devilz_Den PRIVATE psapi ole32 shell32 windowscodecs uuid bcrypt Devilz_Den_ImGui)
 
     add_executable(Devilz_Den_Smoke_Test tests/Runtime_Smoke_Test.cpp)
     target_compile_definitions(Devilz_Den_Smoke_Test PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
@@ -207,6 +207,7 @@ if(WIN32)
     target_compile_definitions(Devilz_Den_Native_Manager_Test PRIVATE
         UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
     )
+    target_link_libraries(Devilz_Den_Native_Manager_Test PRIVATE bcrypt)
 
     if(BUILD_TESTING)
         add_test(NAME Devilz_Den.AddressResolver COMMAND Devilz_Den_Address_Resolver_Test)
