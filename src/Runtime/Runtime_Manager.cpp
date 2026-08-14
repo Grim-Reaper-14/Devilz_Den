@@ -7,6 +7,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Business_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Network_Session_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 
 #include <exception>
 #include <iomanip>
@@ -161,6 +162,7 @@ void Runtime_Manager::Stop() noexcept
         m_frontend.Stop();
         m_gameThreadBridge.Uninstall();
         Integrations::GTA5_Enhanced::ResetBusinessExtension();
+        Integrations::GTA5_Enhanced::ResetWorldEnvironmentExtension();
         m_scriptGlobals.Clear();
         m_natives.Reset();
         m_threads.Stop();
@@ -228,13 +230,16 @@ void Runtime_Manager::InitializeGameThreadBridge(
     using Integrations::GTA5_Enhanced::ConfigureBusinessExtension;
     using Integrations::GTA5_Enhanced::ConfigureNetworkSessionExtension;
     using Integrations::GTA5_Enhanced::ConfigureRandomEventsExtension;
+    using Integrations::GTA5_Enhanced::ConfigureWorldEnvironmentExtension;
     using Integrations::GTA5_Enhanced::ResetBusinessExtension;
     using Integrations::GTA5_Enhanced::ResetNetworkSessionExtension;
     using Integrations::GTA5_Enhanced::ResetRandomEventsExtension;
+    using Integrations::GTA5_Enhanced::ResetWorldEnvironmentExtension;
 
     ResetBusinessExtension();
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
+    ResetWorldEnvironmentExtension();
     m_scriptGlobals.Clear();
 
     if (!m_natives.Ready() || !status.targetReport) {
@@ -273,28 +278,28 @@ void Runtime_Manager::InitializeGameThreadBridge(
         }
     }
 
-    bool businessGlobalsReady = false;
+    bool scriptGlobalsReady = false;
     if (validatedScriptGlobals != 0 && status.build) {
         auto configured = m_scriptGlobals.ConfigureFromTable(
             Backend::Pointer(validatedScriptGlobals),
             status.build->fingerprint);
         if (configured) {
-            businessGlobalsReady = true;
+            scriptGlobalsReady = true;
             m_logger.Log(
                 Backend::LogLevel::Info,
-                "Validated script global table configured for business state and queued actions",
-                "GTA5_Enhanced.Business");
+                "Validated script global table configured for queued business and World actions",
+                "GTA5_Enhanced.ScriptGlobals");
         } else {
             m_logger.Log(
                 Backend::LogLevel::Warning,
-                "Business globals unavailable: " + configured.Failure().Message(),
-                "GTA5_Enhanced.Business");
+                "Script globals unavailable: " + configured.Failure().Message(),
+                "GTA5_Enhanced.ScriptGlobals");
         }
     } else {
         m_logger.Log(
             Backend::LogLevel::Warning,
-            "Business globals unavailable: ScriptGlobals is not semantically validated",
-            "GTA5_Enhanced.Business");
+            "Script globals unavailable: ScriptGlobals is not semantically validated",
+            "GTA5_Enhanced.ScriptGlobals");
     }
 
     if (runScriptThreads == 0 || scriptThreadsStorage == 0 || expectedDispatch == 0) {
@@ -316,8 +321,9 @@ void Runtime_Manager::InitializeGameThreadBridge(
         return;
     }
 
-    if (businessGlobalsReady && status.build) {
+    if (scriptGlobalsReady && status.build) {
         ConfigureBusinessExtension(&m_scriptGlobals, status.build->fingerprint);
+        ConfigureWorldEnvironmentExtension(&m_scriptGlobals, status.build->fingerprint);
     }
 
     ConfigureNetworkSessionExtension(

@@ -68,6 +68,120 @@ void Devils_Den_Menu::DrawWorldPage()
         RequestResetWorldWeather();
 
     ImGui::TextDisabled("Weather overrides are local to your game. Force Weather reapplies the selected type every tick.");
+
+    MedievalDivider();
+    ImGui::TextColored(Bronze, "REQUEST SERVICES");
+    ImGui::TextWrapped(
+        "Queue GTA Online service requests through the Enhanced 1.73 game-thread runtime. "
+        "Ownership, setup, location, and freemode availability requirements still apply.");
+    ImGui::TextDisabled(
+        "Ballistic delivery, instant equip, and instant remove are separate actions. "
+        "SuperVolito selection is applied before its helicopter request.");
+    ImGui::Spacing();
+
+    const auto serviceAction = WorldServiceRequestSnapshot();
+    ImGui::TextUnformatted("STATUS");
+    ImGui::SameLine();
+    if (serviceAction.status == GTA_Service_Request_Status::Succeeded) {
+        ImGui::TextColored(
+            ImVec4{0.42F, 0.78F, 0.42F, 1.0F},
+            "%s",
+            GTA_Service_Request_Status_Name(serviceAction.status));
+    } else if (serviceAction.status == GTA_Service_Request_Status::Idle ||
+               serviceAction.status == GTA_Service_Request_Status::Queued) {
+        ImGui::TextColored(
+            Bronze,
+            "%s",
+            GTA_Service_Request_Status_Name(serviceAction.status));
+    } else {
+        ImGui::TextColored(
+            EmberRed,
+            "%s",
+            GTA_Service_Request_Status_Name(serviceAction.status));
+    }
+
+    if (!serviceAction.detail.empty())
+        ImGui::TextWrapped("%s", serviceAction.detail.c_str());
+    else
+        ImGui::TextDisabled("Choose a service to queue its request.");
+
+    struct ServiceButton
+    {
+        const char* label;
+        GTA_Service_Request request;
+    };
+
+    constexpr std::array ownedServices{
+        ServiceButton{"MOC", GTA_Service_Request::MobileOperationsCenter},
+        ServiceButton{"AVENGER", GTA_Service_Request::Avenger},
+        ServiceButton{"TERRORBYTE", GTA_Service_Request::Terrorbyte},
+        ServiceButton{"KOSATKA", GTA_Service_Request::Kosatka},
+        ServiceButton{"DINGHY", GTA_Service_Request::Dinghy},
+        ServiceButton{"ACID LAB", GTA_Service_Request::AcidLab},
+        ServiceButton{"ACID LAB BIKE", GTA_Service_Request::AcidLabBike},
+        ServiceButton{"BAIL OFFICE TRANSPORTER", GTA_Service_Request::BailOfficeTransporter}
+    };
+
+    constexpr std::array supportServices{
+        ServiceButton{"AMMO DROP", GTA_Service_Request::AmmoDrop},
+        ServiceButton{"TAXI", GTA_Service_Request::Taxi},
+        ServiceButton{"BOAT PICKUP", GTA_Service_Request::BoatPickup},
+        ServiceButton{"HELICOPTER PICKUP", GTA_Service_Request::HelicopterPickup},
+        ServiceButton{"SUPER VOLITO PICKUP", GTA_Service_Request::SuperVolitoPickup},
+        ServiceButton{"BULL SHARK TESTOSTERONE", GTA_Service_Request::BullSharkTestosterone},
+        ServiceButton{"BACKUP HELICOPTER", GTA_Service_Request::BackupHelicopter},
+        ServiceButton{"CAYO HELICOPTER BACKUP", GTA_Service_Request::CayoHelicopterBackup},
+        ServiceButton{"AIRSTRIKE", GTA_Service_Request::Airstrike}
+    };
+
+    constexpr std::array remoteServices{
+        ServiceButton{"RC BANDITO", GTA_Service_Request::RcBandito},
+        ServiceButton{"RC TANK", GTA_Service_Request::RcTank},
+        ServiceButton{"BALLISTIC DELIVERY", GTA_Service_Request::BallisticEquipment},
+        ServiceButton{"BALLISTIC INSTANT EQUIP", GTA_Service_Request::BallisticEquipmentEquip},
+        ServiceButton{"BALLISTIC INSTANT REMOVE", GTA_Service_Request::BallisticEquipmentRemove}
+    };
+
+    const auto drawServiceGrid = [](const char* id, const auto& services) {
+        constexpr ImGuiTableFlags flags =
+            ImGuiTableFlags_Borders |
+            ImGuiTableFlags_RowBg |
+            ImGuiTableFlags_SizingStretchSame;
+
+        if (!ImGui::BeginTable(id, 3, flags))
+            return;
+
+        for (const auto& service : services) {
+            ImGui::TableNextColumn();
+            ImGui::PushID(static_cast<int>(service.request));
+            if (ImGui::Button(service.label, ImVec2{-1.0F, 34.0F}))
+                (void)RequestWorldService(service.request);
+            ImGui::PopID();
+        }
+
+        ImGui::EndTable();
+    };
+
+    const bool serviceQueued =
+        serviceAction.status == GTA_Service_Request_Status::Queued;
+    if (serviceQueued)
+        ImGui::TextDisabled("Waiting for the GTA game thread...");
+
+    ImGui::BeginDisabled(serviceQueued);
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("OWNED SERVICE VEHICLES");
+    drawServiceGrid("##OwnedServiceRequests", ownedServices);
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("FIELD SUPPORT");
+    drawServiceGrid("##SupportServiceRequests", supportServices);
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("REMOTE AND BALLISTIC");
+    drawServiceGrid("##RemoteServiceRequests", remoteServices);
+
+    ImGui::EndDisabled();
 }
 
 void Devils_Den_Menu::DrawPlaceholderPage(const char* title, const char* detail)
