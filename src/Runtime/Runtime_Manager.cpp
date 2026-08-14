@@ -4,6 +4,7 @@
 #include "Backend/Logging/Sinks/DebuggerSink.hpp"
 #include "Backend/Logging/Sinks/FileSink.hpp"
 #include "Backend/Process/Process_Module_Manager.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Bunker_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Business_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Casino_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Network_Session_Extension.hpp"
@@ -229,6 +230,7 @@ void Runtime_Manager::InitializeNativeManager(
 void Runtime_Manager::InitializeGameThreadBridge(
     const Integrations::GTA5_Enhanced::GTA_Module_Status& status)
 {
+    using Integrations::GTA5_Enhanced::ConfigureBunkerGlobals;
     using Integrations::GTA5_Enhanced::ConfigureBusinessExtension;
     using Integrations::GTA5_Enhanced::ConfigureCasinoExtension;
     using Integrations::GTA5_Enhanced::ConfigureNetworkSessionExtension;
@@ -332,6 +334,10 @@ void Runtime_Manager::InitializeGameThreadBridge(
                      "GTA5_Enhanced.Natives");
         return;
     }
+
+    ConfigureBunkerGlobals(
+        scriptGlobalsReady ? &m_scriptGlobals : nullptr,
+        status.build ? status.build->fingerprint : 0);
 
     if (scriptGlobalsReady && status.build) {
         ConfigureBusinessExtension(&m_scriptGlobals, status.build->fingerprint);

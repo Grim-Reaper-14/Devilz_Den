@@ -1,15 +1,22 @@
+// GTA Online Enhanced 1.73 Bunker business mod runtime.
 #include "GTA_Bunker_Extension.hpp"
+
+#include "Integrations/GTA5_Enhanced/Script/Globals/Script_Global_Manager.hpp"
 
 #include <Windows.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace Devilz::Integrations::GTA5_Enhanced
@@ -17,6 +24,16 @@ namespace Devilz::Integrations::GTA5_Enhanced
 namespace
 {
 constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
+
+// Enhanced 1.73 / b1158.13 Bunker tunables.
+constexpr std::uint32_t TunablesBase = 262145U;
+constexpr std::uint32_t BunkerHighDemandBonusOffset = 21232U;
+constexpr std::uint32_t BunkerHighDemandMaxBonusOffset = 21233U;
+constexpr std::uint32_t BunkerNearSaleMultiplierOffset = 21319U;
+constexpr std::uint32_t BunkerFarSaleMultiplierOffset = 21320U;
+constexpr std::uint32_t BunkerProductValueOffset = 21347U;
+constexpr auto BunkerTunablesRefreshInterval = std::chrono::milliseconds(500);
+
 constexpr std::uint32_t BunkerSellLocalBase = 1275U;
 constexpr std::uint32_t BunkerSellCompletionOffset = 774U;
 constexpr std::uint32_t BunkerSellCompletionLocal =
@@ -90,8 +107,10 @@ static_assert(sizeof(GTA_Script_Thread_Array_View) == 0x10);
 
 struct BunkerRuntime
 {
+    Script_Global_Manager* globals = nullptr;
     std::uintptr_t scriptThreadsStorageAddress = 0;
     std::uint64_t buildFingerprint = 0;
+    std::chrono::steady_clock::time_point lastTunablesRefresh{};
 };
 
 struct BunkerActionResult
@@ -100,11 +119,31 @@ struct BunkerActionResult
     std::string detail;
 };
 
+struct BunkerTunablesCommand
+{
+    std::uint64_t id = 0;
+    int productValue = 0;
+    float nearSaleMultiplier = 0.0F;
+    float farSaleMultiplier = 0.0F;
+    float highDemandBonus = 0.0F;
+    float highDemandMaxBonus = 0.0F;
+};
+
+struct BunkerTunablesResult
+{
+    GTA_Bunker_Tunables_Status status = GTA_Bunker_Tunables_Status::Failed;
+    std::string detail;
+};
+
 BunkerRuntime g_runtime{};
 std::mutex g_stateMutex;
 GTA_Bunker_Instant_Sell_Snapshot g_snapshot{};
 bool g_requestPending = false;
 std::uint64_t g_nextRequestId = 1;
+GTA_Bunker_Tunables_Snapshot g_tunablesSnapshot{};
+std::optional<BunkerTunablesCommand> g_pendingTunables;
+GTA_Bunker_Tunables_Action_Snapshot g_tunablesAction{};
+std::uint64_t g_nextTunablesRequestId = 1;
 
 bool IsReadableAddress(std::uintptr_t address, std::size_t size) noexcept
 {
@@ -154,6 +193,42 @@ bool IsWritableAddress(std::uintptr_t address, std::size_t size) noexcept
            protection == PAGE_EXECUTE_WRITECOPY;
 }
 
+template <typename T>
+bool ReadGlobal(Script_Global_Manager& globals, std::uint32_t index, T& value)
+{
+    auto result = globals.Get(index).Read<T>();
+    if (!result)
+        return false;
+
+    value = result.Value();
+    return true;
+}
+
+template <typename T>
+bool WriteGlobalVerified(
+    Script_Global_Manager& globals,
+    std::uint32_t index,
+    const T& value)
+{
+    static_assert(std::is_trivially_copyable_v<T>);
+
+    auto pointer = globals.Get(index).Resolve();
+    if (!pointer)
+        return false;
+
+    std::memcpy(
+        reinterpret_cast<void*>(pointer.Value().Address()),
+        &value,
+        sizeof(value));
+
+    auto readback = globals.Get(index).Read<T>();
+    if (!readback)
+        return false;
+
+    const auto actual = readback.Value();
+    return std::memcmp(&actual, &value, sizeof(T)) == 0;
+}
+
 GTA_Script_Thread_View* FindGunrunningThread() noexcept
 {
     if (!IsReadableAddress(
@@ -193,6 +268,110 @@ GTA_Script_Thread_View* FindGunrunningThread() noexcept
     }
 
     return nullptr;
+}
+
+GTA_Bunker_Tunables_Snapshot BuildBunkerTunablesSnapshot()
+{
+    GTA_Bunker_Tunables_Snapshot snapshot{};
+    auto* globals = g_runtime.globals;
+
+    if (!globals || !globals->Ready()) {
+        snapshot.detail = "Script globals are not configured for Bunker tunables.";
+        return snapshot;
+    }
+
+    if (g_runtime.buildFingerprint != SupportedFingerprint) {
+        snapshot.detail = "Bunker tunables are not registered for this GTA build.";
+        return snapshot;
+    }
+
+    bool ok = true;
+    ok &= ReadGlobal(
+        *globals,
+        TunablesBase + BunkerProductValueOffset,
+        snapshot.productValue);
+    ok &= ReadGlobal(
+        *globals,
+        TunablesBase + BunkerNearSaleMultiplierOffset,
+        snapshot.nearSaleMultiplier);
+    ok &= ReadGlobal(
+        *globals,
+        TunablesBase + BunkerFarSaleMultiplierOffset,
+        snapshot.farSaleMultiplier);
+    ok &= ReadGlobal(
+        *globals,
+        TunablesBase + BunkerHighDemandBonusOffset,
+        snapshot.highDemandBonus);
+    ok &= ReadGlobal(
+        *globals,
+        TunablesBase + BunkerHighDemandMaxBonusOffset,
+        snapshot.highDemandMaxBonus);
+
+    snapshot.runtimeReady = ok;
+    snapshot.detail = ok
+        ? "Bunker product, sale multiplier, and high-demand tunables are ready."
+        : "One or more Bunker tunables could not be read.";
+    return snapshot;
+}
+
+BunkerTunablesResult ApplyBunkerTunables(const BunkerTunablesCommand& command)
+{
+    auto* globals = g_runtime.globals;
+    if (!globals || !globals->Ready()) {
+        return {
+            GTA_Bunker_Tunables_Status::RuntimeUnavailable,
+            "Script globals are not configured for Bunker tunables."};
+    }
+
+    if (g_runtime.buildFingerprint != SupportedFingerprint) {
+        return {
+            GTA_Bunker_Tunables_Status::UnsupportedBuild,
+            "Bunker tunables are only registered for Enhanced 1.73 / b1158.13."};
+    }
+
+    const bool valid = command.productValue >= 0 &&
+        std::isfinite(command.nearSaleMultiplier) &&
+        std::isfinite(command.farSaleMultiplier) &&
+        std::isfinite(command.highDemandBonus) &&
+        std::isfinite(command.highDemandMaxBonus) &&
+        command.nearSaleMultiplier >= 0.0F &&
+        command.farSaleMultiplier >= 0.0F &&
+        command.highDemandBonus >= 0.0F &&
+        command.highDemandMaxBonus >= 0.0F;
+    if (!valid) {
+        return {
+            GTA_Bunker_Tunables_Status::InvalidValue,
+            "Bunker tunable values must be finite and non-negative."};
+    }
+
+    if (!WriteGlobalVerified(
+            *globals,
+            TunablesBase + BunkerProductValueOffset,
+            command.productValue) ||
+        !WriteGlobalVerified(
+            *globals,
+            TunablesBase + BunkerNearSaleMultiplierOffset,
+            command.nearSaleMultiplier) ||
+        !WriteGlobalVerified(
+            *globals,
+            TunablesBase + BunkerFarSaleMultiplierOffset,
+            command.farSaleMultiplier) ||
+        !WriteGlobalVerified(
+            *globals,
+            TunablesBase + BunkerHighDemandBonusOffset,
+            command.highDemandBonus) ||
+        !WriteGlobalVerified(
+            *globals,
+            TunablesBase + BunkerHighDemandMaxBonusOffset,
+            command.highDemandMaxBonus)) {
+        return {
+            GTA_Bunker_Tunables_Status::Failed,
+            "One or more Bunker tunable writes failed readback verification."};
+    }
+
+    return {
+        GTA_Bunker_Tunables_Status::Succeeded,
+        "Bunker globals were applied and verified."};
 }
 
 BunkerActionResult CompleteBunkerSellMission()
@@ -267,6 +446,20 @@ void ConfigureBunkerExtension(
     g_nextRequestId = 1;
 }
 
+void ConfigureBunkerGlobals(
+    Script_Global_Manager* globals,
+    std::uint64_t buildFingerprint) noexcept
+{
+    std::scoped_lock lock(g_stateMutex);
+    g_runtime.globals = globals;
+    g_runtime.buildFingerprint = buildFingerprint;
+    g_runtime.lastTunablesRefresh = {};
+    g_tunablesSnapshot = {};
+    g_pendingTunables.reset();
+    g_tunablesAction = {};
+    g_nextTunablesRequestId = 1;
+}
+
 void ResetBunkerExtension() noexcept
 {
     std::scoped_lock lock(g_stateMutex);
@@ -274,6 +467,10 @@ void ResetBunkerExtension() noexcept
     g_snapshot = {};
     g_requestPending = false;
     g_nextRequestId = 1;
+    g_tunablesSnapshot = {};
+    g_pendingTunables.reset();
+    g_tunablesAction = {};
+    g_nextTunablesRequestId = 1;
 }
 
 bool RequestBunkerInstantSell() noexcept
@@ -314,20 +511,113 @@ const char* GTA_Bunker_Instant_Sell_Status_Name(
     }
 }
 
-void TickBunkerExtension() noexcept
+bool RequestBunkerTunables(
+    int productValue,
+    float nearSaleMultiplier,
+    float farSaleMultiplier,
+    float highDemandBonus,
+    float highDemandMaxBonus) noexcept
 {
-    {
-        std::scoped_lock lock(g_stateMutex);
-        if (!g_requestPending)
-            return;
-        g_requestPending = false;
+    std::scoped_lock lock(g_stateMutex);
+    if (g_pendingTunables ||
+        g_tunablesAction.status == GTA_Bunker_Tunables_Status::Queued) {
+        return false;
     }
 
-    auto result = CompleteBunkerSellMission();
+    BunkerTunablesCommand command{};
+    command.id = g_nextTunablesRequestId++;
+    command.productValue = productValue;
+    command.nearSaleMultiplier = nearSaleMultiplier;
+    command.farSaleMultiplier = farSaleMultiplier;
+    command.highDemandBonus = highDemandBonus;
+    command.highDemandMaxBonus = highDemandMaxBonus;
+    g_pendingTunables = command;
 
+    ++g_tunablesAction.revision;
+    g_tunablesAction.requestId = command.id;
+    g_tunablesAction.status = GTA_Bunker_Tunables_Status::Queued;
+    g_tunablesAction.detail = "Queued for the GTA game thread.";
+    return true;
+}
+
+GTA_Bunker_Tunables_Snapshot BunkerTunablesSnapshot()
+{
     std::scoped_lock lock(g_stateMutex);
-    ++g_snapshot.revision;
-    g_snapshot.status = result.status;
-    g_snapshot.detail = std::move(result.detail);
+    return g_tunablesSnapshot;
+}
+
+GTA_Bunker_Tunables_Action_Snapshot BunkerTunablesActionSnapshot()
+{
+    std::scoped_lock lock(g_stateMutex);
+    return g_tunablesAction;
+}
+
+const char* GTA_Bunker_Tunables_Status_Name(
+    GTA_Bunker_Tunables_Status status) noexcept
+{
+    switch (status) {
+    case GTA_Bunker_Tunables_Status::Idle: return "IDLE";
+    case GTA_Bunker_Tunables_Status::Queued: return "QUEUED";
+    case GTA_Bunker_Tunables_Status::Succeeded: return "SUCCEEDED";
+    case GTA_Bunker_Tunables_Status::RuntimeUnavailable: return "RUNTIME UNAVAILABLE";
+    case GTA_Bunker_Tunables_Status::UnsupportedBuild: return "UNSUPPORTED BUILD";
+    case GTA_Bunker_Tunables_Status::InvalidValue: return "INVALID VALUE";
+    case GTA_Bunker_Tunables_Status::Failed: return "FAILED";
+    default: return "UNKNOWN";
+    }
+}
+
+void TickBunkerExtension() noexcept
+{
+    bool instantSellPending = false;
+    std::optional<BunkerTunablesCommand> tunablesCommand;
+
+    {
+        std::scoped_lock lock(g_stateMutex);
+        instantSellPending = g_requestPending;
+        g_requestPending = false;
+
+        if (g_pendingTunables) {
+            tunablesCommand = std::move(g_pendingTunables);
+            g_pendingTunables.reset();
+        }
+    }
+
+    if (instantSellPending) {
+        auto result = CompleteBunkerSellMission();
+        std::scoped_lock lock(g_stateMutex);
+        ++g_snapshot.revision;
+        g_snapshot.status = result.status;
+        g_snapshot.detail = std::move(result.detail);
+    }
+
+    if (tunablesCommand) {
+        auto result = ApplyBunkerTunables(*tunablesCommand);
+        std::scoped_lock lock(g_stateMutex);
+        if (g_tunablesAction.requestId == tunablesCommand->id) {
+            ++g_tunablesAction.revision;
+            g_tunablesAction.status = result.status;
+            g_tunablesAction.detail = std::move(result.detail);
+        }
+    }
+
+    bool refreshTunables = false;
+    const auto now = std::chrono::steady_clock::now();
+    {
+        std::scoped_lock lock(g_stateMutex);
+        if (g_runtime.globals &&
+            (g_runtime.lastTunablesRefresh == std::chrono::steady_clock::time_point{} ||
+             now - g_runtime.lastTunablesRefresh >= BunkerTunablesRefreshInterval ||
+             tunablesCommand.has_value())) {
+            g_runtime.lastTunablesRefresh = now;
+            refreshTunables = true;
+        }
+    }
+
+    if (refreshTunables) {
+        auto snapshot = BuildBunkerTunablesSnapshot();
+        std::scoped_lock lock(g_stateMutex);
+        g_tunablesSnapshot = std::move(snapshot);
+    }
 }
 }
