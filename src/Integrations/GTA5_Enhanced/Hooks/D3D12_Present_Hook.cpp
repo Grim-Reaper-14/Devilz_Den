@@ -131,10 +131,8 @@ HRESULT STDMETHODCALLTYPE D3D12_Present_Hook::PresentThunk(
     }
 
     hook->m_activeCalls.fetch_add(1, std::memory_order_acq_rel);
-
-    // Diagnostic A/B: keep the Present detour installed but bypass Devilz_Den's
-    // renderer work entirely. This isolates OnPresent frame/fence synchronization
-    // from the hook itself and from GTA's original Present call.
+    if (hook->m_state.load(std::memory_order_acquire) == Hook_State::Installed && hook->m_renderer)
+        hook->m_renderer->OnPresent();
 
     const auto original = hook->m_originalPresent ? hook->m_originalPresent : s_fallbackPresent;
     const auto result = original
