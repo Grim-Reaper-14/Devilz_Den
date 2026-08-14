@@ -1,5 +1,5 @@
 #include "Frontend/Menu/Menu_Appearance.hpp"
-#include "Frontend/Menu/Defense/Defense_Page.hpp"
+#include "Frontend/Menu/Defense/Defense_Page.inc"
 
 namespace Devilz::Frontend
 {
