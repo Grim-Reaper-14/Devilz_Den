@@ -157,7 +157,6 @@ void GTA_Gameplay_Feature_Runner::Tick() noexcept
     TickUnlimitedClip();
     TickExplosiveBullets();
     TickWeaponActions();
-    TickVehicleCatalog();
     TickVehicleSpawner();
     TickVehicleForge();
     TickVehicleMaintenance();
@@ -176,14 +175,14 @@ void GTA_Gameplay_Feature_Runner::TickGodMode() noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
     const bool desired = state.GodMode();
-    if (!desired && !m_godModeApplied)
+    if (desired == m_godModeApplied)
         return;
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
     if (!m_natives->Invoke<void>(GTA_Native_Id::SetEntityInvincible, *ped, desired, true))
         return;
-    if (desired != m_godModeApplied && m_logger)
+    if (m_logger)
         m_logger->Log(Backend::LogLevel::Info, std::string("God Mode ") + (desired ? "enabled" : "disabled") + " on the game thread", "GTA5_Enhanced.Features");
     m_godModeApplied = desired;
 }
@@ -226,7 +225,7 @@ void GTA_Gameplay_Feature_Runner::TickInfiniteOxygen() noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
     const bool desired = state.InfiniteOxygen();
-    if (!desired && !m_infiniteOxygenApplied)
+    if (desired == m_infiniteOxygenApplied)
         return;
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
@@ -234,7 +233,7 @@ void GTA_Gameplay_Feature_Runner::TickInfiniteOxygen() noexcept
     const float maxTime = desired ? static_cast<float>((std::numeric_limits<int>::max)()) : -1.0F;
     if (!m_natives->Invoke<void>(GTA_Native_Id::SetPedMaxTimeUnderwater, *ped, maxTime))
         return;
-    if (desired != m_infiniteOxygenApplied && m_logger)
+    if (m_logger)
         m_logger->Log(Backend::LogLevel::Info, desired ? "Infinite Oxygen enabled" : "Infinite Oxygen disabled; underwater timer restored", "GTA5_Enhanced.Features");
     m_infiniteOxygenApplied = desired;
 }
@@ -243,14 +242,14 @@ void GTA_Gameplay_Feature_Runner::TickNoRagdoll() noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
     const bool desired = state.NoRagdoll();
-    if (!desired && !m_noRagdollApplied)
+    if (desired == m_noRagdollApplied)
         return;
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
     if (!m_natives->Invoke<void>(GTA_Native_Id::SetPedCanRagdoll, *ped, !desired))
         return;
-    if (desired != m_noRagdollApplied && m_logger)
+    if (m_logger)
         m_logger->Log(Backend::LogLevel::Info, desired ? "No Ragdoll enabled" : "No Ragdoll disabled; ragdoll restored", "GTA5_Enhanced.Features");
     m_noRagdollApplied = desired;
 }
@@ -272,14 +271,14 @@ void GTA_Gameplay_Feature_Runner::TickInfiniteAmmo() noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
     const bool desired = state.InfiniteAmmo();
-    if (!desired && !m_infiniteAmmoApplied)
+    if (desired == m_infiniteAmmoApplied)
         return;
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
     if (!m_natives->Invoke<void>(GTA_Native_Id::SetPedInfiniteAmmo, *ped, desired, 0U))
         return;
-    if (desired != m_infiniteAmmoApplied && m_logger)
+    if (m_logger)
         m_logger->Log(Backend::LogLevel::Info, desired ? "Infinite Ammo enabled" : "Infinite Ammo disabled", "GTA5_Enhanced.Features");
     m_infiniteAmmoApplied = desired;
 }
@@ -288,14 +287,14 @@ void GTA_Gameplay_Feature_Runner::TickUnlimitedClip() noexcept
 {
     auto& state = GTA_Gameplay_State::Instance();
     const bool desired = state.UnlimitedClip();
-    if (!desired && !m_unlimitedClipApplied)
+    if (desired == m_unlimitedClipApplied)
         return;
     const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
     if (!ped || *ped == 0)
         return;
     if (!m_natives->Invoke<void>(GTA_Native_Id::SetPedInfiniteAmmoClip, *ped, desired))
         return;
-    if (desired != m_unlimitedClipApplied && m_logger)
+    if (m_logger)
         m_logger->Log(Backend::LogLevel::Info, desired ? "Unlimited Clip enabled" : "Unlimited Clip disabled", "GTA5_Enhanced.Features");
     m_unlimitedClipApplied = desired;
 }
@@ -612,8 +611,12 @@ void GTA_Gameplay_Feature_Runner::TickVehicleForge() noexcept
 void GTA_Gameplay_Feature_Runner::TickVehicleMaintenance() noexcept
 {
     auto& state = GTA_Vehicle_State::Instance();
-    const int vehicle = CurrentVehicle();
     const bool godMode = state.VehicleGodMode();
+    const bool keepPerfect = state.KeepVehiclePerfect();
+    if (!godMode && !keepPerfect && m_vehicleGodModeAppliedVehicle == 0)
+        return;
+
+    const int vehicle = CurrentVehicle();
 
     if (m_vehicleGodModeAppliedVehicle != 0 &&
         (!godMode || vehicle != m_vehicleGodModeAppliedVehicle)) {
@@ -626,7 +629,7 @@ void GTA_Gameplay_Feature_Runner::TickVehicleMaintenance() noexcept
         m_vehicleGodModeAppliedVehicle = vehicle;
     }
 
-    if (vehicle == 0 || !state.KeepVehiclePerfect())
+    if (vehicle == 0 || !keepPerfect)
         return;
 
     (void)m_natives->Invoke<void>(GTA_Native_Id::SetVehicleFixed, vehicle);
@@ -639,8 +642,11 @@ void GTA_Gameplay_Feature_Runner::TickVehicleMaintenance() noexcept
 void GTA_Gameplay_Feature_Runner::TickVehicleForgeSnapshot() noexcept
 {
     auto& state = GTA_Vehicle_State::Instance();
-    const int vehicle = CurrentVehicle();
     const bool refreshRequested = state.ConsumeForgeSnapshotRefreshRequest();
+    if (m_forgeSnapshotVehicle == 0 && !refreshRequested)
+        return;
+
+    const int vehicle = CurrentVehicle();
     if (vehicle == m_forgeSnapshotVehicle && !refreshRequested)
         return;
 
