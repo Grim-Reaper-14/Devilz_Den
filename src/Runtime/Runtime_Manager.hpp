@@ -6,6 +6,7 @@
 #include "Integrations/GTA5_Enhanced/GTA_Module_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Run_Script_Threads_Bridge.hpp"
+#include "Integrations/GTA5_Enhanced/Script/Globals/Script_Global_Manager.hpp"
 
 #include <atomic>
 #include <filesystem>
@@ -35,6 +36,7 @@ private:
     Backend::ThreadManager m_threads;
     Integrations::GTA5_Enhanced::GTA_Module_Manager m_gta;
     Integrations::GTA5_Enhanced::GTA_Native_Manager m_natives;
+    Integrations::GTA5_Enhanced::Script_Global_Manager m_scriptGlobals;
     Integrations::GTA5_Enhanced::GTA_Run_Script_Threads_Bridge m_gameThreadBridge;
     Frontend::Frontend_Manager m_frontend;
     std::atomic_bool m_running{false};
