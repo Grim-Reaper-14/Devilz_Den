@@ -1,6 +1,7 @@
 // GTA Online Enhanced 1.73 Bunker business mod runtime.
 #include "GTA_Bunker_Extension.hpp"
 
+#include "GTA_Business_State.hpp"
 #include "Integrations/GTA5_Enhanced/Script/Globals/Script_Global_Manager.hpp"
 
 #include <Windows.h>
@@ -33,6 +34,17 @@ constexpr std::uint32_t BunkerNearSaleMultiplierOffset = 21319U;
 constexpr std::uint32_t BunkerFarSaleMultiplierOffset = 21320U;
 constexpr std::uint32_t BunkerProductValueOffset = 21347U;
 constexpr auto BunkerTunablesRefreshInterval = std::chrono::milliseconds(500);
+
+// Enhanced 1.73 / b1158.13 Ammu-Nation Contract (Excess Weapon Parts).
+constexpr std::uint32_t AmmuNationDeliveryPayoutOffset = 32173U;
+constexpr std::uint32_t AmmuNationAmbushChanceOffset = 32175U;
+constexpr std::uint32_t AmmuNationTimeLimitOffset = 32178U;
+constexpr std::uint32_t PlayerBusinessDataBase = 2658296U;
+constexpr std::uint32_t PlayerBusinessDataStride = 468U;
+constexpr std::uint32_t ExcessWeaponPartsTriggerOffset = 465U;
+constexpr int ExcessWeaponPartsTriggerBit = 1;
+constexpr int ExcessWeaponPartsTriggerMask = 1 << ExcessWeaponPartsTriggerBit;
+constexpr auto AmmuNationRefreshInterval = std::chrono::milliseconds(500);
 
 constexpr std::uint32_t BunkerSellLocalBase = 1275U;
 constexpr std::uint32_t BunkerSellCompletionOffset = 774U;
@@ -111,6 +123,7 @@ struct BunkerRuntime
     std::uintptr_t scriptThreadsStorageAddress = 0;
     std::uint64_t buildFingerprint = 0;
     std::chrono::steady_clock::time_point lastTunablesRefresh{};
+    std::chrono::steady_clock::time_point lastAmmuNationRefresh{};
 };
 
 struct BunkerActionResult
@@ -135,6 +148,27 @@ struct BunkerTunablesResult
     std::string detail;
 };
 
+enum class BunkerAmmuNationCommandType : std::uint8_t
+{
+    ApplyTunables,
+    TriggerExcessWeaponParts
+};
+
+struct BunkerAmmuNationCommand
+{
+    std::uint64_t id = 0;
+    BunkerAmmuNationCommandType type = BunkerAmmuNationCommandType::ApplyTunables;
+    int deliveryPayout = 0;
+    int ambushChance = 0;
+    int timeLimit = 0;
+};
+
+struct BunkerAmmuNationResult
+{
+    GTA_Bunker_Ammu_Nation_Status status = GTA_Bunker_Ammu_Nation_Status::Failed;
+    std::string detail;
+};
+
 BunkerRuntime g_runtime{};
 std::mutex g_stateMutex;
 GTA_Bunker_Instant_Sell_Snapshot g_snapshot{};
@@ -144,6 +178,10 @@ GTA_Bunker_Tunables_Snapshot g_tunablesSnapshot{};
 std::optional<BunkerTunablesCommand> g_pendingTunables;
 GTA_Bunker_Tunables_Action_Snapshot g_tunablesAction{};
 std::uint64_t g_nextTunablesRequestId = 1;
+GTA_Bunker_Ammu_Nation_Snapshot g_ammuNationSnapshot{};
+std::optional<BunkerAmmuNationCommand> g_pendingAmmuNation;
+GTA_Bunker_Ammu_Nation_Action_Snapshot g_ammuNationAction{};
+std::uint64_t g_nextAmmuNationRequestId = 1;
 
 bool IsReadableAddress(std::uintptr_t address, std::size_t size) noexcept
 {
@@ -227,6 +265,19 @@ bool WriteGlobalVerified(
 
     const auto actual = readback.Value();
     return std::memcmp(&actual, &value, sizeof(T)) == 0;
+}
+
+std::uint32_t PlayerExcessWeaponPartsEntry(int player) noexcept
+{
+    return PlayerBusinessDataBase +
+        1U +
+        static_cast<std::uint32_t>(player) * PlayerBusinessDataStride +
+        ExcessWeaponPartsTriggerOffset;
+}
+
+int PublishedPlayerIndex() noexcept
+{
+    return GTA_Business_State::Instance().Nightclub().playerIndex;
 }
 
 GTA_Script_Thread_View* FindGunrunningThread() noexcept
@@ -374,6 +425,138 @@ BunkerTunablesResult ApplyBunkerTunables(const BunkerTunablesCommand& command)
         "Bunker globals were applied and verified."};
 }
 
+GTA_Bunker_Ammu_Nation_Snapshot BuildBunkerAmmuNationSnapshot()
+{
+    GTA_Bunker_Ammu_Nation_Snapshot snapshot{};
+    auto* globals = g_runtime.globals;
+
+    if (!globals || !globals->Ready()) {
+        snapshot.detail = "Script globals are not configured for the Ammu-Nation Contract.";
+        return snapshot;
+    }
+
+    if (g_runtime.buildFingerprint != SupportedFingerprint) {
+        snapshot.detail = "Ammu-Nation Contract globals are not registered for this GTA build.";
+        return snapshot;
+    }
+
+    bool ok = true;
+    ok &= ReadGlobal(
+        *globals,
+        TunablesBase + AmmuNationDeliveryPayoutOffset,
+        snapshot.deliveryPayout);
+    ok &= ReadGlobal(
+        *globals,
+        TunablesBase + AmmuNationAmbushChanceOffset,
+        snapshot.ambushChance);
+    ok &= ReadGlobal(
+        *globals,
+        TunablesBase + AmmuNationTimeLimitOffset,
+        snapshot.timeLimit);
+
+    snapshot.runtimeReady = ok;
+    if (!ok) {
+        snapshot.detail = "One or more Ammu-Nation Contract tunables could not be read.";
+        return snapshot;
+    }
+
+    const int player = PublishedPlayerIndex();
+    if (player < 0 || player >= 32) {
+        snapshot.detail = "Ammu-Nation Contract tunables are ready; local player index is not published yet.";
+        return snapshot;
+    }
+
+    snapshot.playerIndex = player;
+    int triggerFlags = 0;
+    if (!ReadGlobal(*globals, PlayerExcessWeaponPartsEntry(player), triggerFlags)) {
+        snapshot.detail = "Ammu-Nation Contract tunables are ready; trigger flags could not be read.";
+        return snapshot;
+    }
+
+    snapshot.triggerBitEnabled =
+        (triggerFlags & ExcessWeaponPartsTriggerMask) != 0;
+    snapshot.detail = "Ammu-Nation Contract tunables and player trigger flag are ready.";
+    return snapshot;
+}
+
+BunkerAmmuNationResult ExecuteBunkerAmmuNationCommand(
+    const BunkerAmmuNationCommand& command)
+{
+    auto* globals = g_runtime.globals;
+    if (!globals || !globals->Ready()) {
+        return {
+            GTA_Bunker_Ammu_Nation_Status::RuntimeUnavailable,
+            "Script globals are not configured for the Ammu-Nation Contract."};
+    }
+
+    if (g_runtime.buildFingerprint != SupportedFingerprint) {
+        return {
+            GTA_Bunker_Ammu_Nation_Status::UnsupportedBuild,
+            "Ammu-Nation Contract controls are only registered for Enhanced 1.73 / b1158.13."};
+    }
+
+    if (command.type == BunkerAmmuNationCommandType::ApplyTunables) {
+        if (command.deliveryPayout < 0 ||
+            command.ambushChance < 0 ||
+            command.ambushChance > 100 ||
+            command.timeLimit < 0) {
+            return {
+                GTA_Bunker_Ammu_Nation_Status::InvalidValue,
+                "Payout/time must be non-negative and ambush chance must be 0-100."};
+        }
+
+        if (!WriteGlobalVerified(
+                *globals,
+                TunablesBase + AmmuNationDeliveryPayoutOffset,
+                command.deliveryPayout) ||
+            !WriteGlobalVerified(
+                *globals,
+                TunablesBase + AmmuNationAmbushChanceOffset,
+                command.ambushChance) ||
+            !WriteGlobalVerified(
+                *globals,
+                TunablesBase + AmmuNationTimeLimitOffset,
+                command.timeLimit)) {
+            return {
+                GTA_Bunker_Ammu_Nation_Status::Failed,
+                "One or more Ammu-Nation Contract tunable writes failed readback verification."};
+        }
+
+        return {
+            GTA_Bunker_Ammu_Nation_Status::Succeeded,
+            "Ammu-Nation Contract tunables were applied and verified."};
+    }
+
+    const int player = PublishedPlayerIndex();
+    if (player < 0 || player >= 32) {
+        return {
+            GTA_Bunker_Ammu_Nation_Status::PlayerUnavailable,
+            "Local player index is unavailable; Excess Weapon Parts was not triggered."};
+    }
+
+    const auto triggerIndex = PlayerExcessWeaponPartsEntry(player);
+    int triggerFlags = 0;
+    if (!ReadGlobal(*globals, triggerIndex, triggerFlags)) {
+        return {
+            GTA_Bunker_Ammu_Nation_Status::Failed,
+            "Excess Weapon Parts trigger flags could not be read."};
+    }
+
+    const int updatedFlags = triggerFlags | ExcessWeaponPartsTriggerMask;
+    if (updatedFlags != triggerFlags &&
+        !WriteGlobalVerified(*globals, triggerIndex, updatedFlags)) {
+        return {
+            GTA_Bunker_Ammu_Nation_Status::Failed,
+            "Excess Weapon Parts trigger bit failed readback verification."};
+    }
+
+    return {
+        GTA_Bunker_Ammu_Nation_Status::Succeeded,
+        updatedFlags == triggerFlags
+            ? "Excess Weapon Parts trigger bit 1 is already enabled."
+            : "Excess Weapon Parts trigger bit 1 was enabled and verified."};
+}
+
 BunkerActionResult CompleteBunkerSellMission()
 {
     if (g_runtime.buildFingerprint != SupportedFingerprint) {
@@ -454,10 +637,15 @@ void ConfigureBunkerGlobals(
     g_runtime.globals = globals;
     g_runtime.buildFingerprint = buildFingerprint;
     g_runtime.lastTunablesRefresh = {};
+    g_runtime.lastAmmuNationRefresh = {};
     g_tunablesSnapshot = {};
     g_pendingTunables.reset();
     g_tunablesAction = {};
     g_nextTunablesRequestId = 1;
+    g_ammuNationSnapshot = {};
+    g_pendingAmmuNation.reset();
+    g_ammuNationAction = {};
+    g_nextAmmuNationRequestId = 1;
 }
 
 void ResetBunkerExtension() noexcept
@@ -471,6 +659,10 @@ void ResetBunkerExtension() noexcept
     g_pendingTunables.reset();
     g_tunablesAction = {};
     g_nextTunablesRequestId = 1;
+    g_ammuNationSnapshot = {};
+    g_pendingAmmuNation.reset();
+    g_ammuNationAction = {};
+    g_nextAmmuNationRequestId = 1;
 }
 
 bool RequestBunkerInstantSell() noexcept
@@ -567,10 +759,85 @@ const char* GTA_Bunker_Tunables_Status_Name(
     }
 }
 
+bool RequestBunkerAmmuNationTunables(
+    int deliveryPayout,
+    int ambushChance,
+    int timeLimit) noexcept
+{
+    std::scoped_lock lock(g_stateMutex);
+    if (g_pendingAmmuNation ||
+        g_ammuNationAction.status == GTA_Bunker_Ammu_Nation_Status::Queued) {
+        return false;
+    }
+
+    BunkerAmmuNationCommand command{};
+    command.id = g_nextAmmuNationRequestId++;
+    command.type = BunkerAmmuNationCommandType::ApplyTunables;
+    command.deliveryPayout = deliveryPayout;
+    command.ambushChance = ambushChance;
+    command.timeLimit = timeLimit;
+    g_pendingAmmuNation = command;
+
+    ++g_ammuNationAction.revision;
+    g_ammuNationAction.requestId = command.id;
+    g_ammuNationAction.status = GTA_Bunker_Ammu_Nation_Status::Queued;
+    g_ammuNationAction.detail = "Ammu-Nation tunables queued for the GTA game thread.";
+    return true;
+}
+
+bool RequestTriggerExcessWeaponParts() noexcept
+{
+    std::scoped_lock lock(g_stateMutex);
+    if (g_pendingAmmuNation ||
+        g_ammuNationAction.status == GTA_Bunker_Ammu_Nation_Status::Queued) {
+        return false;
+    }
+
+    BunkerAmmuNationCommand command{};
+    command.id = g_nextAmmuNationRequestId++;
+    command.type = BunkerAmmuNationCommandType::TriggerExcessWeaponParts;
+    g_pendingAmmuNation = command;
+
+    ++g_ammuNationAction.revision;
+    g_ammuNationAction.requestId = command.id;
+    g_ammuNationAction.status = GTA_Bunker_Ammu_Nation_Status::Queued;
+    g_ammuNationAction.detail = "Excess Weapon Parts trigger queued for the GTA game thread.";
+    return true;
+}
+
+GTA_Bunker_Ammu_Nation_Snapshot BunkerAmmuNationSnapshot()
+{
+    std::scoped_lock lock(g_stateMutex);
+    return g_ammuNationSnapshot;
+}
+
+GTA_Bunker_Ammu_Nation_Action_Snapshot BunkerAmmuNationActionSnapshot()
+{
+    std::scoped_lock lock(g_stateMutex);
+    return g_ammuNationAction;
+}
+
+const char* GTA_Bunker_Ammu_Nation_Status_Name(
+    GTA_Bunker_Ammu_Nation_Status status) noexcept
+{
+    switch (status) {
+    case GTA_Bunker_Ammu_Nation_Status::Idle: return "IDLE";
+    case GTA_Bunker_Ammu_Nation_Status::Queued: return "QUEUED";
+    case GTA_Bunker_Ammu_Nation_Status::Succeeded: return "SUCCEEDED";
+    case GTA_Bunker_Ammu_Nation_Status::RuntimeUnavailable: return "RUNTIME UNAVAILABLE";
+    case GTA_Bunker_Ammu_Nation_Status::UnsupportedBuild: return "UNSUPPORTED BUILD";
+    case GTA_Bunker_Ammu_Nation_Status::PlayerUnavailable: return "PLAYER UNAVAILABLE";
+    case GTA_Bunker_Ammu_Nation_Status::InvalidValue: return "INVALID VALUE";
+    case GTA_Bunker_Ammu_Nation_Status::Failed: return "FAILED";
+    default: return "UNKNOWN";
+    }
+}
+
 void TickBunkerExtension() noexcept
 {
     bool instantSellPending = false;
     std::optional<BunkerTunablesCommand> tunablesCommand;
+    std::optional<BunkerAmmuNationCommand> ammuNationCommand;
 
     {
         std::scoped_lock lock(g_stateMutex);
@@ -580,6 +847,11 @@ void TickBunkerExtension() noexcept
         if (g_pendingTunables) {
             tunablesCommand = std::move(g_pendingTunables);
             g_pendingTunables.reset();
+        }
+
+        if (g_pendingAmmuNation) {
+            ammuNationCommand = std::move(g_pendingAmmuNation);
+            g_pendingAmmuNation.reset();
         }
     }
 
@@ -601,7 +873,18 @@ void TickBunkerExtension() noexcept
         }
     }
 
+    if (ammuNationCommand) {
+        auto result = ExecuteBunkerAmmuNationCommand(*ammuNationCommand);
+        std::scoped_lock lock(g_stateMutex);
+        if (g_ammuNationAction.requestId == ammuNationCommand->id) {
+            ++g_ammuNationAction.revision;
+            g_ammuNationAction.status = result.status;
+            g_ammuNationAction.detail = std::move(result.detail);
+        }
+    }
+
     bool refreshTunables = false;
+    bool refreshAmmuNation = false;
     const auto now = std::chrono::steady_clock::now();
     {
         std::scoped_lock lock(g_stateMutex);
@@ -612,12 +895,26 @@ void TickBunkerExtension() noexcept
             g_runtime.lastTunablesRefresh = now;
             refreshTunables = true;
         }
+
+        if (g_runtime.globals &&
+            (g_runtime.lastAmmuNationRefresh == std::chrono::steady_clock::time_point{} ||
+             now - g_runtime.lastAmmuNationRefresh >= AmmuNationRefreshInterval ||
+             ammuNationCommand.has_value())) {
+            g_runtime.lastAmmuNationRefresh = now;
+            refreshAmmuNation = true;
+        }
     }
 
     if (refreshTunables) {
         auto snapshot = BuildBunkerTunablesSnapshot();
         std::scoped_lock lock(g_stateMutex);
         g_tunablesSnapshot = std::move(snapshot);
+    }
+
+    if (refreshAmmuNation) {
+        auto snapshot = BuildBunkerAmmuNationSnapshot();
+        std::scoped_lock lock(g_stateMutex);
+        g_ammuNationSnapshot = std::move(snapshot);
     }
 }
 }

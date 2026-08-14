@@ -58,6 +58,37 @@ struct GTA_Bunker_Tunables_Action_Snapshot
     std::string detail;
 };
 
+struct GTA_Bunker_Ammu_Nation_Snapshot
+{
+    bool runtimeReady = false;
+    int playerIndex = -1;
+    int deliveryPayout = 0;
+    int ambushChance = 0;
+    int timeLimit = 0;
+    bool triggerBitEnabled = false;
+    std::string detail = "Ammu-Nation Contract globals are unavailable.";
+};
+
+enum class GTA_Bunker_Ammu_Nation_Status : std::uint8_t
+{
+    Idle,
+    Queued,
+    Succeeded,
+    RuntimeUnavailable,
+    UnsupportedBuild,
+    PlayerUnavailable,
+    InvalidValue,
+    Failed
+};
+
+struct GTA_Bunker_Ammu_Nation_Action_Snapshot
+{
+    std::uint64_t revision = 0;
+    std::uint64_t requestId = 0;
+    GTA_Bunker_Ammu_Nation_Status status = GTA_Bunker_Ammu_Nation_Status::Idle;
+    std::string detail;
+};
+
 void ConfigureBunkerExtension(
     std::uintptr_t scriptThreadsStorageAddress,
     std::uint64_t buildFingerprint) noexcept;
@@ -83,6 +114,16 @@ void ResetBunkerExtension() noexcept;
 [[nodiscard]] GTA_Bunker_Tunables_Action_Snapshot BunkerTunablesActionSnapshot();
 [[nodiscard]] const char* GTA_Bunker_Tunables_Status_Name(
     GTA_Bunker_Tunables_Status status) noexcept;
+
+[[nodiscard]] bool RequestBunkerAmmuNationTunables(
+    int deliveryPayout,
+    int ambushChance,
+    int timeLimit) noexcept;
+[[nodiscard]] bool RequestTriggerExcessWeaponParts() noexcept;
+[[nodiscard]] GTA_Bunker_Ammu_Nation_Snapshot BunkerAmmuNationSnapshot();
+[[nodiscard]] GTA_Bunker_Ammu_Nation_Action_Snapshot BunkerAmmuNationActionSnapshot();
+[[nodiscard]] const char* GTA_Bunker_Ammu_Nation_Status_Name(
+    GTA_Bunker_Ammu_Nation_Status status) noexcept;
 
 void TickBunkerExtension() noexcept;
 }
