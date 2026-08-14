@@ -1,5 +1,6 @@
 #include "GTA_Run_Script_Threads_Bridge.hpp"
 
+#include "GTA_Bunker_Extension.hpp"
 #include "GTA_Business_Extension.hpp"
 #include "GTA_Casino_Extension.hpp"
 #include "GTA_Explosive_Ammo_Extension.hpp"
@@ -166,10 +167,12 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_activeCalls.store(0);
     m_gameplay.Configure(natives, logger);
     GTA_Gameplay_State::Instance().Reset();
+    ConfigureBunkerExtension(scriptThreadsStorageAddress, natives.Fingerprint());
 
     s_active = this;
     if (!WriteExecutableBytes(m_targetAddress, patch.data(), patch.size())) {
         s_active = nullptr;
+        ResetBunkerExtension();
         m_gameplay.Reset();
         m_original = nullptr;
         m_natives = nullptr;
@@ -213,6 +216,7 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     if (s_active == this)
         s_active = nullptr;
 
+    ResetBunkerExtension();
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
     m_gameplay.Reset();
@@ -332,6 +336,7 @@ void GTA_Run_Script_Threads_Bridge::RunGameplayTick() noexcept
 
     TickNetworkSessionExtension();
     TickRandomEventsExtension(*m_natives);
+    TickBunkerExtension();
     TickBusinessExtension(*m_natives);
     TickCasinoExtension(*m_natives);
 

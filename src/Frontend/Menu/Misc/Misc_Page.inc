@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 
+#include "Bunker_Page.inc"
 #include "Special_Cargo_Page.inc"
 
 namespace Devilz::Frontend::Misc
@@ -865,6 +866,11 @@ void DrawMiscPage()
 
         if (ImGui::BeginTabItem("RESUPPLY")) {
             DrawInstantResupplyControls(nightclub, resupplyAction);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("BUNKER")) {
+            DrawBunkerInstantSellControls();
             ImGui::EndTabItem();
         }
 
