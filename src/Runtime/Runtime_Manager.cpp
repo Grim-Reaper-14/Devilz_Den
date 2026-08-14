@@ -282,7 +282,7 @@ void Runtime_Manager::InitializeGameThreadBridge(
             businessGlobalsReady = true;
             m_logger.Log(
                 Backend::LogLevel::Info,
-                "Validated script global table configured for read-only business state",
+                "Validated script global table configured for business state and queued actions",
                 "GTA5_Enhanced.Business");
         } else {
             m_logger.Log(
