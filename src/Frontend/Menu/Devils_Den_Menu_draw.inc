@@ -1,5 +1,8 @@
 #include "Frontend/Menu/Menu_Appearance.hpp"
+#include "Frontend/Menu/Devils_Den_Menu_supplemental.hpp"
 #include "Frontend/Menu/Defense/Defense_Page.inc"
+#include "Frontend/Menu/Misc/Misc_Page.inc"
+#include "Frontend/Menu/Recovery/Recovery_Page.inc"
 
 namespace Devilz::Frontend
 {
@@ -54,16 +57,24 @@ void Devils_Den_Menu::Draw(bool& open)
     const ImVec2 contentMin = ImGui::GetCursorScreenPos();
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0.032F, 0.023F, 0.020F, panelAlpha});
     if (ImGui::BeginChild("##DevilsDenContent", ImVec2(centerWidth, bodyHeight), ImGuiChildFlags_Borders)) {
-        switch (m_page) {
-        case Page::Self: Self::DrawSelfPage(); break;
-        case Page::Weapons: DrawWeaponsPage(); break;
-        case Page::Vehicle: DrawVehiclePage(); break;
-        case Page::Teleport: DrawTeleportPage(); break;
-        case Page::World: DrawPlaceholderPage("WORLD", "World and environment controls will live here."); break;
-        case Page::Network: Network::DrawNetworkPage(); break;
-        case Page::Defense: Defense::DrawDefensePage(); break;
-        case Page::Lua: Lua::DrawLuaPage(); break;
-        case Page::Settings: DrawSettingsPage(); break;
+        if (Supplemental::SelectedPage == Supplemental::Page::Misc) {
+            Misc::DrawMiscPage();
+        }
+        else if (Supplemental::SelectedPage == Supplemental::Page::Recovery) {
+            Recovery::DrawRecoveryPage();
+        }
+        else {
+            switch (m_page) {
+            case Page::Self: Self::DrawSelfPage(); break;
+            case Page::Weapons: DrawWeaponsPage(); break;
+            case Page::Vehicle: DrawVehiclePage(); break;
+            case Page::Teleport: DrawTeleportPage(); break;
+            case Page::World: DrawPlaceholderPage("WORLD", "World and environment controls will live here."); break;
+            case Page::Network: Network::DrawNetworkPage(); break;
+            case Page::Defense: Defense::DrawDefensePage(); break;
+            case Page::Lua: Lua::DrawLuaPage(); break;
+            case Page::Settings: DrawSettingsPage(); break;
+            }
         }
     }
     ImGui::EndChild();
@@ -78,61 +89,76 @@ void Devils_Den_Menu::Draw(bool& open)
         const char* detailText = "Modify player abilities, protection and movement through the live Story Mode runtime.";
         const char* detailTag = "SELF / PLAYER";
         Themes::Menu_Icon detailIcon = Themes::Menu_Icon::Self;
-        switch (m_page) {
-        case Page::Self:
-            detailTitle = "PLAYER";
-            detailText = "Player protection, wanted state, movement and live character options.";
-            detailTag = "SELF / PLAYER";
-            detailIcon = Themes::Menu_Icon::Self;
-            break;
-        case Page::Weapons:
-            detailTitle = "ARMORY";
-            detailText = "Weapons, ammunition, loadout actions and live bullet effects.";
-            detailTag = "WEAPONS / COMBAT";
-            detailIcon = Themes::Menu_Icon::Weapons;
-            break;
-        case Page::Vehicle:
-            detailTitle = "DEVILS FORGE";
-            detailText = "Spawn, customize, preserve and rebuild GTA V Enhanced vehicles.";
-            detailTag = "VEHICLE / FORGE";
-            detailIcon = Themes::Menu_Icon::Vehicle;
-            break;
-        case Page::Teleport:
-            detailTitle = "WAYFINDER";
-            detailText = "Waypoint and preset travel tools for the player or occupied vehicle.";
-            detailTag = "TELEPORT / MAP";
-            detailIcon = Themes::Menu_Icon::Teleport;
-            break;
-        case Page::World:
-            detailTitle = "WORLD";
-            detailText = "World and environment controls will live in this domain as they are added.";
-            detailTag = "WORLD / ENVIRONMENT";
+
+        if (Supplemental::SelectedPage == Supplemental::Page::Misc) {
+            detailTitle = "MISC";
+            detailText = "Business tools, business status views and related utilities.";
+            detailTag = "MISC / BUSINESS";
             detailIcon = Themes::Menu_Icon::World;
-            break;
-        case Page::Network:
-            detailTitle = "NETWORK";
-            detailText = "Sessions, players and related network/session functionality are organized in the Network domain.";
-            detailTag = "NETWORK / SESSIONS";
-            detailIcon = Themes::Menu_Icon::Network;
-            break;
-        case Page::Defense:
-            detailTitle = "DEFENSE";
-            detailText = "Local safety policies, defensive runtime status and activity monitoring.";
-            detailTag = "DEFENSE / PLAYER SAFETY";
-            detailIcon = Themes::Menu_Icon::Network;
-            break;
-        case Page::Lua:
-            detailTitle = "LUA SCRIPTING";
-            detailText = "Embedded Lua 5.4 runtime powered by Sol2, with protected execution ready for future bindings.";
-            detailTag = "LUA / SCRIPTS";
-            detailIcon = Themes::Menu_Icon::Lua;
-            break;
-        case Page::Settings:
-            detailTitle = "SETTINGS";
-            detailText = "Themes, images, icons, fonts, style and complete configuration live here.";
-            detailTag = "SETTINGS / APPEARANCE";
+        }
+        else if (Supplemental::SelectedPage == Supplemental::Page::Recovery) {
+            detailTitle = "RECOVERY";
+            detailText = "Progression, unlock and collection status tools.";
+            detailTag = "RECOVERY / PROGRESSION";
             detailIcon = Themes::Menu_Icon::Settings;
-            break;
+        }
+        else {
+            switch (m_page) {
+            case Page::Self:
+                detailTitle = "PLAYER";
+                detailText = "Player protection, wanted state, movement and live character options.";
+                detailTag = "SELF / PLAYER";
+                detailIcon = Themes::Menu_Icon::Self;
+                break;
+            case Page::Weapons:
+                detailTitle = "ARMORY";
+                detailText = "Weapons, ammunition, loadout actions and live bullet effects.";
+                detailTag = "WEAPONS / COMBAT";
+                detailIcon = Themes::Menu_Icon::Weapons;
+                break;
+            case Page::Vehicle:
+                detailTitle = "DEVILS FORGE";
+                detailText = "Spawn, customize, preserve and rebuild GTA V Enhanced vehicles.";
+                detailTag = "VEHICLE / FORGE";
+                detailIcon = Themes::Menu_Icon::Vehicle;
+                break;
+            case Page::Teleport:
+                detailTitle = "WAYFINDER";
+                detailText = "Waypoint and preset travel tools for the player or occupied vehicle.";
+                detailTag = "TELEPORT / MAP";
+                detailIcon = Themes::Menu_Icon::Teleport;
+                break;
+            case Page::World:
+                detailTitle = "WORLD";
+                detailText = "World and environment controls will live in this domain as they are added.";
+                detailTag = "WORLD / ENVIRONMENT";
+                detailIcon = Themes::Menu_Icon::World;
+                break;
+            case Page::Network:
+                detailTitle = "NETWORK";
+                detailText = "Sessions, players and related network/session functionality are organized in the Network domain.";
+                detailTag = "NETWORK / SESSIONS";
+                detailIcon = Themes::Menu_Icon::Network;
+                break;
+            case Page::Defense:
+                detailTitle = "DEFENSE";
+                detailText = "Local safety policies, defensive runtime status and activity monitoring.";
+                detailTag = "DEFENSE / PLAYER SAFETY";
+                detailIcon = Themes::Menu_Icon::Network;
+                break;
+            case Page::Lua:
+                detailTitle = "LUA SCRIPTING";
+                detailText = "Embedded Lua 5.4 runtime powered by Sol2, with protected execution ready for future bindings.";
+                detailTag = "LUA / SCRIPTS";
+                detailIcon = Themes::Menu_Icon::Lua;
+                break;
+            case Page::Settings:
+                detailTitle = "SETTINGS";
+                detailText = "Themes, images, icons, fonts, style and complete configuration live here.";
+                detailTag = "SETTINGS / APPEARANCE";
+                detailIcon = Themes::Menu_Icon::Settings;
+                break;
+            }
         }
 
         ImGui::TextColored(palette.emberRed, "OPTION DETAILS");
@@ -175,11 +201,20 @@ void Devils_Den_Menu::Draw(bool& open)
     const ImVec2 footerMin = ImGui::GetCursorScreenPos();
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0.030F, 0.020F, 0.018F, appearance.BackgroundEnabled() ? 0.82F : 0.995F});
     if (ImGui::BeginChild("##DevilsDenFooter", ImVec2(0.0F, footerHeight), ImGuiChildFlags_Borders)) {
-        if (ImGui::Button("CONFIGS", ImVec2(160.0F, 32.0F))) m_page = Page::Settings;
+        if (ImGui::Button("CONFIGS", ImVec2(160.0F, 32.0F))) {
+            Supplemental::SelectedPage = Supplemental::Page::None;
+            m_page = Page::Settings;
+        }
         ImGui::SameLine();
-        if (ImGui::Button("PLAYER", ImVec2(160.0F, 32.0F))) m_page = Page::Self;
+        if (ImGui::Button("PLAYER", ImVec2(160.0F, 32.0F))) {
+            Supplemental::SelectedPage = Supplemental::Page::None;
+            m_page = Page::Self;
+        }
         ImGui::SameLine();
-        if (ImGui::Button("DEVILS FORGE", ImVec2(180.0F, 32.0F))) m_page = Page::Vehicle;
+        if (ImGui::Button("DEVILS FORGE", ImVec2(180.0F, 32.0F))) {
+            Supplemental::SelectedPage = Supplemental::Page::None;
+            m_page = Page::Vehicle;
+        }
         ImGui::SameLine();
         ImGui::TextColored(palette.bronze, "LIVE CHANGES");
         ImGui::SameLine();
