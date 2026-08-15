@@ -1,5 +1,6 @@
 #include "GTA_Self_Online_Extension.hpp"
 
+#include "Backend/Logging/LoggerService.hpp"
 #include "GTA_Gameplay_State.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
@@ -15,7 +16,11 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <mutex>
+#include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace Devilz::Integrations::GTA5_Enhanced
 {
@@ -44,6 +49,11 @@ constexpr std::uint32_t FreemodeRequestedPersonalVehicleIdOffset = 639U;
 constexpr std::uint32_t FreemodeExec1ImpoundOffset = 642U;
 constexpr std::size_t FreemodePersonalVehicleRequestLocal = 19672U + 176U;
 constexpr int MaxPersonalVehicleEntries = 607;
+constexpr std::uint32_t MpsvBase = 1583778U;
+constexpr std::uint32_t MpsvEntrySize = 143U;
+constexpr std::uint32_t MpsvNumberPlateOffset = 1U;
+constexpr std::uint32_t MpsvVehicleModelOffset = 66U;
+constexpr int PersonalVehicleScanBatchSize = 16;
 constexpr ULONGLONG PersonalVehicleLocalResetDelayMs = 100ULL;
 constexpr ULONGLONG PersonalVehicleLocalResetTimeoutMs = 2000ULL;
 
@@ -64,12 +74,38 @@ struct SelfOnlineRuntime
 };
 
 SelfOnlineRuntime g_runtime{};
+Backend::LoggerService* g_logger = nullptr;
 bool g_offRadarApplied = false;
 std::atomic_bool g_personalVehicleRequestPending{false};
+std::atomic_int g_requestedPersonalVehicleId{-1};
 std::atomic<GTA_Personal_Vehicle_Request_Status> g_personalVehicleRequestStatus{
     GTA_Personal_Vehicle_Request_Status::Idle};
 std::atomic_bool g_personalVehicleLocalResetPending{false};
 std::atomic<ULONGLONG> g_personalVehicleRequestIssuedAt{0};
+std::atomic_bool g_personalVehicleListRefreshPending{false};
+std::atomic<GTA_Personal_Vehicle_List_Status> g_personalVehicleListStatus{
+    GTA_Personal_Vehicle_List_Status::Idle};
+std::atomic<std::uint64_t> g_personalVehicleGeneration{0};
+std::mutex g_personalVehicleListMutex;
+std::vector<GTA_Personal_Vehicle_Info> g_personalVehicles;
+std::vector<GTA_Personal_Vehicle_Info> g_personalVehicleScan;
+int g_personalVehicleScanCursor = 0;
+int g_personalVehicleScanCount = 0;
+
+void LogPersonalVehicle(
+    Backend::LogLevel level,
+    std::string message,
+    std::uint64_t correlationId = 0) noexcept
+{
+    if (!g_logger)
+        return;
+
+    Backend::LogContext context;
+    context.service = "GTA5_Enhanced.Vehicle.Personal";
+    context.threadName = "GameThread";
+    context.correlationId = correlationId;
+    g_logger->LogWithContext(level, std::move(message), std::move(context));
+}
 
 struct GTA_Script_Context_View
 {
@@ -348,6 +384,124 @@ bool ClearFreemodePersonalVehicleRequestLocal() noexcept
     return true;
 }
 
+std::string CopyPersonalVehicleName(
+    GTA_Native_Manager& natives,
+    std::uint32_t modelHash)
+{
+    const auto label = natives.Invoke<const char*>(GTA_Native_Id::GetDisplayNameFromVehicleModel, modelHash);
+    if (label && *label && **label != '\0' && std::string_view(*label) != "NULL") {
+        const auto localized = natives.Invoke<const char*>(GTA_Native_Id::GetFilenameForAudioConversation, *label);
+        if (localized && *localized && **localized != '\0' && std::string_view(*localized) != "NULL")
+            return std::string(*localized);
+        return std::string(*label);
+    }
+    return "Vehicle " + std::to_string(modelHash);
+}
+
+std::string ReadPersonalVehiclePlate(std::uint32_t entryBase) noexcept
+{
+    auto* plate = ResolveGlobal<char>(entryBase + MpsvNumberPlateOffset);
+    if (!plate || !IsReadableAddress(reinterpret_cast<std::uintptr_t>(plate), 16U))
+        return {};
+
+    char buffer[17]{};
+    std::memcpy(buffer, plate, 16U);
+    for (std::size_t i = 0; i < 16U && buffer[i] != '\0'; ++i) {
+        if (!std::isprint(static_cast<unsigned char>(buffer[i])))
+            buffer[i] = ' ';
+    }
+
+    std::string value(buffer);
+    while (!value.empty() && value.back() == ' ')
+        value.pop_back();
+    return value;
+}
+
+void BeginPersonalVehicleListScan() noexcept
+{
+    if (!FindFreemodeThread()) {
+        g_personalVehicleListStatus.store(
+            GTA_Personal_Vehicle_List_Status::Unavailable,
+            std::memory_order_release);
+        LogPersonalVehicle(Backend::LogLevel::Warning,
+            "Owned vehicle refresh unavailable: GTA Online freemode is not ready");
+        return;
+    }
+
+    auto* arraySize = ResolveGlobal<int>(MpsvBase);
+    if (!arraySize || *arraySize <= 0) {
+        g_personalVehicleListStatus.store(
+            GTA_Personal_Vehicle_List_Status::Failed,
+            std::memory_order_release);
+        LogPersonalVehicle(Backend::LogLevel::Warning,
+            "Owned vehicle refresh failed: MPSV array is unavailable");
+        return;
+    }
+
+    g_personalVehicleScanCount = std::clamp(*arraySize, 0, MaxPersonalVehicleEntries);
+    g_personalVehicleScanCursor = 0;
+    g_personalVehicleScan.clear();
+    g_personalVehicleScan.reserve(static_cast<std::size_t>(g_personalVehicleScanCount));
+    g_personalVehicleListStatus.store(
+        GTA_Personal_Vehicle_List_Status::Scanning,
+        std::memory_order_release);
+    LogPersonalVehicle(Backend::LogLevel::Info,
+        "Owned vehicle refresh started | Slots: " + std::to_string(g_personalVehicleScanCount));
+}
+
+void TickPersonalVehicleList(GTA_Native_Manager& natives) noexcept
+{
+    if (g_personalVehicleListRefreshPending.exchange(false, std::memory_order_acq_rel))
+        BeginPersonalVehicleListScan();
+
+    if (g_personalVehicleListStatus.load(std::memory_order_acquire) !=
+        GTA_Personal_Vehicle_List_Status::Scanning) {
+        return;
+    }
+
+    const int end = (std::min)(
+        g_personalVehicleScanCursor + PersonalVehicleScanBatchSize,
+        g_personalVehicleScanCount);
+    for (; g_personalVehicleScanCursor < end; ++g_personalVehicleScanCursor) {
+        const int id = g_personalVehicleScanCursor;
+        const std::uint32_t entryBase = MpsvBase + 1U +
+            static_cast<std::uint32_t>(id) * MpsvEntrySize;
+        auto* model = ResolveGlobal<int>(entryBase + MpsvVehicleModelOffset);
+        if (!model || *model == 0)
+            continue;
+
+        GTA_Personal_Vehicle_Info vehicle{};
+        vehicle.id = id;
+        vehicle.modelHash = static_cast<std::uint32_t>(*model);
+        const auto validModel = natives.Invoke<bool>(GTA_Native_Id::IsModelInCdimage, vehicle.modelHash);
+        if (!validModel || !*validModel)
+            continue;
+        vehicle.displayName = CopyPersonalVehicleName(natives, vehicle.modelHash);
+        vehicle.plateText = ReadPersonalVehiclePlate(entryBase);
+        g_personalVehicleScan.push_back(std::move(vehicle));
+    }
+
+    if (g_personalVehicleScanCursor < g_personalVehicleScanCount)
+        return;
+
+    std::sort(g_personalVehicleScan.begin(), g_personalVehicleScan.end(),
+        [](const GTA_Personal_Vehicle_Info& left, const GTA_Personal_Vehicle_Info& right) {
+            if (left.displayName != right.displayName)
+                return left.displayName < right.displayName;
+            if (left.plateText != right.plateText)
+                return left.plateText < right.plateText;
+            return left.id < right.id;
+        });
+    {
+        std::scoped_lock lock(g_personalVehicleListMutex);
+        g_personalVehicles = g_personalVehicleScan;
+    }
+    g_personalVehicleGeneration.fetch_add(1, std::memory_order_release);
+    g_personalVehicleListStatus.store(GTA_Personal_Vehicle_List_Status::Ready, std::memory_order_release);
+    LogPersonalVehicle(Backend::LogLevel::Info,
+        "Owned vehicle refresh completed | Vehicles: " + std::to_string(g_personalVehicleScan.size()));
+}
+
 void TickPersonalVehicleRequest(GTA_Native_Manager& natives) noexcept
 {
     if (g_personalVehicleLocalResetPending.load(std::memory_order_acquire)) {
@@ -366,15 +520,19 @@ void TickPersonalVehicleRequest(GTA_Native_Manager& natives) noexcept
         GTA_Personal_Vehicle_Request_Status::Requesting,
         std::memory_order_release);
 
+    const int selectedVehicleId = g_requestedPersonalVehicleId.exchange(-1, std::memory_order_acq_rel);
     const auto player = natives.Invoke<int>(GTA_Native_Id::PlayerId);
     if (!player || *player < 0 || *player >= 32 || !SafeToModifyFreemodeGlobals(*player)) {
         g_personalVehicleRequestStatus.store(
             GTA_Personal_Vehicle_Request_Status::Unavailable,
             std::memory_order_release);
+        LogPersonalVehicle(Backend::LogLevel::Warning,
+            "Personal vehicle request unavailable: GTA Online freemode is not ready",
+            selectedVehicleId >= 0 ? static_cast<std::uint64_t>(selectedVehicleId) : 0);
         return;
     }
 
-    auto* lastSavedCar = ResolveGlobal<int>(LastSavedPersonalVehicleGlobal);
+    auto* lastSavedCar = selectedVehicleId < 0 ? ResolveGlobal<int>(LastSavedPersonalVehicleGlobal) : nullptr;
     auto* personalVehicleRequested = ResolveGlobal<int>(
         FreemodeGeneralBase + FreemodePersonalVehicleRequestedOffset);
     auto* requestedPersonalVehicleId = ResolveGlobal<int>(
@@ -382,7 +540,8 @@ void TickPersonalVehicleRequest(GTA_Native_Manager& natives) noexcept
     auto* exec1Impound = ResolveGlobal<int>(
         FreemodeGeneralBase + FreemodeExec1ImpoundOffset);
 
-    if (!lastSavedCar || !personalVehicleRequested || !requestedPersonalVehicleId || !exec1Impound) {
+    if ((selectedVehicleId < 0 && !lastSavedCar) || !personalVehicleRequested ||
+        !requestedPersonalVehicleId || !exec1Impound) {
         g_personalVehicleRequestStatus.store(
             GTA_Personal_Vehicle_Request_Status::Failed,
             std::memory_order_release);
@@ -396,7 +555,7 @@ void TickPersonalVehicleRequest(GTA_Native_Manager& natives) noexcept
         return;
     }
 
-    const int personalVehicleId = *lastSavedCar;
+    const int personalVehicleId = selectedVehicleId >= 0 ? selectedVehicleId : *lastSavedCar;
     if (personalVehicleId < 0 || personalVehicleId >= MaxPersonalVehicleEntries) {
         g_personalVehicleRequestStatus.store(
             GTA_Personal_Vehicle_Request_Status::Failed,
@@ -416,6 +575,9 @@ void TickPersonalVehicleRequest(GTA_Native_Manager& natives) noexcept
     g_personalVehicleRequestStatus.store(
         GTA_Personal_Vehicle_Request_Status::Requested,
         std::memory_order_release);
+    LogPersonalVehicle(Backend::LogLevel::Info,
+        "Personal vehicle request sent | Slot: " + std::to_string(personalVehicleId),
+        static_cast<std::uint64_t>(personalVehicleId));
 }
 
 void TickOffTheRadar(GTA_Native_Manager& natives) noexcept
@@ -458,6 +620,51 @@ void TickSkipCutscene(GTA_Native_Manager& natives) noexcept
 }
 }
 
+void ConfigureSelfOnlineExtensionLogging(Backend::LoggerService* logger) noexcept
+{
+    g_logger = logger;
+}
+
+void RequestPersonalVehicle(int personalVehicleId) noexcept
+{
+    if (personalVehicleId < 0 || personalVehicleId >= MaxPersonalVehicleEntries) {
+        g_personalVehicleRequestStatus.store(
+            GTA_Personal_Vehicle_Request_Status::Failed,
+            std::memory_order_release);
+        return;
+    }
+
+    const auto status = g_personalVehicleRequestStatus.load(std::memory_order_acquire);
+    if (status == GTA_Personal_Vehicle_Request_Status::Queued ||
+        status == GTA_Personal_Vehicle_Request_Status::Requesting) {
+        return;
+    }
+
+    bool owned = false;
+    {
+        std::scoped_lock lock(g_personalVehicleListMutex);
+        owned = std::any_of(g_personalVehicles.begin(), g_personalVehicles.end(),
+            [personalVehicleId](const GTA_Personal_Vehicle_Info& vehicle) {
+                return vehicle.id == personalVehicleId;
+            });
+    }
+    if (!owned) {
+        g_personalVehicleRequestStatus.store(
+            GTA_Personal_Vehicle_Request_Status::Failed,
+            std::memory_order_release);
+        LogPersonalVehicle(Backend::LogLevel::Warning,
+            "Personal vehicle request rejected: slot is not in the owned-vehicle snapshot",
+            static_cast<std::uint64_t>(personalVehicleId));
+        return;
+    }
+
+    g_requestedPersonalVehicleId.store(personalVehicleId, std::memory_order_release);
+    g_personalVehicleRequestStatus.store(
+        GTA_Personal_Vehicle_Request_Status::Queued,
+        std::memory_order_release);
+    g_personalVehicleRequestPending.store(true, std::memory_order_release);
+}
+
 void RequestCurrentPersonalVehicle() noexcept
 {
     const auto status = g_personalVehicleRequestStatus.load(std::memory_order_acquire);
@@ -466,9 +673,8 @@ void RequestCurrentPersonalVehicle() noexcept
         return;
     }
 
-    g_personalVehicleRequestStatus.store(
-        GTA_Personal_Vehicle_Request_Status::Queued,
-        std::memory_order_release);
+    g_requestedPersonalVehicleId.store(-1, std::memory_order_release);
+    g_personalVehicleRequestStatus.store(GTA_Personal_Vehicle_Request_Status::Queued, std::memory_order_release);
     g_personalVehicleRequestPending.store(true, std::memory_order_release);
 }
 
@@ -477,20 +683,59 @@ GTA_Personal_Vehicle_Request_Status PersonalVehicleRequestStatus() noexcept
     return g_personalVehicleRequestStatus.load(std::memory_order_acquire);
 }
 
+void RequestPersonalVehicleListRefresh() noexcept
+{
+    const auto status = g_personalVehicleListStatus.load(std::memory_order_acquire);
+    if (status == GTA_Personal_Vehicle_List_Status::Queued ||
+        status == GTA_Personal_Vehicle_List_Status::Scanning) {
+        return;
+    }
+    g_personalVehicleListStatus.store(GTA_Personal_Vehicle_List_Status::Queued, std::memory_order_release);
+    g_personalVehicleListRefreshPending.store(true, std::memory_order_release);
+}
+
+GTA_Personal_Vehicle_List_Status PersonalVehicleListStatus() noexcept
+{
+    return g_personalVehicleListStatus.load(std::memory_order_acquire);
+}
+
+std::vector<GTA_Personal_Vehicle_Info> PersonalVehicleSnapshot()
+{
+    std::scoped_lock lock(g_personalVehicleListMutex);
+    return g_personalVehicles;
+}
+
+std::uint64_t PersonalVehicleGeneration() noexcept
+{
+    return g_personalVehicleGeneration.load(std::memory_order_acquire);
+}
+
 void ResetSelfOnlineExtension() noexcept
 {
     g_offRadarApplied = false;
     g_personalVehicleRequestPending.store(false, std::memory_order_release);
+    g_requestedPersonalVehicleId.store(-1, std::memory_order_release);
     g_personalVehicleLocalResetPending.store(false, std::memory_order_release);
     g_personalVehicleRequestIssuedAt.store(0, std::memory_order_release);
     g_personalVehicleRequestStatus.store(
         GTA_Personal_Vehicle_Request_Status::Idle,
         std::memory_order_release);
+    g_personalVehicleListRefreshPending.store(false, std::memory_order_release);
+    g_personalVehicleListStatus.store(GTA_Personal_Vehicle_List_Status::Idle, std::memory_order_release);
+    g_personalVehicleScanCursor = 0;
+    g_personalVehicleScanCount = 0;
+    g_personalVehicleScan.clear();
+    {
+        std::scoped_lock lock(g_personalVehicleListMutex);
+        g_personalVehicles.clear();
+    }
+    g_personalVehicleGeneration.fetch_add(1, std::memory_order_release);
     g_runtime = {};
 }
 
 void TickSelfOnlineExtension(GTA_Native_Manager& natives) noexcept
 {
+    TickPersonalVehicleList(natives);
     TickPersonalVehicleRequest(natives);
     TickSkipCutscene(natives);
     TickOffTheRadar(natives);

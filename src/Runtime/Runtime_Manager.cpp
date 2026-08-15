@@ -9,6 +9,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Casino_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Network_Session_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Personal_Save.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 
 #include <exception>
@@ -163,6 +164,7 @@ void Runtime_Manager::Stop() noexcept
     try {
         m_frontend.Stop();
         m_gameThreadBridge.Uninstall();
+        Integrations::GTA5_Enhanced::ResetVehiclePersonalSave();
         Integrations::GTA5_Enhanced::ResetBusinessExtension();
         Integrations::GTA5_Enhanced::ResetCasinoExtension();
         Integrations::GTA5_Enhanced::ResetWorldEnvironmentExtension();
@@ -235,6 +237,8 @@ void Runtime_Manager::InitializeGameThreadBridge(
     using Integrations::GTA5_Enhanced::ConfigureCasinoExtension;
     using Integrations::GTA5_Enhanced::ConfigureNetworkSessionExtension;
     using Integrations::GTA5_Enhanced::ConfigureRandomEventsExtension;
+    using Integrations::GTA5_Enhanced::ConfigureVehiclePersonalSave;
+    using Integrations::GTA5_Enhanced::ResetVehiclePersonalSave;
     using Integrations::GTA5_Enhanced::ConfigureWorldEnvironmentExtension;
     using Integrations::GTA5_Enhanced::ResetBusinessExtension;
     using Integrations::GTA5_Enhanced::ResetCasinoExtension;
@@ -246,6 +250,7 @@ void Runtime_Manager::InitializeGameThreadBridge(
     ResetCasinoExtension();
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
+    ResetVehiclePersonalSave();
     ResetWorldEnvironmentExtension();
     m_scriptGlobals.Clear();
 
@@ -334,6 +339,13 @@ void Runtime_Manager::InitializeGameThreadBridge(
                      "GTA5_Enhanced.Natives");
         return;
     }
+
+    ConfigureVehiclePersonalSave(
+        scriptGlobals,
+        programTable,
+        scriptThreadsStorage,
+        scriptVm,
+        &m_logger);
 
     ConfigureBunkerGlobals(
         scriptGlobalsReady ? &m_scriptGlobals : nullptr,

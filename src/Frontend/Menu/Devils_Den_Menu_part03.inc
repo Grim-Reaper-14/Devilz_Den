@@ -91,7 +91,7 @@
             ImGui::SetNextItemWidth(300.0F);
             ImGui::InputTextWithHint("##SavedBuildName", "Build name...", savedBuildName.data(), savedBuildName.size());
             ImGui::SameLine();
-            if (ImGui::Button("SAVE CURRENT VEHICLE", ImVec2(205.0F, 34.0F))) {
+            if (ImGui::Button("SAVE BUILD TO JSON", ImVec2(205.0F, 34.0F))) {
                 std::string error;
                 auto build = GTA_Vehicle_Saved_Builds::Capture(savedBuildName.data(), currentMetadata, forge);
                 if (GTA_Vehicle_Saved_Builds::Save(build, &error)) {

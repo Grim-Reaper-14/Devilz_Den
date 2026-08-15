@@ -10,6 +10,8 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Catalog.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Customization_Data.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Saved_Builds.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Personal_Save.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Tools.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_State.hpp"
 
 #include <imgui.h>
@@ -134,6 +136,39 @@ const char* VehicleSpawnStatusText(GTA_Vehicle_Spawn_Status status) noexcept
     case GTA_Vehicle_Spawn_Status::Succeeded: return "SPAWNED";
     case GTA_Vehicle_Spawn_Status::Failed: return "FAILED - SEE LOG";
     default: return "UNKNOWN";
+    }
+}
+
+const char* CloneNearestVehicleStatusText(GTA_Vehicle_Clone_Nearest_Status status) noexcept
+{
+    switch (status) {
+    case GTA_Vehicle_Clone_Nearest_Status::Idle: return "Ready";
+    case GTA_Vehicle_Clone_Nearest_Status::Queued: return "Queued";
+    case GTA_Vehicle_Clone_Nearest_Status::Searching: return "Finding nearest vehicle...";
+    case GTA_Vehicle_Clone_Nearest_Status::SpawnQueued: return "Clone queued in vehicle spawner";
+    case GTA_Vehicle_Clone_Nearest_Status::Succeeded: return "Nearest vehicle cloned";
+    case GTA_Vehicle_Clone_Nearest_Status::NoVehicle: return "No nearby vehicle found";
+    case GTA_Vehicle_Clone_Nearest_Status::Unavailable: return "Nearest-vehicle lookup unavailable";
+    case GTA_Vehicle_Clone_Nearest_Status::Failed: return "Clone failed - see log";
+    default: return "Unknown";
+    }
+}
+
+const char* PersonalVehicleSaveStatusText(GTA_Vehicle_Personal_Save_Status status) noexcept
+{
+    switch (status) {
+    case GTA_Vehicle_Personal_Save_Status::Idle: return "Ready";
+    case GTA_Vehicle_Personal_Save_Status::Queued: return "Queued";
+    case GTA_Vehicle_Personal_Save_Status::Validating: return "Checking vehicle eligibility...";
+    case GTA_Vehicle_Personal_Save_Status::OpeningGarageMenu: return "Opening GTA garage flow...";
+    case GTA_Vehicle_Personal_Save_Status::WaitingForGarageSelection: return "Choose a garage/slot in GTA";
+    case GTA_Vehicle_Personal_Save_Status::Completed: return "Garage transaction closed";
+    case GTA_Vehicle_Personal_Save_Status::NoVehicle: return "Get in the vehicle you want to save";
+    case GTA_Vehicle_Personal_Save_Status::InvalidVehicle: return "GTA will not allow this vehicle as a personal vehicle";
+    case GTA_Vehicle_Personal_Save_Status::AlreadyPersonalVehicle: return "This is already your active personal vehicle";
+    case GTA_Vehicle_Personal_Save_Status::Unavailable: return "Personal-vehicle save flow unavailable";
+    case GTA_Vehicle_Personal_Save_Status::Failed: return "Save failed - see runtime log";
+    default: return "Unknown";
     }
 }
 

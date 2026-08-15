@@ -180,6 +180,15 @@ public:
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
     }
 
+    template <typename Ret, typename... Args>
+    [[nodiscard]] auto InvokeOptionalHash(GTA_Native_Hash hash, Args&&... args) noexcept
+        -> typename GTA_Native_Invoke_Result<Ret>::Type
+    {
+        // Optional helpers are deliberately kept outside the required native
+        // bootstrap set so a convenience feature cannot break runtime startup.
+        return InvokeHandler<Ret>(FindOptional(hash), std::forward<Args>(args)...);
+    }
+
 private:
     template <typename Ret, typename... Args>
     [[nodiscard]] auto InvokeHandler(GTA_Native_Handler handler, Args&&... args) noexcept
@@ -260,9 +269,11 @@ private:
         std::uintptr_t address,
         std::uintptr_t moduleBase,
         std::size_t moduleSize) noexcept;
+    [[nodiscard]] GTA_Native_Handler FindOptional(GTA_Native_Hash hash) const noexcept;
 
     bool m_ready = false;
     std::uint64_t m_fingerprint = 0;
     std::unordered_map<GTA_Native_Hash, GTA_Native_Handler> m_handlers;
+    std::unordered_map<GTA_Native_Hash, GTA_Native_Handler> m_optionalHandlers;
 };
 }

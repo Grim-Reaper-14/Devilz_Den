@@ -54,10 +54,28 @@
         ImGui::EndTabItem();
     }
 
-    if (ImGui::BeginTabItem("DEVILS FORGE")) {
+    if (ImGui::BeginTabItem("VEHICLE EDITOR")) {
+        ImGui::TextColored(Bronze, "VEHICLE TOOLS");
+        const auto cloneNearestStatus = CloneNearestVehicleStatus();
+        const bool cloneNearestBusy =
+            cloneNearestStatus == GTA_Vehicle_Clone_Nearest_Status::Queued ||
+            cloneNearestStatus == GTA_Vehicle_Clone_Nearest_Status::Searching ||
+            cloneNearestStatus == GTA_Vehicle_Clone_Nearest_Status::SpawnQueued;
+
+        ImGui::BeginDisabled(cloneNearestBusy || spawnBusy);
+        if (ImGui::Button("CLONE NEAREST VEHICLE", ImVec2(220.0F, 36.0F)))
+            RequestCloneNearestVehicle();
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::TextDisabled("%s", CloneNearestVehicleStatusText(cloneNearestStatus));
+
+        ImGui::TextDisabled(
+            "Clone Nearest copies the closest vehicle's live model, mods, paint, wheels, lights, extras and plate into a new spawned vehicle.");
+        MedievalDivider();
+
         ImGui::TextColored(Bronze, "CURRENT VEHICLE");
         if (forge.vehicle == 0) {
-            ImGui::TextDisabled("Enter a vehicle to unlock Devils Forge.");
+            ImGui::TextDisabled("Enter a vehicle to unlock Vehicle Editor.");
             if (ImGui::Button("REFRESH VEHICLE DATA", ImVec2(210.0F, 34.0F)))
                 vehicles.RequestForgeSnapshotRefresh();
         } else {
@@ -90,6 +108,15 @@
             if (ImGui::Checkbox("Quick Lowered Stance", &m_forgeLoweredStance))
                 vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetLoweredStance, m_forgeLoweredStance ? 1 : 0});
 
+            if (ImGui::Button("ENGINE ON", ImVec2(125.0F, 32.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetEngineRunning, 1});
+            ImGui::SameLine();
+            if (ImGui::Button("ENGINE OFF", ImVec2(125.0F, 32.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::SetEngineRunning, 0});
+            ImGui::SameLine();
+            if (ImGui::Button("PLACE ON GROUND", ImVec2(165.0F, 32.0F)))
+                vehicles.QueueForgeCommand({GTA_Vehicle_Forge_Command_Type::PlaceOnGround});
+
             MedievalDivider();
             ImGui::TextColored(Bronze, "VEHICLE-SPECIFIC MODS");
             ImGui::TextDisabled("Only categories supported by this vehicle are shown. Options apply immediately.");
@@ -97,7 +124,7 @@
                 ImGui::TextColored(EmberRed, "Preparing vehicle mod data...");
                 ImGui::TextDisabled("Mod kits: %d | scan attempt: %d / 12", forge.modKitCount, forge.modScanAttempts);
                 if (forge.modScanAttempts >= 12)
-                    ImGui::TextWrapped("GTA is still reporting zero supported LSC mod slots for this vehicle. Use RESCAN after entering another LSC-compatible car; the rest of Forge remains available.");
+                    ImGui::TextWrapped("GTA is still reporting zero supported LSC mod slots for this vehicle. Use RESCAN after entering another LSC-compatible car; the rest of Vehicle Editor remains available.");
                 if (ImGui::Button("RESCAN MOD CATEGORIES", ImVec2(210.0F, 30.0F)))
                     vehicles.RequestForgeSnapshotRefresh();
             }

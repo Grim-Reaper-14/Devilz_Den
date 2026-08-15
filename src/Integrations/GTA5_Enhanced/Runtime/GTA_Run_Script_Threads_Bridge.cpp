@@ -7,7 +7,9 @@
 #include "GTA_Gameplay_State.hpp"
 #include "GTA_Network_Session_Extension.hpp"
 #include "GTA_Random_Events_Extension.hpp"
-#include "GTA_Vehicle_Forge_Extensions.hpp"
+#include "GTA_Self_Online_Extension.hpp"
+#include "GTA_Vehicle_Editor_Extensions.hpp"
+#include "GTA_Vehicle_Personal_Save.hpp"
 #include "Script/GTA_Script.hpp"
 #include "Script/GTA_Script_Manager.hpp"
 #include "State/GTA_Self_Cache.hpp"
@@ -174,6 +176,8 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_original = reinterpret_cast<RunScriptThreads>(trampoline);
     m_natives = &natives;
     m_logger = &logger;
+    ConfigureVehicleEditorLogging(&logger);
+    ConfigureSelfOnlineExtensionLogging(&logger);
     m_smokeCompleted.store(false);
     m_smokeAttempting.store(false);
     m_activeCalls.store(0);
@@ -216,6 +220,8 @@ bool GTA_Run_Script_Threads_Bridge::Install(
         GTA_Self_Cache::Instance().Reset();
         ResetBunkerExtension();
         m_gameplay.Reset();
+        ConfigureVehicleEditorLogging(nullptr);
+        ConfigureSelfOnlineExtensionLogging(nullptr);
         m_original = nullptr;
         m_natives = nullptr;
         m_logger = nullptr;
@@ -263,6 +269,9 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     ResetBunkerExtension();
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
+    ResetSelfOnlineExtension();
+    ConfigureVehicleEditorLogging(nullptr);
+    ConfigureSelfOnlineExtensionLogging(nullptr);
     m_gameplay.Reset();
     gameplayState.Reset();
     m_original = nullptr;
@@ -297,9 +306,14 @@ bool GTA_Run_Script_Threads_Bridge::HookThunk(int opsToExecute)
 
 bool GTA_Run_Script_Threads_Bridge::OnRunScriptThreads(int opsToExecute) noexcept
 {
-    // Diagnostic A/B: keep the detour/trampoline installed but execute no
-    // Devilz_Den work after GTA's original RunScriptThreads implementation.
-    return m_original ? m_original(opsToExecute) : false;
+    // Preserve the known-smooth pass-through baseline. The only post-original
+    // work allowed here is the on-demand personal-garage transaction; its tick
+    // returns immediately on an atomic flag while idle. Scheduler, Self cache,
+    // and LegacyRuntime remain disabled.
+    const bool result = m_original ? m_original(opsToExecute) : false;
+    if (m_installed.load(std::memory_order_relaxed) && m_natives)
+        TickVehiclePersonalSave(*m_natives);
+    return result;
 }
 
 void GTA_Run_Script_Threads_Bridge::TryNativeSmoke() noexcept
@@ -416,6 +430,8 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick() noexcept
     if (!m_natives || !m_natives->Ready())
         return;
 
+    TickVehiclePersonalSave(*m_natives);
+
     const auto now = ::GetTickCount64();
     if (now >= m_nextSlowExtensionTickMs) {
         m_nextSlowExtensionTickMs = now + SlowExtensionTickIntervalMs;
@@ -424,6 +440,7 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick() noexcept
         TickBunkerExtension();
         TickBusinessExtension(*m_natives);
         TickCasinoExtension(*m_natives);
+        TickSelfOnlineExtension(*m_natives);
     }
 
     auto& gameplayState = GTA_Gameplay_State::Instance();
@@ -440,7 +457,7 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick() noexcept
 
     if (now >= m_nextVehicleExtensionTickMs) {
         m_nextVehicleExtensionTickMs = now + VehicleExtensionTickIntervalMs;
-        TickVehicleForgeExtensions(*m_natives);
+        TickVehicleEditorExtensions(*m_natives);
     }
 }
 

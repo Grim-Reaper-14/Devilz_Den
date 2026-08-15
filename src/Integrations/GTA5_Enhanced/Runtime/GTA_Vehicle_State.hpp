@@ -63,7 +63,9 @@ enum class GTA_Vehicle_Forge_Command_Type : std::uint8_t
     SetDriftTyres,
     SetInteriorColor,
     SetDashboardColor,
-    SetLivery
+    SetLivery,
+    SetEngineRunning,
+    PlaceOnGround
 };
 
 struct GTA_Vehicle_Forge_Command
@@ -368,6 +370,8 @@ private:
         case GTA_Vehicle_Forge_Command_Type::SetInteriorColor:
         case GTA_Vehicle_Forge_Command_Type::SetDashboardColor:
         case GTA_Vehicle_Forge_Command_Type::SetLivery:
+        case GTA_Vehicle_Forge_Command_Type::SetEngineRunning:
+        case GTA_Vehicle_Forge_Command_Type::PlaceOnGround:
             return true;
         default:
             return false;

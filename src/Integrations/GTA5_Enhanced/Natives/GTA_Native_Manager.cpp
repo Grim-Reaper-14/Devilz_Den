@@ -587,7 +587,31 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
         m_handlers.insert_or_assign(requestedHashes[i], entries[i]);
     }
 
-    m_ready = m_handlers.size() == requestedHashes.size();
+    const bool requiredHandlersReady = m_handlers.size() == requestedHashes.size();
+    if (requiredHandlersReady) {
+        // Keep nearest-vehicle lookup optional.  If a future Enhanced build
+        // changes it, the validated 157-handler startup baseline still works.
+        constexpr GTA_Native_Hash GetClosestVehicleEnhancedHash = 0xF0CA45A211FFDCD9ULL;
+        std::array<GTA_Native_Handler, 1> optionalEntries{
+            reinterpret_cast<GTA_Native_Handler>(
+                static_cast<std::uintptr_t>(GetClosestVehicleEnhancedHash))
+        };
+        GTA_Native_Program_Bootstrap optionalProgram{};
+        optionalProgram.nativeCount = static_cast<std::uint32_t>(optionalEntries.size());
+        optionalProgram.nativeEntrypoints = optionalEntries.data();
+        initialize(&optionalProgram);
+
+        const auto optionalAddress = reinterpret_cast<std::uintptr_t>(optionalEntries[0]);
+        const auto optionalInspection = InspectNativeHandler(optionalAddress, moduleBase, moduleSize);
+        const bool unresolved = optionalAddress == static_cast<std::uintptr_t>(GetClosestVehicleEnhancedHash);
+        if (!unresolved && optionalInspection.accepted) {
+            m_optionalHandlers.insert_or_assign(
+                GetClosestVehicleEnhancedHash,
+                optionalEntries[0]);
+        }
+    }
+
+    m_ready = requiredHandlersReady;
     std::uintptr_t programTableAddress = 0;
     if (m_ready) {
         m_fingerprint = fingerprint;
@@ -625,6 +649,7 @@ void GTA_Native_Manager::Reset() noexcept
     m_ready = false;
     m_fingerprint = 0;
     m_handlers.clear();
+    m_optionalHandlers.clear();
 }
 
 GTA_Native_Handler GTA_Native_Manager::Find(GTA_Native_Hash hash) const noexcept
@@ -637,6 +662,12 @@ GTA_Native_Handler GTA_Native_Manager::Find(GTA_Native_Id id) const noexcept
 {
     const auto definition = GTA_Native_Registry::Find(m_fingerprint, id);
     return definition ? Find(definition->enhancedHash) : nullptr;
+}
+
+GTA_Native_Handler GTA_Native_Manager::FindOptional(GTA_Native_Hash hash) const noexcept
+{
+    const auto it = m_optionalHandlers.find(hash);
+    return it == m_optionalHandlers.end() ? nullptr : it->second;
 }
 
 bool GTA_Native_Manager::IsExecutableImageAddress(

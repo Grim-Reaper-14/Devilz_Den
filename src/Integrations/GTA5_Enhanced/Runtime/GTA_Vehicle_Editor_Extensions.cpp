@@ -1,6 +1,8 @@
-#include "GTA_Vehicle_Forge_Extensions.hpp"
+#include "GTA_Vehicle_Editor_Extensions.hpp"
 
+#include "Backend/Logging/LoggerService.hpp"
 #include "GTA_Gameplay_State.hpp"
+#include "GTA_Vehicle_Tools.hpp"
 #include "GTA_Vehicle_State.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
@@ -68,11 +70,24 @@ constexpr int MaxEmptyModScanAttempts = 12;
 constexpr float FastRunMoveRateOverride = 2.0F;
 
 int g_modScanVehicle = 0;
+int g_lastLoggedVehicle = 0;
 int g_emptyModScanAttempts = 0;
 std::size_t g_catalogResolveCursor = 0;
 void* g_scriptThread = nullptr;
+Backend::LoggerService* g_logger = nullptr;
 int g_lastExplosionTimer = -1000;
 GTA_Native_Script_Vector g_lastExplosionImpact{};
+
+void LogVehicleEditor(Backend::LogLevel level, std::string message) noexcept
+{
+    if (!g_logger)
+        return;
+
+    Backend::LogContext context;
+    context.service = "GTA5_Enhanced.Vehicle.Editor";
+    context.threadName = "GameThread";
+    g_logger->LogWithContext(level, std::move(message), std::move(context));
+}
 
 // GTA V Enhanced layout verified against YimMenuV2's scrThread/GtaThread
 // definitions for this project generation: Context script hash @ 0x10,
@@ -305,6 +320,13 @@ bool ApplyExtensionCommand(
         return natives.InvokeHash<void>(SetDashboardColourHash, vehicle, command.arg0);
     case GTA_Vehicle_Forge_Command_Type::SetLivery:
         return natives.InvokeHash<void>(SetLiveryHash, vehicle, command.arg0);
+    case GTA_Vehicle_Forge_Command_Type::SetEngineRunning:
+        return natives.Invoke<void>(GTA_Native_Id::SetVehicleEngineOn,
+            vehicle, command.arg0 != 0, true, false);
+    case GTA_Vehicle_Forge_Command_Type::PlaceOnGround: {
+        const auto grounded = natives.Invoke<bool>(GTA_Native_Id::SetVehicleOnGroundProperly, vehicle, 5.0F);
+        return grounded && *grounded;
+    }
     default:
         return false;
     }
@@ -318,8 +340,18 @@ void DrainCurrentExtensionCommands(GTA_Native_Manager& natives, GTA_Vehicle_Stat
             break;
 
         const int vehicle = CurrentVehicle(natives);
-        if (vehicle != 0)
-            (void)ApplyExtensionCommand(natives, vehicle, command);
+        if (vehicle == 0) {
+            LogVehicleEditor(Backend::LogLevel::Warning,
+                "Vehicle editor command ignored: player is not in a vehicle");
+            continue;
+        }
+
+        const bool applied = ApplyExtensionCommand(natives, vehicle, command);
+        LogVehicleEditor(
+            applied ? Backend::LogLevel::Debug : Backend::LogLevel::Warning,
+            std::string(applied ? "Vehicle editor command applied" : "Vehicle editor command failed") +
+                " | Vehicle: " + std::to_string(vehicle) +
+                " | Type: " + std::to_string(static_cast<unsigned>(command.type)));
     }
 }
 
@@ -346,6 +378,14 @@ void EnrichForgeSnapshot(GTA_Native_Manager& natives, GTA_Vehicle_State& state) 
 {
     const int vehicle = CurrentVehicle(natives);
     auto snapshot = state.ForgeSnapshot();
+
+    if (vehicle != g_lastLoggedVehicle) {
+        g_lastLoggedVehicle = vehicle;
+        LogVehicleEditor(Backend::LogLevel::Info,
+            vehicle == 0 ? "Vehicle editor detached from current vehicle" :
+                "Vehicle editor attached | Vehicle: " + std::to_string(vehicle));
+    }
+
     if (vehicle == 0 || snapshot.vehicle != vehicle) {
         g_modScanVehicle = vehicle;
         g_emptyModScanAttempts = 0;
@@ -524,12 +564,20 @@ void EnrichForgeSnapshot(GTA_Native_Manager& natives, GTA_Vehicle_State& state) 
 }
 }
 
-void SetForgeExtensionScriptThread(void* scriptThread) noexcept
+void ConfigureVehicleEditorLogging(Backend::LoggerService* logger) noexcept
+{
+    g_logger = logger;
+    ConfigureVehicleToolsLogging(logger);
+    if (!logger)
+        ResetVehicleTools();
+}
+
+void SetVehicleEditorScriptThread(void* scriptThread) noexcept
 {
     g_scriptThread = scriptThread;
 }
 
-void TickVehicleForgeExtensions(GTA_Native_Manager& natives) noexcept
+void TickVehicleEditorExtensions(GTA_Native_Manager& natives) noexcept
 {
     auto& state = GTA_Vehicle_State::Instance();
     TickSelfMovement(natives);
@@ -538,5 +586,6 @@ void TickVehicleForgeExtensions(GTA_Native_Manager& natives) noexcept
     DrainCurrentExtensionCommands(natives, state);
     DrainPostSpawnExtensionCommands(natives, state);
     EnrichForgeSnapshot(natives, state);
+    TickVehicleTools(natives);
 }
 }
