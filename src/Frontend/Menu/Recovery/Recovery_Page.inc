@@ -1,5 +1,6 @@
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Clothing_Unlocks.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Collection_Unlocks.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Halloween_Unlocks.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Packed_Stats_State.hpp"
 
@@ -15,8 +16,10 @@ namespace Devilz::Frontend::Recovery
 namespace
 {
 using Integrations::GTA5_Enhanced::GTAAllClothingUnlockIndices;
+using Integrations::GTA5_Enhanced::GTAAllCollectionUnlockIndices;
 using Integrations::GTA5_Enhanced::GTAAllVerifiedHalloweenUnlockIndices;
 using Integrations::GTA5_Enhanced::GTAClothingUnlockIndices;
+using Integrations::GTA5_Enhanced::GTACollectionUnlockIndices;
 using Integrations::GTA5_Enhanced::GTAHalloweenGhostsExposed2023Indices;
 using Integrations::GTA5_Enhanced::GTAHalloweenGhostsExposed2024Indices;
 using Integrations::GTA5_Enhanced::GTAHalloweenGhostsExposed2025Indices;
@@ -24,6 +27,9 @@ using Integrations::GTA5_Enhanced::GTAHalloweenJackOLanternIndices;
 using Integrations::GTA5_Enhanced::GTA_Clothing_Unlock_Groups;
 using Integrations::GTA5_Enhanced::GTA_Clothing_Unlock_Source_Version;
 using Integrations::GTA5_Enhanced::GTA_Clothing_Unlock_Unique_Count;
+using Integrations::GTA5_Enhanced::GTA_Collection_Unlock_Groups;
+using Integrations::GTA5_Enhanced::GTA_Collection_Unlock_Source;
+using Integrations::GTA5_Enhanced::GTA_Collection_Unlock_Unique_Count;
 using Integrations::GTA5_Enhanced::GTA_Halloween_Ghosts_Exposed_2023_Count;
 using Integrations::GTA5_Enhanced::GTA_Halloween_Ghosts_Exposed_2024_Count;
 using Integrations::GTA5_Enhanced::GTA_Halloween_Ghosts_Exposed_2025_Count;
@@ -339,6 +345,91 @@ void DrawClothingUnlocks()
     ImGui::TextDisabled(
         "Seasonal Valentine and Halloween storefront availability still depends on live tunables.");
 }
+
+void DrawCollectionUnlocks()
+{
+    const auto batch = GTA_Packed_Stats_State::Instance().BatchSnapshot();
+    const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
+
+    ImGui::TextColored(palette.bronze, "DAILY & COLLECTION PROGRESS");
+    ImGui::TextWrapped(
+        "Verified packed BOOLs sourced from %.*s. These presets mark collection/daily completion "
+        "state only; GTA can reset daily-scoped flags during normal rotations.",
+        static_cast<int>(GTA_Collection_Unlock_Source.size()),
+        GTA_Collection_Unlock_Source.data());
+    ImGui::Spacing();
+
+    ImGui::BeginDisabled(batch.active);
+    if (ImGui::Button("MARK ALL COLLECTIONS COMPLETE", ImVec2{275.0F, 36.0F}))
+        ImGui::OpenPopup("Confirm Collection Unlock All");
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu verified packed BOOLs", GTA_Collection_Unlock_Unique_Count);
+
+    if (ImGui::BeginPopupModal(
+            "Confirm Collection Unlock All",
+            nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped(
+            "This will set %zu verified daily/collection packed BOOLs to true for the active online "
+            "character. Daily flags may be reset later by GTA's normal rotation logic.",
+            GTA_Collection_Unlock_Unique_Count);
+        ImGui::Spacing();
+        ImGui::BeginDisabled(batch.active);
+        if (ImGui::Button("CONFIRM APPLY", ImVec2{170.0F, 34.0F})) {
+            QueuePackedBoolUnlocks(
+                "All Daily & Collection Progress",
+                GTAAllCollectionUnlockIndices());
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("CANCEL", ImVec2{110.0F, 34.0F}))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    constexpr auto tableFlags =
+        ImGuiTableFlags_BordersInnerH |
+        ImGuiTableFlags_RowBg |
+        ImGuiTableFlags_ScrollY |
+        ImGuiTableFlags_SizingStretchProp;
+
+    if (ImGui::BeginTable(
+            "##CollectionUnlockTable",
+            3,
+            tableFlags,
+            ImVec2{0.0F, 430.0F})) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("COLLECTION", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("BOOLS", ImGuiTableColumnFlags_WidthFixed, 72.0F);
+        ImGui::TableSetupColumn("ACTION", ImGuiTableColumnFlags_WidthFixed, 108.0F);
+        ImGui::TableHeadersRow();
+
+        for (const auto& group : GTA_Collection_Unlock_Groups) {
+            ImGui::PushID(group.name.data());
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(group.name.data(), group.name.data() + group.name.size());
+            ImGui::TextDisabled(
+                "%.*s",
+                static_cast<int>(group.description.size()),
+                group.description.data());
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%zu", group.indices.size());
+
+            ImGui::TableSetColumnIndex(2);
+            ImGui::BeginDisabled(batch.active);
+            if (ImGui::Button("APPLY", ImVec2{92.0F, 28.0F}))
+                QueuePackedBoolUnlocks(group.name, GTACollectionUnlockIndices(group));
+            ImGui::EndDisabled();
+            ImGui::PopID();
+        }
+
+        ImGui::EndTable();
+    }
+}
 }
 
 void DrawRecoveryPage()
@@ -378,10 +469,7 @@ void DrawRecoveryPage()
         }
 
         if (ImGui::BeginTabItem("COLLECTIONS")) {
-            ImGui::TextColored(palette.bronze, "COLLECTIONS");
-            DrawDivider();
-            DrawDisabledRow("Collection Status", "Reserved status view for future collection integrations.");
-            DrawDisabledRow("Collection Summary", "Reserved summary view for future collection integrations.");
+            DrawCollectionUnlocks();
             ImGui::EndTabItem();
         }
 
