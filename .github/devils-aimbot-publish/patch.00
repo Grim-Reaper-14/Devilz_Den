@@ -1,0 +1,168 @@
+--- /dev/null
++++ b/src/Integrations/GTA5_Enhanced/Runtime/Devils_Aimbot.hpp
+@@ -0,0 +1,34 @@
++#pragma once
++
++#include <cstdint>
++
++namespace Devilz::Backend
++{
++class LoggerService;
++}
++
++namespace Devilz::Integrations::GTA5_Enhanced
++{
++enum class Devils_Aimbot_Status : std::uint8_t
++{
++    Uninitialized,
++    Ready,
++    UnsupportedBuild,
++    PatternFailure,
++    PatchFailure
++};
++
++bool ConfigureDevilsAimbot(Backend::LoggerService& logger, std::uint64_t buildFingerprint);
++void ResetDevilsAimbot();
++
++[[nodiscard]] Devils_Aimbot_Status DevilsAimbotStatus() noexcept;
++[[nodiscard]] const char* DevilsAimbotStatusText() noexcept;
++[[nodiscard]] bool DevilsAimbotAvailable() noexcept;
++[[nodiscard]] bool DevilsAimbotEnabled() noexcept;
++[[nodiscard]] bool DevilsAimbotAimForHead() noexcept;
++[[nodiscard]] bool DevilsAimbotTargetDrivers() noexcept;
++
++bool SetDevilsAimbotEnabled(bool enabled);
++bool SetDevilsAimbotAimForHead(bool enabled);
++bool SetDevilsAimbotTargetDrivers(bool enabled);
++}
+--- /dev/null
++++ b/src/Integrations/GTA5_Enhanced/Runtime/Devils_Aimbot.cpp
+@@ -0,0 +1,501 @@
++#include "Devils_Aimbot.hpp"
++
++#include "Backend/Logging/LoggerService.hpp"
++#include "Backend/Memory/Module_Manager.hpp"
++#include "Backend/Memory/Pattern.hpp"
++#include "Backend/Memory/Pattern_Scanner.hpp"
++
++#include <Windows.h>
++
++#include <algorithm>
++#include <array>
++#include <cstddef>
++#include <cstdint>
++#include <cstring>
++#include <initializer_list>
++#include <mutex>
++#include <string>
++#include <string_view>
++#include <utility>
++#include <vector>
++
++namespace Devilz::Integrations::GTA5_Enhanced
++{
++namespace
++{
++constexpr std::uint64_t SupportedFingerprint = 0x6A4F97F605B81000ULL;
++constexpr std::string_view LogService = "GTA5_Enhanced.Weapons.Devils_Aimbot";
++
++struct Patch_Site
++{
++    static constexpr std::size_t Capacity = 8;
++
++    std::string name;
++    std::uintptr_t address = 0;
++    std::array<std::byte, Capacity> original{};
++    std::array<std::byte, Capacity> replacement{};
++    std::size_t size = 0;
++    bool applied = false;
++
++    [[nodiscard]] bool Ready() const noexcept
++    {
++        return address != 0 && size != 0 && size <= Capacity;
++    }
++};
++
++bool IsExecutableProtection(DWORD protection) noexcept
++{
++    const DWORD base = protection & 0xFFU;
++    return base == PAGE_EXECUTE || base == PAGE_EXECUTE_READ ||
++           base == PAGE_EXECUTE_READWRITE || base == PAGE_EXECUTE_WRITECOPY;
++}
++
++bool IsExecutableRange(std::uintptr_t address, std::size_t size) noexcept
++{
++    if (address == 0 || size == 0)
++        return false;
++
++    MEMORY_BASIC_INFORMATION info{};
++    if (::VirtualQuery(reinterpret_cast<const void*>(address), &info, sizeof(info)) != sizeof(info))
++        return false;
++    if (info.State != MEM_COMMIT || (info.Protect & PAGE_GUARD) != 0 ||
++        (info.Protect & PAGE_NOACCESS) != 0 || !IsExecutableProtection(info.Protect))
++        return false;
++
++    const auto regionBegin = reinterpret_cast<std::uintptr_t>(info.BaseAddress);
++    const auto regionEnd = regionBegin + info.RegionSize;
++    return address >= regionBegin && size <= info.RegionSize && address <= regionEnd - size;
++}
++
++bool WritePatch(Patch_Site& patch, bool apply) noexcept
++{
++    if (!patch.Ready() || !IsExecutableRange(patch.address, patch.size))
++        return false;
++
++    const auto& expected = apply ? patch.original : patch.replacement;
++    const auto& desired = apply ? patch.replacement : patch.original;
++
++    std::array<std::byte, Patch_Site::Capacity> current{};
++    std::memcpy(current.data(), reinterpret_cast<const void*>(patch.address), patch.size);
++    if (std::equal(current.begin(), current.begin() + patch.size, desired.begin())) {
++        patch.applied = apply;
++        return true;
++    }
++    if (!std::equal(current.begin(), current.begin() + patch.size, expected.begin()))
++        return false;
++
++    DWORD oldProtection = 0;
++    if (::VirtualProtect(reinterpret_cast<void*>(patch.address), patch.size, PAGE_EXECUTE_READWRITE, &oldProtection) == FALSE)
++        return false;
++
++    std::memcpy(reinterpret_cast<void*>(patch.address), desired.data(), patch.size);
++    ::FlushInstructionCache(::GetCurrentProcess(), reinterpret_cast<const void*>(patch.address), patch.size);
++
++    DWORD ignored = 0;
++    const bool restoredProtection = ::VirtualProtect(
++        reinterpret_cast<void*>(patch.address), patch.size, oldProtection, &ignored) != FALSE;
++
++    std::array<std::byte, Patch_Site::Capacity> verify{};
++    std::memcpy(verify.data(), reinterpret_cast<const void*>(patch.address), patch.size);
++    if (!std::equal(verify.begin(), verify.begin() + patch.size, desired.begin()) || !restoredProtection)
++        return false;
++
++    patch.applied = apply;
++    return true;
++}
++
++bool RestorePatch(Patch_Site& patch) noexcept
++{
++    if (!patch.Ready())
++        return true;
++
++    std::array<std::byte, Patch_Site::Capacity> current{};
++    std::memcpy(current.data(), reinterpret_cast<const void*>(patch.address), patch.size);
++    if (std::equal(current.begin(), current.begin() + patch.size, patch.original.begin())) {
++        patch.applied = false;
++        return true;
++    }
++    if (!std::equal(current.begin(), current.begin() + patch.size, patch.replacement.begin()))
++        return false;
++
++    return WritePatch(patch, false);
++}
++
++bool AddressInExecutableSection(
++    const Backend::Module_Info& module,
++    std::uintptr_t address,
++    std::size_t size) noexcept
++{
