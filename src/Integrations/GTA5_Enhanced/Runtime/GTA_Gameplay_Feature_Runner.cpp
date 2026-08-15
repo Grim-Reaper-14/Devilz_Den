@@ -142,6 +142,13 @@ void GTA_Gameplay_Feature_Runner::Reset() noexcept
     m_groundAttempts = 0;
 }
 
+void GTA_Gameplay_Feature_Runner::TickFrameSensitive() noexcept
+{
+    if (!m_natives || !m_natives->Ready())
+        return;
+    TickSuperJump();
+}
+
 void GTA_Gameplay_Feature_Runner::Tick() noexcept
 {
     if (!m_natives || !m_natives->Ready())
@@ -149,7 +156,6 @@ void GTA_Gameplay_Feature_Runner::Tick() noexcept
     TickMenuInputSuppression();
     TickGodMode();
     TickNeverWanted();
-    TickSuperJump();
     TickInfiniteOxygen();
     TickNoRagdoll();
     TickKeepPlayerClean();
@@ -160,9 +166,15 @@ void GTA_Gameplay_Feature_Runner::Tick() noexcept
     TickVehicleSpawner();
     TickVehicleForge();
     TickVehicleMaintenance();
-    TickVehicleForgeSnapshot();
     TickPresetTeleport();
     TickTeleportToWaypoint();
+}
+
+void GTA_Gameplay_Feature_Runner::TickSlow() noexcept
+{
+    if (!m_natives || !m_natives->Ready())
+        return;
+    TickVehicleForgeSnapshot();
 }
 
 void GTA_Gameplay_Feature_Runner::TickMenuInputSuppression() noexcept

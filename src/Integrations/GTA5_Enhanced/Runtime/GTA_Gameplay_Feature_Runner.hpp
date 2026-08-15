@@ -20,7 +20,9 @@ class GTA_Gameplay_Feature_Runner final
 public:
     void Configure(GTA_Native_Manager& natives, Backend::LoggerService& logger) noexcept;
     void Reset() noexcept;
+    void TickFrameSensitive() noexcept;
     void Tick() noexcept;
+    void TickSlow() noexcept;
 
 private:
     enum class Teleport_Phase : std::uint8_t
