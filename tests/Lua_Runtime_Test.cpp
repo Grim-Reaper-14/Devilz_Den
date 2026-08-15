@@ -1,8 +1,10 @@
 #include "Backend/Threading/IExecutor.hpp"
 #include "Scripting/Lua/Lua_Runtime.hpp"
 
+#include <atomic>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -54,9 +56,17 @@ private:
 int main()
 {
     auto& runtime = Devilz::Scripting::Lua::Lua_Runtime::Instance();
+    std::atomic_size_t loggedMessages{};
+
+    auto testLogger = [&loggedMessages](
+        Devilz::Backend::LogLevel,
+        std::string,
+        std::string) {
+        loggedMessages.fetch_add(1, std::memory_order_relaxed);
+    };
 
     Test_Lua_Executor executor;
-    if (!runtime.Start(executor)) {
+    if (!runtime.Start(executor, testLogger)) {
         std::cerr << "Lua runtime failed to start: " << runtime.Status() << '\n';
         return 1;
     }
@@ -67,9 +77,19 @@ int main()
         return 1;
     }
 
+    if (snapshot.libraries < 3) {
+        std::cerr << "Lua runtime did not register core/logger/events binding libraries\n";
+        return 1;
+    }
+
     const auto result = runtime.RunSelfTest();
     if (!result.succeeded) {
         std::cerr << "Lua runtime self-test failed: " << result.message << '\n';
+        return 1;
+    }
+
+    if (loggedMessages.load(std::memory_order_relaxed) == 0) {
+        std::cerr << "Lua logger binding did not use the injected log callback\n";
         return 1;
     }
 
@@ -80,7 +100,7 @@ int main()
     }
 
     Test_Lua_Executor secondExecutor;
-    if (!runtime.Start(secondExecutor)) {
+    if (!runtime.Start(secondExecutor, testLogger)) {
         std::cerr << "Lua runtime failed to restart: " << runtime.Status() << '\n';
         return 1;
     }

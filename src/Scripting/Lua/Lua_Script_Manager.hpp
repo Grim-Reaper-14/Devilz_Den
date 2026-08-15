@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Bindings/Lua_Binding_Context.hpp"
 #include "Lua_Script.hpp"
 
 #include <filesystem>
@@ -9,7 +10,6 @@
 namespace Devilz::Scripting::Lua
 {
 class Lua_Binding_Library_Manager;
-class Lua_Commands;
 class Lua_Engine_Manager;
 
 class Lua_Script_Manager final
@@ -18,7 +18,7 @@ public:
     void Configure(
         Lua_Engine_Manager* engines,
         Lua_Binding_Library_Manager* libraries,
-        Lua_Commands* commands) noexcept;
+        Lua_Binding_Context context) noexcept;
 
     std::size_t DiscoverScripts(const std::filesystem::path& directory);
     Lua_Script* LoadScript(const std::filesystem::path& path);
@@ -36,7 +36,7 @@ private:
     Lua_Script::Id m_nextId{1};
     Lua_Engine_Manager* m_engines{};
     Lua_Binding_Library_Manager* m_libraries{};
-    Lua_Commands* m_commands{};
+    Lua_Binding_Context m_bindingContext;
     std::vector<std::unique_ptr<Lua_Script>> m_scripts;
     std::vector<std::filesystem::path> m_discoveredScripts;
 };

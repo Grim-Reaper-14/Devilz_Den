@@ -27,6 +27,7 @@ public:
         next.modules = manager.Modules().Count();
         next.libraries = manager.Libraries().Count();
         next.commands = manager.Commands().Count();
+        next.events = manager.Events().Count();
         next.scheduledTasks = manager.ScheduledTaskCount();
         next.status = std::string{manager.Status()};
 
@@ -48,6 +49,7 @@ public:
     std::condition_variable cv;
     std::deque<Lua_Runtime_Task> jobs;
     Lua_Runtime_Snapshot snapshot;
+    Lua_Log_Callback logger;
     bool serviceActive{};
     bool stopRequested{};
     bool initializationComplete{};
@@ -80,6 +82,7 @@ void Lua_Runtime::Initialize()
     }
 
     auto& manager = Lua_Manager::Instance();
+    manager.ConfigureServices({});
     manager.Initialize();
     m_impl->Publish(manager, false);
 
@@ -87,7 +90,7 @@ void Lua_Runtime::Initialize()
     m_impl->synchronousMode = true;
 }
 
-bool Lua_Runtime::Start(Backend::IExecutor& executor)
+bool Lua_Runtime::Start(Backend::IExecutor& executor, Lua_Log_Callback logger)
 {
     {
         std::unique_lock lock(m_impl->mutex);
@@ -110,6 +113,7 @@ bool Lua_Runtime::Start(Backend::IExecutor& executor)
     {
         std::scoped_lock lock(m_impl->mutex);
         m_impl->jobs.clear();
+        m_impl->logger = std::move(logger);
         m_impl->stopRequested = false;
         m_impl->initializationComplete = false;
         m_impl->serviceActive = true;
@@ -123,6 +127,7 @@ bool Lua_Runtime::Start(Backend::IExecutor& executor)
         executor.Submit([this] { ServiceLoop(); });
     } catch (const std::exception& error) {
         std::scoped_lock lock(m_impl->mutex);
+        m_impl->logger = {};
         m_impl->serviceActive = false;
         m_impl->initializationComplete = true;
         m_impl->snapshot.dedicatedThread = false;
@@ -131,6 +136,7 @@ bool Lua_Runtime::Start(Backend::IExecutor& executor)
         return false;
     } catch (...) {
         std::scoped_lock lock(m_impl->mutex);
+        m_impl->logger = {};
         m_impl->serviceActive = false;
         m_impl->initializationComplete = true;
         m_impl->snapshot.dedicatedThread = false;
@@ -181,7 +187,9 @@ void Lua_Runtime::Shutdown() noexcept
         }
 
         if (synchronousMode) {
-            Lua_Manager::Instance().Shutdown();
+            auto& manager = Lua_Manager::Instance();
+            manager.Shutdown();
+            manager.ConfigureServices({});
             m_impl->PublishStopped("Stopped");
         }
     } catch (...) {
@@ -252,9 +260,11 @@ Lua_Self_Test_Result Lua_Runtime::RunSelfTest()
 
 void Lua_Runtime::ServiceLoop()
 {
+    Lua_Log_Callback logger;
     {
         std::scoped_lock lock(m_impl->mutex);
         m_impl->serviceThreadId = std::this_thread::get_id();
+        logger = m_impl->logger;
     }
 
     auto& manager = Lua_Manager::Instance();
@@ -262,6 +272,7 @@ void Lua_Runtime::ServiceLoop()
     std::string failureStatus;
 
     try {
+        manager.ConfigureServices(std::move(logger));
         initialized = manager.Initialize();
         if (!initialized)
             failureStatus = std::string{manager.Status()};
@@ -316,10 +327,12 @@ void Lua_Runtime::ServiceLoop()
     }
 
     manager.Shutdown();
+    manager.ConfigureServices({});
 
     {
         std::scoped_lock lock(m_impl->mutex);
         m_impl->jobs.clear();
+        m_impl->logger = {};
         m_impl->serviceThreadId = {};
         m_impl->serviceActive = false;
         m_impl->stopRequested = false;

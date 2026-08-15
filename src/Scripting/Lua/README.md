@@ -1,12 +1,23 @@
 # Lua Runtime
 
-Devilz Den embeds Lua 5.4 through Sol2 and separates runtime ownership from scripts, modules, commands, engines, binding libraries, and scheduling.
+Devilz Den embeds Lua 5.4 through Sol2. Lua execution is owned by a dedicated backend executor, while each loaded script receives its own isolated Lua state and cooperative coroutine scheduler.
+
+## Layout
 
 ```text
 Scripting/Lua/
+  Bindings/
+    Lua_Binding_Context.hpp
+    Core/
+      Lua_Core_Binding.*
+    Logger/
+      Lua_Logger_Binding.*
+    Events/
+      Lua_Events_Binding.*
+  Events/
+    Lua_Event_Manager.*
   Lua_Manager.*
   Lua_Runtime.*
-  Lua_Scheduler.*
   Lua_Commands.*
   Lua_Engine.*
   Lua_Engine_Manager.*
@@ -14,43 +25,79 @@ Scripting/Lua/
   Lua_Script_Manager.*
   Lua_Module.*
   Lua_Module_Manager.*
-  Lua_Bindings.*
+  Lua_Scheduler.*
   Lua_Binding_Library.*
   Lua_Binding_Library_Manager.*
+  Lua_Bindings.*              # compatibility facade for the original core API
 ```
+
+`Lua_Binding_Context` is the shared dependency surface passed to every binding library. It currently exposes script-owned commands, the Lua event manager, and an injected runtime logging callback. Future binding domains can receive controlled services through this context without expanding every binding-library method signature.
 
 ## Thread ownership
 
-Production Lua execution is started by `Runtime_Manager` on a dedicated single-worker executor created through `ThreadManager::CreateDedicated("Lua")`. The long-lived Lua service loop owns all Sol2/Lua state access. Renderer/UI code reads a copied `Lua_Runtime_Snapshot` and queues work through `Lua_Runtime` instead of touching live Lua containers.
+Production startup creates a dedicated `Lua` executor through the backend `ThreadManager`. The Lua service loop owns all Sol2 states, drains submitted jobs, dispatches events, and ticks script schedulers. The renderer only reads immutable `Lua_Runtime_Snapshot` data and never touches a live `sol::state`.
 
-Shutdown runs in the opposite direction: the Lua service is stopped and its engines are destroyed before the backend thread manager is stopped. The old synchronous `Lua_Runtime::Initialize()` path remains available for isolated compatibility/testing, but normal runtime ownership is threaded.
+Each `.lua` script receives a separate `Lua_Engine`. Script-owned commands and event subscriptions are removed before that engine is destroyed.
 
-## Script isolation and cooperative tasks
-
-`Lua_Engine_Manager` creates isolated Sol2 states, including one engine per loaded script. A script therefore has its own globals and coroutine scheduler while all script engines are executed by the same dedicated Lua backend thread.
-
-The core binding exposes cooperative tasks:
+## Core API
 
 ```lua
-local task = devilz.create_thread(function()
+devilz.api_version
+devilz.runtime
+devilz.engine_id
+devilz.owner_script_id
+devilz.version()
+
+devilz.commands.register("name", function()
+    -- command callback
+end)
+
+local ok, message = devilz.commands.execute("name")
+
+devilz.create_thread(function()
     while true do
-        -- Lua work
         devilz.yield(1000)
     end
 end)
 
--- Alias for create_thread.
 devilz.async(function()
-    devilz.yield(100)
+    -- cooperative Lua task
 end)
 ```
 
-`devilz.yield(milliseconds)` yields the current Lua coroutine. The C++ scheduler resumes due coroutines from the dedicated Lua thread. These are cooperative Lua tasks, not one operating-system thread per script.
+## Logger binding
 
-## Current binding surface
+The production runtime injects its already-running backend logger into Lua. A script never owns or starts a logger service.
 
-The core binding library exposes `devilz.api_version`, runtime/engine metadata, `devilz.version()`, the script-owned `devilz.commands` API, `devilz.create_thread`, `devilz.async`, and `devilz.yield`.
+```lua
+devilz.log.info("script started")
+devilz.log.warning("something looks wrong", "Inventory")
+devilz.log.error("operation failed")
+devilz.log.write("debug", "custom level call", "Diagnostics")
 
-Lua states open the base, coroutine, math, string, table, and UTF-8 libraries. Lua-side `dofile` and `loadfile` remain disabled; filesystem, OS, debug, and unrestricted native access are not exposed.
+-- Alias for users who prefer the longer name.
+devilz.logger.info("same logger")
+```
 
-Future game-sensitive bindings should queue work to the validated GTA/game-thread bridge rather than calling game-thread-only functionality directly from the Lua executor.
+Script log channels are automatically namespaced as `Lua.Script.<owner id>` with an optional child channel. The primary Lua state uses the `Lua` service name. `devilz.log.available` reports whether a runtime logger was injected.
+
+## Events binding
+
+Event subscriptions are owner-scoped. One script cannot remove another script's subscription, and unloading a script removes all of its callbacks before its Lua state is destroyed.
+
+```lua
+local subscription = devilz.events.on(devilz.events.TICK, function()
+    -- called from the dedicated Lua service thread
+end)
+
+local count = devilz.events.count()
+devilz.events.off(subscription)
+```
+
+`tick` is the first built-in event. Additional controlled events can be added later for UI, player, entity, vehicle, network, and other runtime domains.
+
+## Sandbox
+
+Lua states currently open the base, coroutine, math, string, table, and UTF-8 libraries. Lua-side `dofile` and `loadfile` are disabled. Filesystem, OS, debug, package loading, raw memory access, and unrestricted native access are not exposed.
+
+Future binding folders should follow the same domain layout, for example `Bindings/Settings`, `Bindings/UI`, `Bindings/Players`, `Bindings/Entities`, `Bindings/Vehicles`, `Bindings/Weapons`, `Bindings/World`, and `Bindings/Config`.

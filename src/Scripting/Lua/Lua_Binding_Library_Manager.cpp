@@ -1,6 +1,5 @@
 #include "Lua_Binding_Library_Manager.hpp"
 
-#include "Lua_Commands.hpp"
 #include "Lua_Engine.hpp"
 
 #include <algorithm>
@@ -16,13 +15,15 @@ bool Lua_Binding_Library_Manager::RegisterLibrary(std::unique_ptr<Lua_Binding_Li
     return true;
 }
 
-bool Lua_Binding_Library_Manager::BindAll(Lua_Engine& engine, Lua_Commands& commands)
+bool Lua_Binding_Library_Manager::BindAll(
+    Lua_Engine& engine,
+    const Lua_Binding_Context& context)
 {
     if (!engine.Ready())
         return false;
 
     for (auto& library : m_libraries) {
-        if (!library->Register(engine, commands))
+        if (!library->Register(engine, context))
             return false;
     }
 

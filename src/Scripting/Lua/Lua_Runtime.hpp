@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Bindings/Lua_Binding_Context.hpp"
+
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -30,6 +32,7 @@ struct Lua_Runtime_Snapshot
     std::size_t modules{};
     std::size_t libraries{};
     std::size_t commands{};
+    std::size_t events{};
     std::size_t scheduledTasks{};
     std::size_t pendingJobs{};
     std::string status{"Not started"};
@@ -48,7 +51,7 @@ public:
     Lua_Runtime& operator=(const Lua_Runtime&) = delete;
 
     void Initialize();
-    [[nodiscard]] bool Start(Backend::IExecutor& executor);
+    [[nodiscard]] bool Start(Backend::IExecutor& executor, Lua_Log_Callback logger = {});
     [[nodiscard]] bool Submit(Lua_Runtime_Task task);
     void Shutdown() noexcept;
 

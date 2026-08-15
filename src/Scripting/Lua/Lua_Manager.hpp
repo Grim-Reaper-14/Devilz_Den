@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Bindings/Lua_Binding_Context.hpp"
+#include "Events/Lua_Event_Manager.hpp"
 #include "Lua_Binding_Library_Manager.hpp"
 #include "Lua_Commands.hpp"
 #include "Lua_Engine_Manager.hpp"
@@ -26,6 +28,7 @@ public:
     Lua_Manager(const Lua_Manager&) = delete;
     Lua_Manager& operator=(const Lua_Manager&) = delete;
 
+    void ConfigureServices(Lua_Log_Callback logger);
     bool Initialize();
     void Shutdown() noexcept;
     void Tick();
@@ -43,6 +46,7 @@ public:
     [[nodiscard]] Lua_Module_Manager& Modules() noexcept;
     [[nodiscard]] Lua_Binding_Library_Manager& Libraries() noexcept;
     [[nodiscard]] Lua_Commands& Commands() noexcept;
+    [[nodiscard]] Lua_Event_Manager& Events() noexcept;
 
 private:
     Lua_Manager() = default;
@@ -52,6 +56,8 @@ private:
     Lua_Module_Manager m_modules;
     Lua_Binding_Library_Manager m_libraries;
     Lua_Commands m_commands;
+    Lua_Event_Manager m_events;
+    Lua_Binding_Context m_bindingContext;
     Lua_Engine::Id m_primaryEngineId{};
     bool m_initialized{};
     std::string m_status{"Not initialized"};

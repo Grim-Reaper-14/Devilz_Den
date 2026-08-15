@@ -1,21 +1,23 @@
 #include "Lua_Script_Manager.hpp"
 
+#include "Events/Lua_Event_Manager.hpp"
 #include "Lua_Binding_Library_Manager.hpp"
 #include "Lua_Commands.hpp"
 #include "Lua_Engine_Manager.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace Devilz::Scripting::Lua
 {
 void Lua_Script_Manager::Configure(
     Lua_Engine_Manager* engines,
     Lua_Binding_Library_Manager* libraries,
-    Lua_Commands* commands) noexcept
+    Lua_Binding_Context context) noexcept
 {
     m_engines = engines;
     m_libraries = libraries;
-    m_commands = commands;
+    m_bindingContext = std::move(context);
 }
 
 std::size_t Lua_Script_Manager::DiscoverScripts(const std::filesystem::path& directory)
@@ -36,7 +38,7 @@ std::size_t Lua_Script_Manager::DiscoverScripts(const std::filesystem::path& dir
 
 Lua_Script* Lua_Script_Manager::LoadScript(const std::filesystem::path& path)
 {
-    if (!m_engines || !m_libraries || !m_commands)
+    if (!m_engines || !m_libraries || !m_bindingContext.commands || !m_bindingContext.events)
         return nullptr;
 
     const auto id = m_nextId++;
@@ -46,7 +48,7 @@ Lua_Script* Lua_Script_Manager::LoadScript(const std::filesystem::path& path)
     if (!engine.Ready()) {
         script->MarkError(std::string{engine.Status()});
         m_engines->DestroyEngine(engine.GetId());
-    } else if (!m_libraries->BindAll(engine, *m_commands)) {
+    } else if (!m_libraries->BindAll(engine, m_bindingContext)) {
         script->MarkError("Failed to bind Lua libraries");
         m_engines->DestroyEngine(engine.GetId());
     } else {
@@ -68,8 +70,11 @@ bool Lua_Script_Manager::UnloadScript(Lua_Script::Id id) noexcept
         return false;
 
     const auto engineId = (*it)->EngineId();
-    if (m_commands)
-        m_commands->RemoveByOwner(id);
+    if (m_bindingContext.events)
+        m_bindingContext.events->RemoveByOwner(id);
+    if (m_bindingContext.commands)
+        m_bindingContext.commands->RemoveByOwner(id);
+
     (*it)->Unload();
     if (m_engines && engineId != 0)
         m_engines->DestroyEngine(engineId);

@@ -57,12 +57,13 @@ void DrawLuaPage()
 
     if (snapshot.ready) {
         ImGui::TextDisabled(
-            "Engines: %zu | Scripts: %zu | Modules: %zu | Libraries: %zu | Commands: %zu",
+            "Engines: %zu | Scripts: %zu | Modules: %zu | Libraries: %zu | Commands: %zu | Events: %zu",
             snapshot.engines,
             snapshot.scripts,
             snapshot.modules,
             snapshot.libraries,
-            snapshot.commands);
+            snapshot.commands,
+            snapshot.events);
         ImGui::TextDisabled(
             "Scheduled tasks: %zu | Pending Lua jobs: %zu",
             snapshot.scheduledTasks,
@@ -89,6 +90,6 @@ void DrawLuaPage()
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "BINDINGS");
     ImGui::TextWrapped(
-        "Core bindings run on the dedicated Lua backend thread. Scripts can create cooperative tasks with devilz.create_thread/devilz.async and pause them with devilz.yield(milliseconds).");
+        "Bindings are split by domain. Core provides commands and cooperative tasks, Logger routes script messages into the runtime logger, and Events provides script-owned subscriptions such as devilz.events.TICK.");
 }
 }

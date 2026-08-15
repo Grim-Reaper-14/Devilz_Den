@@ -123,7 +123,11 @@ bool Runtime_Manager::Start(const std::filesystem::path& logPath)
 
         auto& luaRuntime = Scripting::Lua::Lua_Runtime::Instance();
         auto& luaExecutor = m_threads.CreateDedicated("Lua");
-        if (luaRuntime.Start(luaExecutor)) {
+        if (luaRuntime.Start(
+                luaExecutor,
+                [this](Backend::LogLevel level, std::string message, std::string service) {
+                    m_logger.Log(level, std::move(message), std::move(service));
+                })) {
             m_logger.Log(
                 Backend::LogLevel::Info,
                 "Lua runtime started on dedicated backend executor",
