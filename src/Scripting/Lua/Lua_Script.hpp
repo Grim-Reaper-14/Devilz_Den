@@ -26,7 +26,7 @@ public:
 
     bool Load(Lua_Engine& engine);
     void Unload() noexcept;
-    void Tick();
+    void Tick(Lua_Engine& engine);
     void MarkError(std::string message);
 
     [[nodiscard]] Id GetId() const noexcept;

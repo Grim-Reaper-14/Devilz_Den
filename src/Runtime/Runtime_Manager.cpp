@@ -11,6 +11,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Personal_Save.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
+#include "Scripting/Lua/Lua_Runtime.hpp"
 
 #include <exception>
 #include <iomanip>
@@ -120,6 +121,20 @@ bool Runtime_Manager::Start(const std::filesystem::path& logPath)
             m_logger.Log(Backend::LogLevel::Debug, "IO executor is operational", "Threading");
         });
 
+        auto& luaRuntime = Scripting::Lua::Lua_Runtime::Instance();
+        auto& luaExecutor = m_threads.CreateDedicated("Lua");
+        if (luaRuntime.Start(luaExecutor)) {
+            m_logger.Log(
+                Backend::LogLevel::Info,
+                "Lua runtime started on dedicated backend executor",
+                "Lua");
+        } else {
+            m_logger.Log(
+                Backend::LogLevel::Warning,
+                "Lua runtime unavailable: " + luaRuntime.Status(),
+                "Lua");
+        }
+
         const auto refreshed = m_gta.Refresh();
         if (!refreshed) {
             m_logger.Log(Backend::LogLevel::Error,
@@ -170,6 +185,7 @@ void Runtime_Manager::Stop() noexcept
         Integrations::GTA5_Enhanced::ResetWorldEnvironmentExtension();
         m_scriptGlobals.Clear();
         m_natives.Reset();
+        Scripting::Lua::Lua_Runtime::Instance().Shutdown();
         m_threads.Stop();
         m_logger.Log(Backend::LogLevel::Info, "Devilz_Den DLL runtime stopped cleanly", "Runtime");
         m_logger.Flush();

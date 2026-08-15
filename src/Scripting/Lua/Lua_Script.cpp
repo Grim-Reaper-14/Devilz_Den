@@ -1,6 +1,7 @@
 #include "Lua_Script.hpp"
 
 #include "Lua_Engine.hpp"
+#include "Lua_Scheduler.hpp"
 
 #include <sol/sol.hpp>
 
@@ -52,10 +53,19 @@ void Lua_Script::Unload() noexcept
     m_engineId = 0;
 }
 
-void Lua_Script::Tick()
+void Lua_Script::Tick(Lua_Engine& engine)
 {
     if (m_state != Lua_Script_State::Running)
         return;
+
+    if (engine.GetId() != m_engineId || !engine.Ready()) {
+        MarkError("Lua script engine is unavailable");
+        return;
+    }
+
+    auto result = Lua_Scheduler::Tick(engine);
+    if (!result.succeeded)
+        MarkError(std::move(result.message));
 }
 
 void Lua_Script::MarkError(std::string message)

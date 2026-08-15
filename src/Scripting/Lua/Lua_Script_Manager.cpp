@@ -94,8 +94,21 @@ bool Lua_Script_Manager::ReloadScript(Lua_Script::Id id)
 
 void Lua_Script_Manager::Tick()
 {
-    for (auto& script : m_scripts)
-        script->Tick();
+    if (!m_engines)
+        return;
+
+    for (auto& script : m_scripts) {
+        if (script->State() != Lua_Script_State::Running)
+            continue;
+
+        auto* engine = m_engines->FindEngine(script->EngineId());
+        if (!engine) {
+            script->MarkError("Lua script engine was destroyed");
+            continue;
+        }
+
+        script->Tick(*engine);
+    }
 }
 
 void Lua_Script_Manager::UnloadAll() noexcept

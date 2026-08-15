@@ -1,7 +1,6 @@
 #include "Lua_Page.hpp"
 
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
-#include "Scripting/Lua/Lua_Manager.hpp"
 #include "Scripting/Lua/Lua_Runtime.hpp"
 
 #include <imgui.h>
@@ -30,8 +29,7 @@ Lua_Page_State& PageState()
 void DrawLuaPage()
 {
     auto& runtime = Scripting::Lua::Lua_Runtime::Instance();
-    runtime.Initialize();
-    auto& manager = Scripting::Lua::Lua_Manager::Instance();
+    const auto snapshot = runtime.Snapshot();
 
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
     ImGui::TextColored(palette.emberRed, "LUA");
@@ -40,29 +38,39 @@ void DrawLuaPage()
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
 
     ImGui::TextColored(palette.bronze, "RUNTIME");
+    const auto luaVersion = runtime.LuaVersion();
+    const auto solVersion = runtime.Sol2Version();
     ImGui::Text("%.*s | Sol2 %.*s",
-        static_cast<int>(runtime.LuaVersion().size()), runtime.LuaVersion().data(),
-        static_cast<int>(runtime.Sol2Version().size()), runtime.Sol2Version().data());
+        static_cast<int>(luaVersion.size()), luaVersion.data(),
+        static_cast<int>(solVersion.size()), solVersion.data());
 
-    const ImVec4 statusColor = runtime.Ready()
+    const ImVec4 statusColor = snapshot.ready
         ? ImVec4{0.42F, 0.78F, 0.42F, 1.0F}
         : ImVec4{0.92F, 0.30F, 0.24F, 1.0F};
-    ImGui::TextColored(statusColor, "%s", runtime.Ready() ? "READY" : "UNAVAILABLE");
+    ImGui::TextColored(statusColor, "%s", snapshot.ready ? "READY" : "UNAVAILABLE");
     ImGui::SameLine();
-    ImGui::TextDisabled("%.*s", static_cast<int>(runtime.Status().size()), runtime.Status().data());
+    ImGui::TextDisabled("%s", snapshot.status.c_str());
 
-    if (runtime.Ready()) {
+    ImGui::TextDisabled(
+        "Execution: %s",
+        snapshot.dedicatedThread ? "Dedicated backend Lua thread" : "Not threaded");
+
+    if (snapshot.ready) {
         ImGui::TextDisabled(
             "Engines: %zu | Scripts: %zu | Modules: %zu | Libraries: %zu | Commands: %zu",
-            manager.Engines().Count(),
-            manager.Scripts().Scripts().size(),
-            manager.Modules().Count(),
-            manager.Libraries().Count(),
-            manager.Commands().Count());
+            snapshot.engines,
+            snapshot.scripts,
+            snapshot.modules,
+            snapshot.libraries,
+            snapshot.commands);
+        ImGui::TextDisabled(
+            "Scheduled tasks: %zu | Pending Lua jobs: %zu",
+            snapshot.scheduledTasks,
+            snapshot.pendingJobs);
     }
 
     auto& pageState = PageState();
-    ImGui::BeginDisabled(!runtime.Ready());
+    ImGui::BeginDisabled(!snapshot.ready);
     if (ImGui::Button("RUN SOL2 SELF-TEST")) {
         auto result = runtime.RunSelfTest();
         pageState.hasSelfTestResult = true;
@@ -81,6 +89,6 @@ void DrawLuaPage()
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "BINDINGS");
     ImGui::TextWrapped(
-        "Core bindings are active. Scripts can use runtime metadata and the script-owned devilz.commands API. Game bindings are still gated for later libraries.");
+        "Core bindings run on the dedicated Lua backend thread. Scripts can create cooperative tasks with devilz.create_thread/devilz.async and pause them with devilz.yield(milliseconds).");
 }
 }

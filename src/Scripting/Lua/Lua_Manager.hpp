@@ -6,6 +6,7 @@
 #include "Lua_Module_Manager.hpp"
 #include "Lua_Script_Manager.hpp"
 
+#include <cstddef>
 #include <string>
 #include <string_view>
 
@@ -34,6 +35,7 @@ public:
     [[nodiscard]] std::string_view LuaVersion() const noexcept;
     [[nodiscard]] std::string_view Sol2Version() const noexcept;
     [[nodiscard]] Lua_Manager_Self_Test_Result RunSelfTest();
+    [[nodiscard]] std::size_t ScheduledTaskCount();
 
     [[nodiscard]] Lua_Engine* PrimaryEngine() noexcept;
     [[nodiscard]] Lua_Engine_Manager& Engines() noexcept;

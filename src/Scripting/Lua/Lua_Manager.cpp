@@ -1,6 +1,7 @@
 #include "Lua_Manager.hpp"
 
 #include "Lua_Bindings.hpp"
+#include "Lua_Scheduler.hpp"
 
 #include <sol/sol.hpp>
 
@@ -59,8 +60,16 @@ void Lua_Manager::Shutdown() noexcept
 
 void Lua_Manager::Tick()
 {
-    if (m_initialized)
-        m_scripts.Tick();
+    if (!m_initialized)
+        return;
+
+    if (auto* primary = PrimaryEngine()) {
+        auto result = Lua_Scheduler::Tick(*primary);
+        if (!result.succeeded)
+            m_status = "Primary Lua scheduler error: " + result.message;
+    }
+
+    m_scripts.Tick();
 }
 
 bool Lua_Manager::Ready() const noexcept
@@ -98,6 +107,14 @@ Lua_Manager_Self_Test_Result Lua_Manager::RunSelfTest()
         "assert(devilz.engine_id > 0)\n"
         "assert(devilz.owner_script_id == 0)\n"
         "assert(type(devilz.commands.register) == 'function')\n"
+        "assert(type(devilz.create_thread) == 'function')\n"
+        "assert(type(devilz.yield) == 'function')\n"
+        "devilz.__self_test_counter = 0\n"
+        "devilz.create_thread(function()\n"
+        "    devilz.__self_test_counter = devilz.__self_test_counter + 1\n"
+        "    devilz.yield(0)\n"
+        "    devilz.__self_test_counter = devilz.__self_test_counter + 1\n"
+        "end)\n"
         "return 6 * 7",
         sol::script_pass_on_error);
 
@@ -110,7 +127,42 @@ Lua_Manager_Self_Test_Result Lua_Manager::RunSelfTest()
     if (value != 42)
         return {false, "Lua returned an unexpected self-test value"};
 
-    return {true, "Lua manager executed Sol2 successfully (6 * 7 = 42)"};
+    auto firstTick = Lua_Scheduler::Tick(*engine);
+    if (!firstTick.succeeded)
+        return {false, firstTick.message};
+
+    auto secondTick = Lua_Scheduler::Tick(*engine);
+    if (!secondTick.succeeded)
+        return {false, secondTick.message};
+
+    const sol::object devilzObject = engine->State()["devilz"];
+    if (!devilzObject.is<sol::table>())
+        return {false, "Lua core table disappeared during self-test"};
+
+    auto devilz = devilzObject.as<sol::table>();
+    const int counter = devilz.get_or("__self_test_counter", -1);
+    devilz["__self_test_counter"] = sol::nil;
+
+    if (counter != 2 || Lua_Scheduler::TaskCount(*engine) != 0)
+        return {false, "Lua coroutine scheduler did not resume and retire the self-test task"};
+
+    return {true, "Sol2 and Lua scheduler executed successfully (6 * 7 = 42)"};
+}
+
+std::size_t Lua_Manager::ScheduledTaskCount()
+{
+    std::size_t count = 0;
+
+    if (auto* primary = PrimaryEngine())
+        count += Lua_Scheduler::TaskCount(*primary);
+
+    for (const auto& script : m_scripts.Scripts()) {
+        auto* engine = m_engines.FindEngine(script->EngineId());
+        if (engine)
+            count += Lua_Scheduler::TaskCount(*engine);
+    }
+
+    return count;
 }
 
 Lua_Engine* Lua_Manager::PrimaryEngine() noexcept

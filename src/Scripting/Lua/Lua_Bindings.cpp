@@ -3,6 +3,7 @@
 #include "Lua_Binding_Library.hpp"
 #include "Lua_Commands.hpp"
 #include "Lua_Engine.hpp"
+#include "Lua_Scheduler.hpp"
 
 #include <string>
 #include <tuple>
@@ -60,7 +61,7 @@ bool RegisterCore(Lua_Engine& engine, Lua_Commands& commands)
         });
 
     devilz["commands"] = commandTable;
-    return true;
+    return Lua_Scheduler::Install(engine);
 }
 
 std::unique_ptr<Lua_Binding_Library> CreateCoreLibrary()
