@@ -389,6 +389,8 @@ void EnrichForgeSnapshot(GTA_Native_Manager& natives, GTA_Vehicle_State& state) 
     if (vehicle == 0 || snapshot.vehicle != vehicle) {
         g_modScanVehicle = vehicle;
         g_emptyModScanAttempts = 0;
+        if (snapshot.vehicle != vehicle)
+            state.RequestForgeSnapshotRefresh();
         return;
     }
 

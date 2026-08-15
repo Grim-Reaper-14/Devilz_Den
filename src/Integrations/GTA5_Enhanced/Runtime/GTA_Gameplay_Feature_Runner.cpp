@@ -655,9 +655,6 @@ void GTA_Gameplay_Feature_Runner::TickVehicleForgeSnapshot() noexcept
 {
     auto& state = GTA_Vehicle_State::Instance();
     const bool refreshRequested = state.ConsumeForgeSnapshotRefreshRequest();
-    if (m_forgeSnapshotVehicle == 0 && !refreshRequested)
-        return;
-
     const int vehicle = CurrentVehicle();
     if (vehicle == m_forgeSnapshotVehicle && !refreshRequested)
         return;

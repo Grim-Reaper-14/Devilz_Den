@@ -110,7 +110,7 @@
             personalSaveStatus == Devilz::Integrations::GTA5_Enhanced::GTA_Vehicle_Personal_Save_Status::WaitingForGarageSelection;
         const bool personalSaveReady = Devilz::Integrations::GTA5_Enhanced::VehiclePersonalSaveRuntimeReady();
 
-        ImGui::BeginDisabled(forge.vehicle == 0 || personalSaveBusy || !personalSaveReady);
+        ImGui::BeginDisabled(personalSaveBusy || !personalSaveReady);
         if (ImGui::Button("SAVE CURRENT VEHICLE TO GARAGE", ImVec2(285.0F, 38.0F)))
             Devilz::Integrations::GTA5_Enhanced::RequestSaveCurrentVehicleToGarage();
         ImGui::EndDisabled();
