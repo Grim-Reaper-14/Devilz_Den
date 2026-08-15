@@ -43,12 +43,13 @@ constexpr std::array<std::byte, GTA_Run_Script_Threads_Bridge::PatchSize> Verifi
     std::byte{0x5D}, std::byte{0xC6}, std::byte{0x00}
 };
 constexpr ULONGLONG FeatureTickIntervalMs = 16;
+constexpr ULONGLONG ScheduledDispatchGapMs = 8;
 constexpr ULONGLONG GameplayTickIntervalMs = 100;
 constexpr ULONGLONG SelfCacheTickIntervalMs = 250;
 constexpr ULONGLONG SelfUtilityTickIntervalMs = 100;
 constexpr ULONGLONG OnlineExtensionTickIntervalMs = 250;
-constexpr ULONGLONG SlowExtensionTickIntervalMs = 500;
-constexpr ULONGLONG SnapshotExtensionTickIntervalMs = 1000;
+constexpr ULONGLONG SlowExtensionSliceIntervalMs = 167;
+constexpr ULONGLONG SnapshotExtensionSliceIntervalMs = 503;
 constexpr ULONGLONG VehicleExtensionTickIntervalMs = 500;
 constexpr ULONGLONG ForgeSnapshotTickIntervalMs = 1000;
 constexpr GTA_Native_Hash SetRunSprintMultiplierHash = 0xA52E1AE3848A506BULL;
@@ -185,15 +186,19 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_smokeAttempting.store(false);
     m_activeCalls.store(0);
     m_cachedScriptThread.store(nullptr);
-    m_nextFeatureTickMs = 0;
-    m_nextGameplayTickMs = 0;
-    m_nextSelfCacheTickMs = 0;
-    m_nextSelfUtilityTickMs = 0;
-    m_nextOnlineExtensionTickMs = 0;
-    m_nextSlowExtensionTickMs = 0;
-    m_nextSnapshotExtensionTickMs = 0;
-    m_nextVehicleExtensionTickMs = 0;
-    m_nextForgeSnapshotTickMs = 0;
+    const ULONGLONG scheduleBase = ::GetTickCount64();
+    m_nextFeatureTickMs = scheduleBase;
+    m_nextScheduledDispatchMs = scheduleBase + 8;
+    m_nextGameplayTickMs = scheduleBase + 16;
+    m_nextSelfUtilityTickMs = scheduleBase + 48;
+    m_nextSelfCacheTickMs = scheduleBase + 84;
+    m_nextOnlineExtensionTickMs = scheduleBase + 132;
+    m_nextSlowExtensionTickMs = scheduleBase + 188;
+    m_nextVehicleExtensionTickMs = scheduleBase + 244;
+    m_nextSnapshotExtensionTickMs = scheduleBase + 356;
+    m_nextForgeSnapshotTickMs = scheduleBase + 612;
+    m_slowExtensionCursor = 0;
+    m_snapshotExtensionCursor = 0;
     m_fastRunApplied = false;
     m_fastSwimApplied = false;
     m_gameplay.Configure(natives, logger);
@@ -271,6 +276,7 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     m_expectedThreadDispatchAddress = 0;
     m_cachedScriptThread.store(nullptr);
     m_nextFeatureTickMs = 0;
+    m_nextScheduledDispatchMs = 0;
     m_nextGameplayTickMs = 0;
     m_nextSelfCacheTickMs = 0;
     m_nextSelfUtilityTickMs = 0;
@@ -279,6 +285,8 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     m_nextSnapshotExtensionTickMs = 0;
     m_nextVehicleExtensionTickMs = 0;
     m_nextForgeSnapshotTickMs = 0;
+    m_slowExtensionCursor = 0;
+    m_snapshotExtensionCursor = 0;
     m_fastRunApplied = false;
     m_fastSwimApplied = false;
 
@@ -374,7 +382,7 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
         m_fastRunApplied ||
         m_fastSwimApplied;
     const bool frameDue = frameFeatureActive && now >= m_nextFeatureTickMs;
-    const bool scheduledDue =
+    const bool scheduledWorkReady =
         now >= m_nextGameplayTickMs ||
         now >= m_nextSelfCacheTickMs ||
         now >= m_nextSelfUtilityTickMs ||
@@ -383,6 +391,8 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
         now >= m_nextSnapshotExtensionTickMs ||
         now >= m_nextVehicleExtensionTickMs ||
         now >= m_nextForgeSnapshotTickMs;
+    const bool scheduledDue =
+        scheduledWorkReady && now >= m_nextScheduledDispatchMs;
     if (!frameDue && !scheduledDue)
         return;
 
@@ -411,7 +421,8 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
             TickExplosiveAmmoExtension(*m_natives, scriptThread);
         TickFrameSensitiveMovement();
     }
-    RunLegacyGameplayTick(now);
+    if (scheduledDue)
+        RunLegacyGameplayTick(now);
     tls->scriptThreadActive = previousActive;
     tls->currentScriptThread = previousThread;
 }
@@ -451,10 +462,14 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
     if (!m_natives || !m_natives->Ready())
         return;
 
+    // Never let multiple periodic backend lanes pile into one hook pass.
+    // If several lanes are overdue, later RunScriptThreads calls drain them
+    // one at a time with a small dispatch gap between slices.
+    m_nextScheduledDispatchMs = now + ScheduledDispatchGapMs;
+
     if (now >= m_nextGameplayTickMs) {
         m_nextGameplayTickMs = now + GameplayTickIntervalMs;
         TickVehiclePersonalSave(*m_natives);
-
         auto& gameplayState = GTA_Gameplay_State::Instance();
         const bool explosiveAmmo = gameplayState.ExplosiveBullets();
         if (explosiveAmmo)
@@ -462,39 +477,59 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
         m_gameplay.Tick();
         if (explosiveAmmo)
             gameplayState.SetExplosiveBullets(true);
-    }
-
-    if (now >= m_nextSelfCacheTickMs) {
-        m_nextSelfCacheTickMs = now + SelfCacheTickIntervalMs;
-        GTA_Self_Cache::Instance().Update(*m_natives);
+        return;
     }
 
     if (now >= m_nextSelfUtilityTickMs) {
         m_nextSelfUtilityTickMs = now + SelfUtilityTickIntervalMs;
         TickSelfUtilityExtension(*m_natives);
+        return;
+    }
+
+    if (now >= m_nextSelfCacheTickMs) {
+        m_nextSelfCacheTickMs = now + SelfCacheTickIntervalMs;
+        GTA_Self_Cache::Instance().Update(*m_natives);
+        return;
     }
 
     if (now >= m_nextOnlineExtensionTickMs) {
         m_nextOnlineExtensionTickMs = now + OnlineExtensionTickIntervalMs;
         TickSelfOnlineExtension(*m_natives);
+        return;
     }
 
     if (now >= m_nextSlowExtensionTickMs) {
-        m_nextSlowExtensionTickMs = now + SlowExtensionTickIntervalMs;
-        TickNetworkSessionExtension();
-        TickRandomEventsExtension(*m_natives);
-        TickBunkerExtension();
-    }
-
-    if (now >= m_nextSnapshotExtensionTickMs) {
-        m_nextSnapshotExtensionTickMs = now + SnapshotExtensionTickIntervalMs;
-        TickBusinessExtension(*m_natives);
-        TickCasinoExtension(*m_natives);
+        m_nextSlowExtensionTickMs = now + SlowExtensionSliceIntervalMs;
+        switch (m_slowExtensionCursor) {
+        case 0:
+            TickNetworkSessionExtension();
+            break;
+        case 1:
+            TickRandomEventsExtension(*m_natives);
+            break;
+        default:
+            TickBunkerExtension();
+            break;
+        }
+        m_slowExtensionCursor =
+            static_cast<std::uint8_t>((m_slowExtensionCursor + 1U) % 3U);
+        return;
     }
 
     if (now >= m_nextVehicleExtensionTickMs) {
         m_nextVehicleExtensionTickMs = now + VehicleExtensionTickIntervalMs;
         TickVehicleEditorExtensions(*m_natives);
+        return;
+    }
+
+    if (now >= m_nextSnapshotExtensionTickMs) {
+        m_nextSnapshotExtensionTickMs = now + SnapshotExtensionSliceIntervalMs;
+        if (m_snapshotExtensionCursor == 0)
+            TickBusinessExtension(*m_natives);
+        else
+            TickCasinoExtension(*m_natives);
+        m_snapshotExtensionCursor ^= 1U;
+        return;
     }
 
     if (now >= m_nextForgeSnapshotTickMs) {

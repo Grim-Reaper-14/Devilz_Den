@@ -58,6 +58,7 @@ private:
     std::uintptr_t m_scriptThreadsStorageAddress = 0;
     std::uintptr_t m_expectedThreadDispatchAddress = 0;
     std::uint64_t m_nextFeatureTickMs = 0;
+    std::uint64_t m_nextScheduledDispatchMs = 0;
     std::uint64_t m_nextGameplayTickMs = 0;
     std::uint64_t m_nextSelfCacheTickMs = 0;
     std::uint64_t m_nextSelfUtilityTickMs = 0;
@@ -66,6 +67,8 @@ private:
     std::uint64_t m_nextSnapshotExtensionTickMs = 0;
     std::uint64_t m_nextVehicleExtensionTickMs = 0;
     std::uint64_t m_nextForgeSnapshotTickMs = 0;
+    std::uint8_t m_slowExtensionCursor = 0;
+    std::uint8_t m_snapshotExtensionCursor = 0;
     bool m_fastRunApplied = false;
     bool m_fastSwimApplied = false;
     std::array<std::byte, PatchSize> m_originalBytes{};
