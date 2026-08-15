@@ -26,6 +26,8 @@ Scripting/Lua/
     Lua_Feature_Manager.*
   Fingerprint/
     Lua_Fingerprint.*
+  HotReload/
+    Lua_Hot_Reload_Manager.*
   Lua_Manager.*
   Lua_Runtime.*
   Lua_Commands.*
@@ -45,15 +47,15 @@ Scripting/Lua/
 
 ## Thread ownership
 
-Production startup creates a dedicated `Lua` executor through the backend `ThreadManager`. The Lua service loop owns all Sol2 states, drains submitted jobs, dispatches events, and ticks script schedulers. The renderer only reads immutable `Lua_Runtime_Snapshot` data and never touches a live `sol::state`.
+Production startup creates a dedicated `Lua` executor through the backend `ThreadManager`. The Lua service loop owns all Sol2 states, drains submitted jobs, scans script fingerprints for hot reload, dispatches events, and ticks script schedulers. The renderer only reads immutable `Lua_Runtime_Snapshot` data and never touches a live `sol::state`.
 
-Each `.lua` script receives a separate `Lua_Engine`. Script-owned commands, event subscriptions, settings, and feature entries are removed before that engine is destroyed.
+Each `.lua` script receives a separate `Lua_Engine`. Script-owned commands, event subscriptions, settings, and feature entries are removed before that engine is destroyed or rebuilt.
 
 ## Fingerprints
 
-Lua fingerprints are deterministic 64-bit FNV-1a identifiers used for runtime compatibility, diagnostics, and script change detection. They are not cryptographic signatures or authentication tokens.
+Lua fingerprints are deterministic 64-bit FNV-1a identifiers used for runtime compatibility, diagnostics, script change detection, and hot reload. They are not cryptographic signatures or authentication tokens.
 
-The runtime fingerprint incorporates the Devilz Lua API version, precise Lua release, Sol2 version, binding compatibility versions, and scheduler compatibility version. It remains stable across an identical restart and changes when one of those compatibility inputs changes.
+The runtime fingerprint incorporates the Devilz Lua API version, precise Lua release, Sol2 version, binding compatibility versions, scheduler compatibility version, and hot-reload compatibility version. It remains stable across an identical restart and changes when one of those compatibility inputs changes.
 
 ```lua
 print(devilz.fingerprint)                  -- e.g. 0x0123456789ABCDEF
@@ -77,6 +79,18 @@ print(devilz.script.runtime_fingerprint)
 The script path is intentionally excluded from the fingerprint. Renaming or moving an unchanged script preserves its content hash and combined script fingerprint. Changing the file bytes changes both the content hash and combined fingerprint. The combined script fingerprint includes the active runtime fingerprint, so the same script content can also be distinguished across incompatible Devilz Lua API builds.
 
 Fingerprints are exposed to Lua as fixed-width hexadecimal strings so all 64 bits remain unambiguous in the Lua API. C++ retains the raw `std::uint64_t` values through `Lua_Fingerprint_Manager`, `Lua_Script`, and `Lua_Runtime_Snapshot`.
+
+## Hot reload
+
+`Lua_Hot_Reload_Manager` polls loaded script fingerprints on the dedicated Lua service thread. The default interval is 250 ms, with a 50 ms minimum when changed programmatically. File timestamps are not used as the reload signal, so timestamp-only filesystem noise does not rebuild a script.
+
+When content changes, the script keeps the same script ID/owner while its old owner resources and isolated engine are removed and rebuilt. This preserves owner identity for commands, events, settings, and features across successful reloads without allowing stale callbacks or state to survive.
+
+If a changed revision fails during Lua execution, any resources created by that failed revision are removed immediately, its engine is destroyed, and the script remains resident in `Error` with the failed content fingerprint. The watcher will not repeatedly execute the same broken bytes; after the file changes again, it retries the same script owner and can recover it back to `Running`.
+
+If a script file temporarily cannot be read, the existing running engine is left alone. The watcher reports the fingerprint failure and retries on later scans.
+
+Runtime snapshots expose whether hot reload is enabled plus scan, reload, and failure counts and the latest watcher status for the Lua menu page.
 
 ## Core API
 
@@ -123,7 +137,7 @@ Script log channels are automatically namespaced as `Lua.Script.<owner id>` with
 
 ## Events binding
 
-Event subscriptions are owner-scoped. One script cannot remove another script's subscription, and unloading a script removes all of its callbacks before its Lua state is destroyed.
+Event subscriptions are owner-scoped. One script cannot remove another script's subscription, and unloading or reloading a script removes all of its callbacks before its Lua state is destroyed.
 
 ```lua
 local subscription = devilz.events.on(devilz.events.TICK, function()
@@ -157,7 +171,7 @@ print(devilz.settings.count())
 devilz.settings.unregister("label")
 ```
 
-Scripts with different owner IDs may use the same setting names without sharing values. Unloading a script removes all settings owned by that script.
+Scripts with different owner IDs may use the same setting names without sharing values. Unloading or reloading a script removes all settings owned by that script before the replacement engine starts.
 
 ## Features binding
 
@@ -182,7 +196,7 @@ print(devilz.features.count())
 devilz.features.unregister("example_feature")
 ```
 
-Feature names are isolated by script owner and all entries are removed automatically when their owner script unloads.
+Feature names are isolated by script owner and all entries are removed automatically when their owner script unloads or reloads.
 
 ## Sandbox
 

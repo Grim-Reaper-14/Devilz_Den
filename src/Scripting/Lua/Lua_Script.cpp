@@ -65,6 +65,11 @@ void Lua_Script::Unload() noexcept
     m_fingerprint = {};
 }
 
+void Lua_Script::DetachEngine() noexcept
+{
+    m_engineId = 0;
+}
+
 void Lua_Script::Tick(Lua_Engine& engine)
 {
     if (m_state != Lua_Script_State::Running)

@@ -66,6 +66,7 @@ bool Lua_Fingerprint_Manager::Initialize(
     HashString(hash, "binding.settings.v1");
     HashString(hash, "binding.features.v1");
     HashString(hash, "scheduler.v1");
+    HashString(hash, "hotreload.v1");
     next.value = hash;
 
     m_runtime = std::move(next);

@@ -28,6 +28,7 @@ struct Lua_Runtime_Snapshot
 {
     bool ready{};
     bool dedicatedThread{};
+    bool hotReloadEnabled{};
     std::uint64_t runtimeFingerprint{};
     std::size_t engines{};
     std::size_t scripts{};
@@ -39,6 +40,10 @@ struct Lua_Runtime_Snapshot
     std::size_t features{};
     std::size_t scheduledTasks{};
     std::size_t pendingJobs{};
+    std::size_t hotReloadScans{};
+    std::size_t hotReloads{};
+    std::size_t hotReloadFailures{};
+    std::string hotReloadStatus{"Not started"};
     std::string status{"Not started"};
 };
 

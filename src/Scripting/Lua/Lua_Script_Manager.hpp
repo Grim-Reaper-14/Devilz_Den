@@ -33,6 +33,10 @@ public:
     [[nodiscard]] const std::vector<std::filesystem::path>& DiscoveredScripts() const noexcept;
 
 private:
+    [[nodiscard]] bool ReadyToLoad() const noexcept;
+    bool BuildScriptEngine(Lua_Script& script);
+    void CleanupOwnerResources(Lua_Script::Id id) noexcept;
+
     Lua_Script::Id m_nextId{1};
     Lua_Engine_Manager* m_engines{};
     Lua_Binding_Library_Manager* m_libraries{};

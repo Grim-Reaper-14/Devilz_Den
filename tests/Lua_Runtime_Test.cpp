@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -65,6 +66,12 @@ struct Script_Fingerprint_Probe
     std::uint64_t fingerprint{};
     std::uint64_t contentHash{};
     std::uint64_t runtimeFingerprint{};
+};
+
+struct Hot_Reload_Probe
+{
+    bool succeeded{};
+    std::string message;
 };
 
 bool WriteScript(const std::filesystem::path& path, std::string_view content)
@@ -140,6 +147,141 @@ Script_Fingerprint_Probe ProbeScript(
 
     return future.get();
 }
+
+Hot_Reload_Probe ProbeHotReload(
+    Devilz::Scripting::Lua::Lua_Runtime& runtime,
+    std::filesystem::path path)
+{
+    auto promise = std::make_shared<std::promise<Hot_Reload_Probe>>();
+    auto future = promise->get_future();
+
+    if (!runtime.Submit([promise, path = std::move(path)](Devilz::Scripting::Lua::Lua_Manager& manager) {
+            Hot_Reload_Probe probe;
+            auto finish = [&](std::string message) {
+                manager.HotReload().SetEnabled(true);
+                probe.message = std::move(message);
+                promise->set_value(std::move(probe));
+            };
+
+            manager.HotReload().SetEnabled(false);
+
+            const std::string firstContent =
+                "assert(devilz.settings.register('hot_value', 1))\n"
+                "assert(devilz.features.register('hot_feature', false))\n";
+            const std::string brokenContent =
+                "assert(devilz.settings.register('hot_value', 99))\n"
+                "assert(devilz.features.register('hot_feature', true))\n"
+                "error('intentional hot reload failure')\n";
+            const std::string recoveredContent =
+                "assert(devilz.settings.register('hot_value', 2))\n"
+                "assert(devilz.features.register('hot_feature', true))\n";
+
+            if (!WriteScript(path, firstContent)) {
+                finish("Unable to create Lua hot reload test script");
+                return;
+            }
+
+            auto* script = manager.Scripts().LoadScript(path);
+            if (!script || script->State() != Devilz::Scripting::Lua::Lua_Script_State::Running) {
+                finish(script ? script->LastError() : "Lua hot reload test script was rejected");
+                return;
+            }
+
+            const auto scriptId = script->GetId();
+            const auto firstFingerprint = script->Fingerprint();
+            const auto* firstValue = manager.Settings().Get(scriptId, "hot_value");
+            const auto* firstInteger = firstValue
+                ? std::get_if<std::int64_t>(firstValue)
+                : nullptr;
+            if (!firstInteger || *firstInteger != 1 || manager.Features().Enabled(scriptId, "hot_feature")) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Lua hot reload baseline resources were incorrect");
+                return;
+            }
+
+            if (!WriteScript(path, brokenContent)) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Unable to write broken Lua hot reload revision");
+                return;
+            }
+
+            if (manager.HotReload().ScanNow(manager.Scripts(), manager.Fingerprints()) != 0) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Broken Lua revision incorrectly reported a successful reload");
+                return;
+            }
+
+            script = manager.Scripts().FindScript(scriptId);
+            if (!script || script->State() != Devilz::Scripting::Lua::Lua_Script_State::Error ||
+                script->EngineId() != 0 || script->Fingerprint() == firstFingerprint) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Failed Lua hot reload did not preserve owner/error fingerprint state");
+                return;
+            }
+
+            const auto brokenFingerprint = script->Fingerprint();
+            if (manager.Settings().CountByOwner(scriptId) != 0 ||
+                manager.Features().CountByOwner(scriptId) != 0) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Failed Lua hot reload leaked owner resources");
+                return;
+            }
+
+            if (!WriteScript(path, recoveredContent)) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Unable to write recovered Lua hot reload revision");
+                return;
+            }
+
+            if (manager.HotReload().ScanNow(manager.Scripts(), manager.Fingerprints()) != 1) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Recovered Lua revision did not reload");
+                return;
+            }
+
+            script = manager.Scripts().FindScript(scriptId);
+            if (!script || script->GetId() != scriptId ||
+                script->State() != Devilz::Scripting::Lua::Lua_Script_State::Running ||
+                script->Fingerprint() == brokenFingerprint) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Lua hot reload did not recover the original script owner");
+                return;
+            }
+
+            const auto* recoveredValue = manager.Settings().Get(scriptId, "hot_value");
+            const auto* recoveredInteger = recoveredValue
+                ? std::get_if<std::int64_t>(recoveredValue)
+                : nullptr;
+            if (!recoveredInteger || *recoveredInteger != 2 ||
+                !manager.Features().Enabled(scriptId, "hot_feature")) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Recovered Lua hot reload resources were incorrect");
+                return;
+            }
+
+            const auto hotReload = manager.HotReload().Snapshot();
+            if (hotReload.reloads < 1 || hotReload.failures < 1 || hotReload.scans < 2) {
+                manager.Scripts().UnloadScript(scriptId);
+                finish("Lua hot reload statistics were not updated");
+                return;
+            }
+
+            if (!manager.Scripts().UnloadScript(scriptId) ||
+                manager.Settings().CountByOwner(scriptId) != 0 ||
+                manager.Features().CountByOwner(scriptId) != 0) {
+                finish("Lua hot reload owner resources survived final unload");
+                return;
+            }
+
+            manager.HotReload().SetEnabled(true);
+            probe.succeeded = true;
+            promise->set_value(std::move(probe));
+        })) {
+        return {false, "Lua runtime rejected the hot reload test job"};
+    }
+
+    return future.get();
+}
 }
 
 int main()
@@ -161,8 +303,8 @@ int main()
     }
 
     const auto snapshot = runtime.Snapshot();
-    if (!snapshot.ready || !snapshot.dedicatedThread) {
-        std::cerr << "Lua runtime did not report dedicated-thread ownership\n";
+    if (!snapshot.ready || !snapshot.dedicatedThread || !snapshot.hotReloadEnabled) {
+        std::cerr << "Lua runtime did not report dedicated-thread hot reload ownership\n";
         return 1;
     }
 
@@ -199,6 +341,7 @@ int main()
     const auto tempDirectory = std::filesystem::temp_directory_path();
     const auto scriptA = tempDirectory / ("devilz_lua_fingerprint_a_" + unique + ".lua");
     const auto scriptB = tempDirectory / ("devilz_lua_fingerprint_b_" + unique + ".lua");
+    const auto hotReloadScript = tempDirectory / ("devilz_lua_hot_reload_" + unique + ".lua");
 
     const std::string contentA =
         "assert(type(devilz.script) == 'table')\n"
@@ -255,10 +398,18 @@ int main()
         return 1;
     }
 
+    const auto hotReload = ProbeHotReload(runtime, hotReloadScript);
+    if (!hotReload.succeeded) {
+        std::cerr << "Lua hot reload test failed: " << hotReload.message << '\n';
+        return 1;
+    }
+
     std::error_code cleanupError;
     std::filesystem::remove(scriptA, cleanupError);
     cleanupError.clear();
     std::filesystem::remove(scriptB, cleanupError);
+    cleanupError.clear();
+    std::filesystem::remove(hotReloadScript, cleanupError);
 
     runtime.Shutdown();
     if (runtime.Ready()) {
@@ -274,6 +425,13 @@ int main()
 
     if (runtime.Fingerprint() != runtimeFingerprint) {
         std::cerr << "Lua runtime fingerprint changed across an identical restart\n";
+        return 1;
+    }
+
+    const auto secondSnapshot = runtime.Snapshot();
+    if (!secondSnapshot.hotReloadEnabled || secondSnapshot.hotReloadScans != 0 ||
+        secondSnapshot.hotReloads != 0 || secondSnapshot.hotReloadFailures != 0) {
+        std::cerr << "Lua hot reload state did not reset across runtime restart\n";
         return 1;
     }
 

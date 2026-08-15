@@ -72,6 +72,15 @@ void DrawLuaPage()
             snapshot.features,
             snapshot.scheduledTasks,
             snapshot.pendingJobs);
+
+        ImGui::TextColored(palette.bronze, "HOT RELOAD");
+        ImGui::TextDisabled(
+            "%s | Scans: %zu | Reloads: %zu | Failures: %zu",
+            snapshot.hotReloadEnabled ? "Enabled" : "Disabled",
+            snapshot.hotReloadScans,
+            snapshot.hotReloads,
+            snapshot.hotReloadFailures);
+        ImGui::TextDisabled("%s", snapshot.hotReloadStatus.c_str());
     }
 
     auto& pageState = PageState();
@@ -94,6 +103,6 @@ void DrawLuaPage()
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "BINDINGS");
     ImGui::TextWrapped(
-        "Bindings are split by domain. Core provides commands, fingerprint metadata, and cooperative tasks; Logger routes script messages into the runtime logger; Events provides owner-scoped callbacks; Settings provides typed script-owned values; Features provides controlled script-owned toggles.");
+        "Bindings are split by domain. Core provides commands, fingerprint metadata, and cooperative tasks; Logger routes script messages into the runtime logger; Events provides owner-scoped callbacks; Settings provides typed script-owned values; Features provides controlled script-owned toggles. Script content fingerprints drive automatic hot reload on the dedicated Lua thread.");
 }
 }

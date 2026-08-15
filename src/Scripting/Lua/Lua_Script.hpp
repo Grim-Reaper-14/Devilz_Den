@@ -29,6 +29,7 @@ public:
 
     bool Load(Lua_Engine& engine, const Lua_Fingerprint_Manager& fingerprints);
     void Unload() noexcept;
+    void DetachEngine() noexcept;
     void Tick(Lua_Engine& engine);
     void MarkError(std::string message);
 

@@ -4,6 +4,7 @@
 #include "Events/Lua_Event_Manager.hpp"
 #include "Features/Lua_Feature_Manager.hpp"
 #include "Fingerprint/Lua_Fingerprint.hpp"
+#include "HotReload/Lua_Hot_Reload_Manager.hpp"
 #include "Lua_Binding_Library_Manager.hpp"
 #include "Lua_Commands.hpp"
 #include "Lua_Engine_Manager.hpp"
@@ -54,6 +55,8 @@ public:
     [[nodiscard]] Lua_Feature_Manager& Features() noexcept;
     [[nodiscard]] Lua_Fingerprint_Manager& Fingerprints() noexcept;
     [[nodiscard]] const Lua_Fingerprint_Manager& Fingerprints() const noexcept;
+    [[nodiscard]] Lua_Hot_Reload_Manager& HotReload() noexcept { return m_hotReload; }
+    [[nodiscard]] const Lua_Hot_Reload_Manager& HotReload() const noexcept { return m_hotReload; }
 
 private:
     Lua_Manager() = default;
@@ -67,6 +70,7 @@ private:
     Lua_Setting_Manager m_settings;
     Lua_Feature_Manager m_features;
     Lua_Fingerprint_Manager m_fingerprints;
+    Lua_Hot_Reload_Manager m_hotReload;
     Lua_Binding_Context m_bindingContext;
     Lua_Engine::Id m_primaryEngineId{};
     bool m_initialized{};

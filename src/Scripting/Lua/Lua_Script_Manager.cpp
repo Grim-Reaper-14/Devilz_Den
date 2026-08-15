@@ -41,25 +41,12 @@ std::size_t Lua_Script_Manager::DiscoverScripts(const std::filesystem::path& dir
 
 Lua_Script* Lua_Script_Manager::LoadScript(const std::filesystem::path& path)
 {
-    if (!m_engines || !m_libraries || !m_bindingContext.commands ||
-        !m_bindingContext.events || !m_bindingContext.fingerprints ||
-        !m_bindingContext.settings || !m_bindingContext.features) {
+    if (!ReadyToLoad())
         return nullptr;
-    }
 
     const auto id = m_nextId++;
     auto script = std::make_unique<Lua_Script>(id, path);
-    auto& engine = m_engines->CreateEngine(id);
-
-    if (!engine.Ready()) {
-        script->MarkError(std::string{engine.Status()});
-        m_engines->DestroyEngine(engine.GetId());
-    } else if (!m_libraries->BindAll(engine, m_bindingContext)) {
-        script->MarkError("Failed to bind Lua libraries");
-        m_engines->DestroyEngine(engine.GetId());
-    } else {
-        script->Load(engine, *m_bindingContext.fingerprints);
-    }
+    BuildScriptEngine(*script);
 
     auto* result = script.get();
     m_scripts.push_back(std::move(script));
@@ -76,16 +63,9 @@ bool Lua_Script_Manager::UnloadScript(Lua_Script::Id id) noexcept
         return false;
 
     const auto engineId = (*it)->EngineId();
-    if (m_bindingContext.features)
-        m_bindingContext.features->RemoveByOwner(id);
-    if (m_bindingContext.settings)
-        m_bindingContext.settings->RemoveByOwner(id);
-    if (m_bindingContext.events)
-        m_bindingContext.events->RemoveByOwner(id);
-    if (m_bindingContext.commands)
-        m_bindingContext.commands->RemoveByOwner(id);
-
+    CleanupOwnerResources(id);
     (*it)->Unload();
+
     if (m_engines && engineId != 0)
         m_engines->DestroyEngine(engineId);
 
@@ -96,15 +76,17 @@ bool Lua_Script_Manager::UnloadScript(Lua_Script::Id id) noexcept
 bool Lua_Script_Manager::ReloadScript(Lua_Script::Id id)
 {
     auto* script = FindScript(id);
-    if (!script)
+    if (!script || !ReadyToLoad())
         return false;
 
-    const auto path = script->Path();
-    if (!UnloadScript(id))
-        return false;
+    const auto oldEngineId = script->EngineId();
+    CleanupOwnerResources(id);
+    script->Unload();
 
-    auto* reloaded = LoadScript(path);
-    return reloaded && reloaded->State() == Lua_Script_State::Running;
+    if (oldEngineId != 0)
+        m_engines->DestroyEngine(oldEngineId);
+
+    return BuildScriptEngine(*script);
 }
 
 void Lua_Script_Manager::Tick()
@@ -150,5 +132,56 @@ const std::vector<std::unique_ptr<Lua_Script>>& Lua_Script_Manager::Scripts() co
 const std::vector<std::filesystem::path>& Lua_Script_Manager::DiscoveredScripts() const noexcept
 {
     return m_discoveredScripts;
+}
+
+bool Lua_Script_Manager::ReadyToLoad() const noexcept
+{
+    return m_engines && m_libraries && m_bindingContext.commands &&
+        m_bindingContext.events && m_bindingContext.fingerprints &&
+        m_bindingContext.settings && m_bindingContext.features;
+}
+
+bool Lua_Script_Manager::BuildScriptEngine(Lua_Script& script)
+{
+    if (!ReadyToLoad()) {
+        script.MarkError("Lua script manager is not configured");
+        return false;
+    }
+
+    auto& engine = m_engines->CreateEngine(script.GetId());
+    if (!engine.Ready()) {
+        script.MarkError(std::string{engine.Status()});
+        m_engines->DestroyEngine(engine.GetId());
+        script.DetachEngine();
+        return false;
+    }
+
+    if (!m_libraries->BindAll(engine, m_bindingContext)) {
+        script.MarkError("Failed to bind Lua libraries");
+        m_engines->DestroyEngine(engine.GetId());
+        script.DetachEngine();
+        return false;
+    }
+
+    if (!script.Load(engine, *m_bindingContext.fingerprints)) {
+        CleanupOwnerResources(script.GetId());
+        m_engines->DestroyEngine(engine.GetId());
+        script.DetachEngine();
+        return false;
+    }
+
+    return true;
+}
+
+void Lua_Script_Manager::CleanupOwnerResources(Lua_Script::Id id) noexcept
+{
+    if (m_bindingContext.features)
+        m_bindingContext.features->RemoveByOwner(id);
+    if (m_bindingContext.settings)
+        m_bindingContext.settings->RemoveByOwner(id);
+    if (m_bindingContext.events)
+        m_bindingContext.events->RemoveByOwner(id);
+    if (m_bindingContext.commands)
+        m_bindingContext.commands->RemoveByOwner(id);
 }
 }

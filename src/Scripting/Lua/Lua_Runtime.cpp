@@ -21,8 +21,11 @@ public:
     void Publish(Lua_Manager& manager, bool threaded)
     {
         Lua_Runtime_Snapshot next;
+        const auto hotReload = manager.HotReload().Snapshot();
+
         next.ready = manager.Ready();
         next.dedicatedThread = threaded;
+        next.hotReloadEnabled = hotReload.enabled;
         next.runtimeFingerprint = manager.Fingerprints().Runtime().value;
         next.engines = manager.Engines().Count();
         next.scripts = manager.Scripts().Scripts().size();
@@ -33,6 +36,10 @@ public:
         next.settings = manager.Settings().Count();
         next.features = manager.Features().Count();
         next.scheduledTasks = manager.ScheduledTaskCount();
+        next.hotReloadScans = hotReload.scans;
+        next.hotReloads = hotReload.reloads;
+        next.hotReloadFailures = hotReload.failures;
+        next.hotReloadStatus = hotReload.status;
         next.status = std::string{manager.Status()};
 
         std::scoped_lock lock(mutex);
@@ -87,6 +94,7 @@ void Lua_Runtime::Initialize()
 
     auto& manager = Lua_Manager::Instance();
     manager.ConfigureServices({});
+    manager.HotReload().Reset();
     manager.Initialize();
     m_impl->Publish(manager, false);
 
@@ -288,6 +296,7 @@ void Lua_Runtime::ServiceLoop()
 
     try {
         manager.ConfigureServices(std::move(logger));
+        manager.HotReload().Reset();
         initialized = manager.Initialize();
         if (!initialized)
             failureStatus = std::string{manager.Status()};
@@ -334,6 +343,7 @@ void Lua_Runtime::ServiceLoop()
             }
         }
 
+        manager.HotReload().Tick(manager.Scripts(), manager.Fingerprints());
         manager.Tick();
         m_impl->Publish(manager, true);
 
