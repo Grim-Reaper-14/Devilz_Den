@@ -2,6 +2,7 @@
 
 #include "Bindings/Core/Lua_Core_Binding.hpp"
 #include "Bindings/Lua_Binding_Context.hpp"
+#include "Lua_Binding_Library.hpp"
 
 namespace Devilz::Scripting::Lua::Lua_Bindings
 {

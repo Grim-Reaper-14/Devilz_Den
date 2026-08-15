@@ -4,7 +4,7 @@
 
 namespace Devilz::Scripting::Lua
 {
-class Lua_Binding_Context;
+struct Lua_Binding_Context;
 class Lua_Engine;
 
 class Lua_Binding_Library
