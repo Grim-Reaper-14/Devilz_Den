@@ -1,0 +1,156 @@
++    }
++
++    [[nodiscard]] bool TargetDrivers() const noexcept
++    {
++        std::scoped_lock lock(m_mutex);
++        return m_targetDriversRequested;
++    }
++
++    bool SetEnabled(bool enabled)
++    {
++        std::scoped_lock lock(m_mutex);
++        if (m_status != Devils_Aimbot_Status::Ready)
++            return false;
++        if (m_enabled == enabled)
++            return true;
++
++        if (enabled) {
++            if (!WritePatch(m_shouldNotTarget, true))
++                return PatchFailureLocked("Failed to apply ShouldNotTargetEntity patch");
++            if (!WritePatch(m_assistedAimType, true)) {
++                RestorePatch(m_shouldNotTarget);
++                return PatchFailureLocked("Failed to apply GetAssistedAimType patch");
++            }
++            if (m_aimForHead && !WritePatch(m_lockOnHead, true)) {
++                RestorePatch(m_assistedAimType);
++                RestorePatch(m_shouldNotTarget);
++                return PatchFailureLocked("Failed to apply Aim For Head patch");
++            }
++            if (m_targetDriversRequested && !WritePatch(m_targetDrivers, true)) {
++                RestorePatch(m_lockOnHead);
++                RestorePatch(m_assistedAimType);
++                RestorePatch(m_shouldNotTarget);
++                return PatchFailureLocked("Failed to apply Target Drivers patch");
++            }
++            m_enabled = true;
++            LogLocked(Backend::LogLevel::Info, "Devils_Aimbot enabled");
++            return true;
++        }
++
++        const bool restoredDrivers = RestorePatch(m_targetDrivers);
++        const bool restoredHead = RestorePatch(m_lockOnHead);
++        const bool restoredAimType = RestorePatch(m_assistedAimType);
++        const bool restoredTargeting = RestorePatch(m_shouldNotTarget);
++        if (!(restoredDrivers && restoredHead && restoredAimType && restoredTargeting))
++            return PatchFailureLocked("Failed to restore one or more aimbot patches");
++
++        m_enabled = false;
++        LogLocked(Backend::LogLevel::Info, "Devils_Aimbot disabled and original bytes restored");
++        return true;
++    }
++
++    bool SetAimForHead(bool enabled)
++    {
++        std::scoped_lock lock(m_mutex);
++        if (m_status != Devils_Aimbot_Status::Ready)
++            return false;
++        if (m_aimForHead == enabled)
++            return true;
++
++        if (m_enabled && !(enabled ? WritePatch(m_lockOnHead, true) : RestorePatch(m_lockOnHead)))
++            return PatchFailureLocked(enabled ? "Failed to apply Aim For Head patch" : "Failed to restore Aim For Head patch");
++
++        m_aimForHead = enabled;
++        LogLocked(Backend::LogLevel::Info, std::string("Aim For Head ") + (enabled ? "enabled" : "disabled"));
++        return true;
++    }
++
++    bool SetTargetDrivers(bool enabled)
++    {
++        std::scoped_lock lock(m_mutex);
++        if (m_status != Devils_Aimbot_Status::Ready)
++            return false;
++        if (m_targetDriversRequested == enabled)
++            return true;
++
++        if (m_enabled && !(enabled ? WritePatch(m_targetDrivers, true) : RestorePatch(m_targetDrivers)))
++            return PatchFailureLocked(enabled ? "Failed to apply Target Drivers patch" : "Failed to restore Target Drivers patch");
++
++        m_targetDriversRequested = enabled;
++        LogLocked(Backend::LogLevel::Info, std::string("Target Drivers ") + (enabled ? "enabled" : "disabled"));
++        return true;
++    }
++
++private:
++    void LogLocked(Backend::LogLevel level, std::string message) const noexcept
++    {
++        if (!m_logger)
++            return;
++        try {
++            m_logger->Log(level, std::move(message), std::string(LogService));
++        } catch (...) {
++        }
++    }
++
++    bool PatchFailureLocked(std::string detail) noexcept
++    {
++        RestoreAllLocked();
++        m_status = Devils_Aimbot_Status::PatchFailure;
++        m_detail = std::move(detail);
++        LogLocked(Backend::LogLevel::Error, m_detail);
++        return false;
++    }
++
++    void RestoreAllLocked() noexcept
++    {
++        RestorePatch(m_targetDrivers);
++        RestorePatch(m_lockOnHead);
++        RestorePatch(m_assistedAimType);
++        RestorePatch(m_shouldNotTarget);
++        m_enabled = false;
++    }
++
++    void ClearPatchSitesLocked() noexcept
++    {
++        m_shouldNotTarget = {};
++        m_assistedAimType = {};
++        m_lockOnHead = {};
++        m_targetDrivers = {};
++    }
++
++    void ClearLocked() noexcept
++    {
++        ClearPatchSitesLocked();
++        m_status = Devils_Aimbot_Status::Uninitialized;
++        m_detail = "Devils_Aimbot is not initialized";
++        m_enabled = false;
++        m_aimForHead = false;
++        m_targetDriversRequested = false;
++        m_logger = nullptr;
++    }
++
++    mutable std::mutex m_mutex;
++    Backend::LoggerService* m_logger = nullptr;
++    Devils_Aimbot_Status m_status = Devils_Aimbot_Status::Uninitialized;
++    std::string m_detail = "Devils_Aimbot is not initialized";
++    Patch_Site m_shouldNotTarget;
++    Patch_Site m_assistedAimType;
++    Patch_Site m_lockOnHead;
++    Patch_Site m_targetDrivers;
++    bool m_enabled = false;
++    bool m_aimForHead = false;
++    bool m_targetDriversRequested = false;
++};
++
++Devils_Aimbot_Service& Service()
++{
++    static Devils_Aimbot_Service service;
++    return service;
++}
++}
++
++bool ConfigureDevilsAimbot(Backend::LoggerService& logger, std::uint64_t buildFingerprint)
++{
++    return Service().Configure(logger, buildFingerprint);
++}
++
