@@ -25,11 +25,7 @@ D3D12_Image_Loader& D3D12_Image_Loader::Instance() noexcept
 
 std::string D3D12_Image_Loader::KeyFor(const std::filesystem::path& path)
 {
-    std::error_code ec;
-    auto normalized = std::filesystem::weakly_canonical(path, ec);
-    if (ec)
-        normalized = path.lexically_normal();
-    auto key = normalized.string();
+    auto key = path.lexically_normal().generic_string();
     std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
     });
@@ -155,22 +151,17 @@ bool D3D12_Image_Loader::EnsureLoaded(const std::filesystem::path& path, std::st
     }
 
     const auto key = KeyFor(path);
-    std::error_code ec;
-    const auto writeTime = std::filesystem::last_write_time(path, ec);
     auto found = m_images.find(key);
-    if (found != m_images.end() && !ec && found->second.lastWrite == writeTime)
+    // Rendering the menu must never poll the filesystem for already-cached
+    // textures. Explicit Reload()/Remove() calls handle intentional changes.
+    if (found != m_images.end())
         return true;
 
     Image_Record replacement;
     if (!DecodeAndRegister(path, replacement, error))
         return false;
 
-    if (found != m_images.end()) {
-        Retire(std::move(found->second.texture));
-        found->second = std::move(replacement);
-    } else {
-        m_images.emplace(key, std::move(replacement));
-    }
+    m_images.emplace(key, std::move(replacement));
     return true;
 }
 

@@ -48,7 +48,10 @@ void Devils_Den_Menu::Draw(bool& open)
 
     const ImVec2 navMin = ImGui::GetCursorScreenPos();
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4{0.030F, 0.022F, 0.020F, panelAlpha});
-    if (ImGui::BeginChild("##DevilsDenNavigation", ImVec2(navigationWidth, bodyHeight), ImGuiChildFlags_Borders))
+    constexpr ImGuiWindowFlags navigationFlags = ImGuiWindowFlags_AlwaysVerticalScrollbar;
+    if (ImGui::BeginChild(
+            "##DevilsDenNavigation", ImVec2(navigationWidth, bodyHeight),
+            ImGuiChildFlags_Borders, navigationFlags))
         DrawNavigation();
     ImGui::EndChild();
     ImGui::PopStyleColor();

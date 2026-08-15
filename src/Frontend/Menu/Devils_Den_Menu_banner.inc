@@ -6,7 +6,6 @@ void Devils_Den_Menu::DrawBanner()
 {
     auto& appearance = Menu_Appearance_State::Instance();
     appearance.InitializeOnce();
-    appearance.Tick();
 
     if (!appearance.BannerEnabled()) {
         DrawBannerLegacy();

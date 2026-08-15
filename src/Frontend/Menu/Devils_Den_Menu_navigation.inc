@@ -9,6 +9,7 @@ void Devils_Den_Menu::DrawNavigation()
     auto& theme = Themes::Menu_Theme_Manager::Instance();
     const auto& palette = theme.Palette();
     ImGui::PushStyleColor(ImGuiCol_ChildBg, palette.deepStone);
+    auto* navigationDraw = ImGui::GetWindowDrawList();
     ImGui::TextColored(palette.bronze, "CATEGORIES");
     MedievalDivider();
 
@@ -43,11 +44,10 @@ void Devils_Den_Menu::DrawNavigation()
 
         const ImVec2 itemMin = ImGui::GetCursorScreenPos();
         const float itemWidth = ImGui::GetContentRegionAvail().x;
-        auto* foreground = ImGui::GetForegroundDrawList();
-        theme.DrawOrnateFrame(foreground, itemMin, ImVec2{itemMin.x + itemWidth, itemMin.y + 42.0F}, selected);
+        theme.DrawOrnateFrame(navigationDraw, itemMin, ImVec2{itemMin.x + itemWidth, itemMin.y + 42.0F}, selected);
         const ImVec2 iconCenter{itemMin.x + 24.0F, itemMin.y + 21.0F};
-        if (!appearance.DrawCustomIcon(entry.icon, foreground, iconCenter, 12.0F)) {
-            theme.DrawIcon(entry.icon, foreground, iconCenter, 10.5F,
+        if (!appearance.DrawCustomIcon(entry.icon, navigationDraw, iconCenter, 12.0F)) {
+            theme.DrawIcon(entry.icon, navigationDraw, iconCenter, 10.5F,
                 ImGui::GetColorU32(selected ? palette.emberRed : palette.bronze));
         }
 
