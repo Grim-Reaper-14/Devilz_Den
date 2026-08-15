@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Bindings/Lua_Binding_Context.hpp"
+#include "Config/Lua_Config_Manager.hpp"
 #include "Lua_Script.hpp"
 
 #include <filesystem>
@@ -41,6 +42,7 @@ private:
     Lua_Engine_Manager* m_engines{};
     Lua_Binding_Library_Manager* m_libraries{};
     Lua_Binding_Context m_bindingContext;
+    Lua_Config_Manager m_configs;
     std::vector<std::unique_ptr<Lua_Script>> m_scripts;
     std::vector<std::filesystem::path> m_discoveredScripts;
 };

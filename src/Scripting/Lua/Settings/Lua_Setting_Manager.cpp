@@ -100,6 +100,18 @@ std::size_t Lua_Setting_Manager::CountByOwner(Lua_Setting_Owner owner) const noe
         [owner](const Lua_Setting_Entry& entry) { return entry.owner == owner; }));
 }
 
+std::vector<Lua_Setting_Entry> Lua_Setting_Manager::SnapshotByOwner(
+    Lua_Setting_Owner owner) const
+{
+    std::vector<Lua_Setting_Entry> entries;
+    entries.reserve(CountByOwner(owner));
+    for (const auto& entry : m_entries) {
+        if (entry.owner == owner)
+            entries.push_back(entry);
+    }
+    return entries;
+}
+
 Lua_Setting_Type Lua_Setting_Manager::Type(
     Lua_Setting_Owner owner,
     std::string_view name) const noexcept

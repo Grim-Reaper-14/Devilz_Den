@@ -44,6 +44,7 @@ public:
 
     [[nodiscard]] std::size_t Count() const noexcept;
     [[nodiscard]] std::size_t CountByOwner(Lua_Setting_Owner owner) const noexcept;
+    [[nodiscard]] std::vector<Lua_Setting_Entry> SnapshotByOwner(Lua_Setting_Owner owner) const;
     [[nodiscard]] Lua_Setting_Type Type(Lua_Setting_Owner owner, std::string_view name) const noexcept;
     [[nodiscard]] static Lua_Setting_Type TypeOf(const Lua_Setting_Value& value) noexcept;
     [[nodiscard]] static std::string_view TypeName(Lua_Setting_Type type) noexcept;

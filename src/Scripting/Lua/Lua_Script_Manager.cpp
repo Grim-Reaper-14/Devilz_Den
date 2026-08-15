@@ -1,5 +1,6 @@
 #include "Lua_Script_Manager.hpp"
 
+#include "Bindings/Config/Lua_Config_Binding.hpp"
 #include "Events/Lua_Event_Manager.hpp"
 #include "Features/Lua_Feature_Manager.hpp"
 #include "Fingerprint/Lua_Fingerprint.hpp"
@@ -70,6 +71,7 @@ bool Lua_Script_Manager::UnloadScript(Lua_Script::Id id) noexcept
     if (m_engines && engineId != 0)
         m_engines->DestroyEngine(engineId);
 
+    m_configs.DetachOwner(id);
     m_scripts.erase(it);
     return true;
 }
@@ -113,6 +115,7 @@ void Lua_Script_Manager::UnloadAll() noexcept
 {
     while (!m_scripts.empty())
         UnloadScript(m_scripts.back()->GetId());
+    m_configs.ClearOwners();
     m_discoveredScripts.clear();
 }
 
@@ -150,6 +153,11 @@ bool Lua_Script_Manager::BuildScriptEngine(Lua_Script& script)
         return false;
     }
 
+    if (!m_configs.AttachOwner(script.GetId(), script.Path())) {
+        script.MarkError("Failed to attach Lua config namespace");
+        return false;
+    }
+
     auto& engine = m_engines->CreateEngine(script.GetId());
     if (!engine.Ready()) {
         script.MarkError(std::string{engine.Status()});
@@ -160,6 +168,16 @@ bool Lua_Script_Manager::BuildScriptEngine(Lua_Script& script)
 
     if (!m_libraries->BindAll(engine, m_bindingContext)) {
         script.MarkError("Failed to bind Lua libraries");
+        m_engines->DestroyEngine(engine.GetId());
+        script.DetachEngine();
+        return false;
+    }
+
+    if (!Bindings::Config::RegisterConfig(
+            engine,
+            m_configs,
+            *m_bindingContext.settings)) {
+        script.MarkError("Failed to bind Lua config library");
         m_engines->DestroyEngine(engine.GetId());
         script.DetachEngine();
         return false;
