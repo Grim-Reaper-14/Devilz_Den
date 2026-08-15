@@ -1,0 +1,148 @@
++void ResetDevilsAimbot()
++{
++    Service().Reset();
++}
++
++Devils_Aimbot_Status DevilsAimbotStatus() noexcept
++{
++    return Service().Status();
++}
++
++const char* DevilsAimbotStatusText() noexcept
++{
++    switch (Service().Status()) {
++    case Devils_Aimbot_Status::Uninitialized: return "Not initialized";
++    case Devils_Aimbot_Status::Ready: return "Ready";
++    case Devils_Aimbot_Status::UnsupportedBuild: return "Unsupported GTA build";
++    case Devils_Aimbot_Status::PatternFailure: return "Pattern scan failed - see log";
++    case Devils_Aimbot_Status::PatchFailure: return "Patch failed - see log";
++    default: return "Unknown";
++    }
++}
++
++bool DevilsAimbotAvailable() noexcept
++{
++    return Service().Available();
++}
++
++bool DevilsAimbotEnabled() noexcept
++{
++    return Service().Enabled();
++}
++
++bool DevilsAimbotAimForHead() noexcept
++{
++    return Service().AimForHead();
++}
++
++bool DevilsAimbotTargetDrivers() noexcept
++{
++    return Service().TargetDrivers();
++}
++
++bool SetDevilsAimbotEnabled(bool enabled)
++{
++    return Service().SetEnabled(enabled);
++}
++
++bool SetDevilsAimbotAimForHead(bool enabled)
++{
++    return Service().SetAimForHead(enabled);
++}
++
++bool SetDevilsAimbotTargetDrivers(bool enabled)
++{
++    return Service().SetTargetDrivers(enabled);
++}
++}
+--- a/src/Frontend/Menu/Devils_Den_Menu_part00.inc
++++ b/src/Frontend/Menu/Devils_Den_Menu_part00.inc
+@@ -6,6 +6,7 @@
+ #include "Frontend/Menu/Self/Self_Page.hpp"
+ #include "Frontend/Menu/Themes/Menu_Theme.hpp"
+ #include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
++#include "Integrations/GTA5_Enhanced/Runtime/Devils_Aimbot.hpp"
+ #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Locations.hpp"
+ #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Catalog.hpp"
+ #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Customization_Data.hpp"
+@@ -188,6 +189,37 @@
+ {
+     Themes::Menu_Theme_Manager::Instance().DrawDivider();
+ }
++
++void DrawDevilsAimbotControls()
++{
++    using namespace Integrations::GTA5_Enhanced;
++
++    ImGui::TextColored(Bronze, "DEVILS_AIMBOT");
++    const bool available = DevilsAimbotAvailable();
++    bool enabled = DevilsAimbotEnabled();
++    bool aimForHead = DevilsAimbotAimForHead();
++    bool targetDrivers = DevilsAimbotTargetDrivers();
++
++    ImGui::BeginDisabled(!available);
++    if (ImGui::Checkbox("Devils_Aimbot", &enabled))
++        SetDevilsAimbotEnabled(enabled);
++    ImGui::EndDisabled();
++
++    ImGui::SameLine();
++    ImGui::BeginDisabled(!available || !enabled);
++    if (ImGui::Checkbox("Aim For Head", &aimForHead))
++        SetDevilsAimbotAimForHead(aimForHead);
++    ImGui::SameLine();
++    if (ImGui::Checkbox("Target Drivers", &targetDrivers))
++        SetDevilsAimbotTargetDrivers(targetDrivers);
++    ImGui::EndDisabled();
++
++    const char* status = DevilsAimbotStatusText();
++    if (!available)
++        ImGui::TextColored(EmberRed, "%s", status);
++    else
++        ImGui::TextDisabled("Uses GTA's assisted-aim/lock-on path. No per-frame world scan. %s", status);
++}
+ }
+ 
+ void Devils_Den_Menu::Draw(bool& open)
+--- a/src/Frontend/Menu/Devils_Den_Menu_part01.inc
++++ b/src/Frontend/Menu/Devils_Den_Menu_part01.inc
+@@ -50,7 +50,10 @@
+     ImGui::TextColored(Bronze, "AMMO");
+     m_infiniteAmmo = gameplay.InfiniteAmmo();
+     if (ImGui::Checkbox("Infinite Ammo", &m_infiniteAmmo)) gameplay.SetInfiniteAmmo(m_infiniteAmmo);
+     bool unlimitedClip = gameplay.UnlimitedClip();
+     if (ImGui::Checkbox("Unlimited Clip / No Reload", &unlimitedClip)) gameplay.SetUnlimitedClip(unlimitedClip);
+ 
++    MedievalDivider();
++    DrawDevilsAimbotControls();
++
+     MedievalDivider();
+     ImGui::TextColored(Bronze, "LOADOUT");
+--- a/src/Runtime/Runtime_Manager.cpp
++++ b/src/Runtime/Runtime_Manager.cpp
+@@ -4,6 +4,7 @@
+ #include "Backend/Logging/Sinks/DebuggerSink.hpp"
+ #include "Backend/Logging/Sinks/FileSink.hpp"
+ #include "Backend/Process/Process_Module_Manager.hpp"
++#include "Integrations/GTA5_Enhanced/Runtime/Devils_Aimbot.hpp"
+ #include "Integrations/GTA5_Enhanced/Runtime/GTA_Bunker_Extension.hpp"
+ #include "Integrations/GTA5_Enhanced/Runtime/GTA_Business_Extension.hpp"
+ #include "Integrations/GTA5_Enhanced/Runtime/GTA_Casino_Extension.hpp"
+@@ -129,6 +130,10 @@
+             LogGTAStatus(refreshed.Value());
+             InitializeNativeManager(refreshed.Value());
+             InitializeGameThreadBridge(refreshed.Value());
++            if (refreshed.Value().build) {
++                Integrations::GTA5_Enhanced::ConfigureDevilsAimbot(
++                    m_logger, refreshed.Value().build->fingerprint);
++            }
+ 
+             if (refreshed.Value().state == GTA_Module_Manager_State::RuntimeReady) {
+                 m_frontend.Start(refreshed.Value(), m_logger);
+@@ -163,6 +168,7 @@
+ 
+     try {
+         m_frontend.Stop();
++        Integrations::GTA5_Enhanced::ResetDevilsAimbot();
+         m_gameThreadBridge.Uninstall();
+         Integrations::GTA5_Enhanced::ResetVehiclePersonalSave();
+         Integrations::GTA5_Enhanced::ResetBusinessExtension();
