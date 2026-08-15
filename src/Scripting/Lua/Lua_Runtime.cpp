@@ -35,6 +35,8 @@ public:
         next.events = manager.Events().Count();
         next.settings = manager.Settings().Count();
         next.features = manager.Features().Count();
+        next.uiElements = manager.UI().Count();
+        next.ui = manager.UI().Snapshot();
         next.scheduledTasks = manager.ScheduledTaskCount();
         next.hotReloadScans = hotReload.scans;
         next.hotReloads = hotReload.reloads;
@@ -177,6 +179,27 @@ bool Lua_Runtime::Submit(Lua_Runtime_Task task)
 
     m_impl->cv.notify_one();
     return true;
+}
+
+bool Lua_Runtime::SubmitUIActivate(Lua_UI_Element_Id id)
+{
+    return Submit([id](Lua_Manager& manager) {
+        (void)manager.UI().Activate(id);
+    });
+}
+
+bool Lua_Runtime::SubmitUICheckbox(Lua_UI_Element_Id id, bool value)
+{
+    return Submit([id, value](Lua_Manager& manager) {
+        (void)manager.UI().SetCheckbox(id, value);
+    });
+}
+
+bool Lua_Runtime::SubmitUISliderFloat(Lua_UI_Element_Id id, float value)
+{
+    return Submit([id, value](Lua_Manager& manager) {
+        (void)manager.UI().SetSliderFloat(id, value);
+    });
 }
 
 void Lua_Runtime::Shutdown() noexcept

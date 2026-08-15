@@ -5,6 +5,7 @@
 
 #include <imgui.h>
 
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -23,6 +24,11 @@ Lua_Page_State& PageState()
 {
     static Lua_Page_State state;
     return state;
+}
+
+std::string ElementLabel(const std::string& label, std::uint64_t id)
+{
+    return label + "##lua_ui_" + std::to_string(id);
 }
 }
 
@@ -67,9 +73,10 @@ void DrawLuaPage()
             snapshot.commands,
             snapshot.events);
         ImGui::TextDisabled(
-            "Settings: %zu | Features: %zu | Scheduled tasks: %zu | Pending Lua jobs: %zu",
+            "Settings: %zu | Features: %zu | UI: %zu | Scheduled tasks: %zu | Pending Lua jobs: %zu",
             snapshot.settings,
             snapshot.features,
+            snapshot.uiElements,
             snapshot.scheduledTasks,
             snapshot.pendingJobs);
 
@@ -101,8 +108,52 @@ void DrawLuaPage()
     }
 
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
+    ImGui::TextColored(palette.bronze, "SCRIPT UI");
+
+    if (snapshot.ui.empty()) {
+        ImGui::TextDisabled("No Lua script UI elements registered.");
+    } else {
+        for (const auto& element : snapshot.ui) {
+            switch (element.type) {
+            case Scripting::Lua::Lua_UI_Element_Type::Section:
+                ImGui::Spacing();
+                ImGui::TextColored(palette.emberRed, "%s", element.label.c_str());
+                break;
+            case Scripting::Lua::Lua_UI_Element_Type::Text:
+                ImGui::TextWrapped("%s", element.label.c_str());
+                break;
+            case Scripting::Lua::Lua_UI_Element_Type::Button: {
+                const auto label = ElementLabel(element.label, element.id);
+                if (ImGui::Button(label.c_str()))
+                    (void)runtime.SubmitUIActivate(element.id);
+                break;
+            }
+            case Scripting::Lua::Lua_UI_Element_Type::Checkbox: {
+                bool value = element.boolValue;
+                const auto label = ElementLabel(element.label, element.id);
+                if (ImGui::Checkbox(label.c_str(), &value))
+                    (void)runtime.SubmitUICheckbox(element.id, value);
+                break;
+            }
+            case Scripting::Lua::Lua_UI_Element_Type::SliderFloat: {
+                float value = element.floatValue;
+                const auto label = ElementLabel(element.label, element.id);
+                if (ImGui::SliderFloat(
+                        label.c_str(),
+                        &value,
+                        element.minValue,
+                        element.maxValue)) {
+                    (void)runtime.SubmitUISliderFloat(element.id, value);
+                }
+                break;
+            }
+            }
+        }
+    }
+
+    Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "BINDINGS");
     ImGui::TextWrapped(
-        "Bindings are split by domain. Core provides commands, fingerprint metadata, and cooperative tasks; Logger routes script messages into the runtime logger; Events provides owner-scoped callbacks; Settings provides typed script-owned values; Features provides controlled script-owned toggles. Script content fingerprints drive automatic hot reload on the dedicated Lua thread.");
+        "Bindings are split by domain. Core provides commands, fingerprint metadata, and cooperative tasks; Logger routes script messages into the runtime logger; Events provides owner-scoped callbacks; Settings provides typed script-owned values; Features provides controlled script-owned toggles; UI publishes declarative controls that marshal actions back to the dedicated Lua thread. Script content fingerprints drive automatic hot reload.");
 }
 }

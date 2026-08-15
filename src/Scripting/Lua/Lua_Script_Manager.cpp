@@ -7,6 +7,7 @@
 #include "Lua_Commands.hpp"
 #include "Lua_Engine_Manager.hpp"
 #include "Settings/Lua_Setting_Manager.hpp"
+#include "UI/Lua_UI_Manager.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -138,7 +139,8 @@ bool Lua_Script_Manager::ReadyToLoad() const noexcept
 {
     return m_engines && m_libraries && m_bindingContext.commands &&
         m_bindingContext.events && m_bindingContext.fingerprints &&
-        m_bindingContext.settings && m_bindingContext.features;
+        m_bindingContext.settings && m_bindingContext.features &&
+        m_bindingContext.ui;
 }
 
 bool Lua_Script_Manager::BuildScriptEngine(Lua_Script& script)
@@ -175,6 +177,8 @@ bool Lua_Script_Manager::BuildScriptEngine(Lua_Script& script)
 
 void Lua_Script_Manager::CleanupOwnerResources(Lua_Script::Id id) noexcept
 {
+    if (m_bindingContext.ui)
+        m_bindingContext.ui->RemoveByOwner(id);
     if (m_bindingContext.features)
         m_bindingContext.features->RemoveByOwner(id);
     if (m_bindingContext.settings)

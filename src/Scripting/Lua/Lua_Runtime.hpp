@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Bindings/Lua_Binding_Context.hpp"
+#include "UI/Lua_UI_Types.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -8,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Devilz::Backend
 {
@@ -38,11 +40,13 @@ struct Lua_Runtime_Snapshot
     std::size_t events{};
     std::size_t settings{};
     std::size_t features{};
+    std::size_t uiElements{};
     std::size_t scheduledTasks{};
     std::size_t pendingJobs{};
     std::size_t hotReloadScans{};
     std::size_t hotReloads{};
     std::size_t hotReloadFailures{};
+    std::vector<Lua_UI_Element_Snapshot> ui;
     std::string hotReloadStatus{"Not started"};
     std::string status{"Not started"};
 };
@@ -62,6 +66,9 @@ public:
     void Initialize();
     [[nodiscard]] bool Start(Backend::IExecutor& executor, Lua_Log_Callback logger = {});
     [[nodiscard]] bool Submit(Lua_Runtime_Task task);
+    [[nodiscard]] bool SubmitUIActivate(Lua_UI_Element_Id id);
+    [[nodiscard]] bool SubmitUICheckbox(Lua_UI_Element_Id id, bool value);
+    [[nodiscard]] bool SubmitUISliderFloat(Lua_UI_Element_Id id, float value);
     void Shutdown() noexcept;
 
     [[nodiscard]] bool Ready() const;

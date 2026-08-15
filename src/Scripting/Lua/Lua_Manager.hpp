@@ -11,6 +11,7 @@
 #include "Lua_Module_Manager.hpp"
 #include "Lua_Script_Manager.hpp"
 #include "Settings/Lua_Setting_Manager.hpp"
+#include "UI/Lua_UI_Manager.hpp"
 
 #include <cstddef>
 #include <string>
@@ -53,6 +54,8 @@ public:
     [[nodiscard]] Lua_Event_Manager& Events() noexcept;
     [[nodiscard]] Lua_Setting_Manager& Settings() noexcept;
     [[nodiscard]] Lua_Feature_Manager& Features() noexcept;
+    [[nodiscard]] Lua_UI_Manager& UI() noexcept;
+    [[nodiscard]] const Lua_UI_Manager& UI() const noexcept;
     [[nodiscard]] Lua_Fingerprint_Manager& Fingerprints() noexcept;
     [[nodiscard]] const Lua_Fingerprint_Manager& Fingerprints() const noexcept;
     [[nodiscard]] Lua_Hot_Reload_Manager& HotReload() noexcept { return m_hotReload; }
@@ -69,6 +72,7 @@ private:
     Lua_Event_Manager m_events;
     Lua_Setting_Manager m_settings;
     Lua_Feature_Manager m_features;
+    Lua_UI_Manager m_ui;
     Lua_Fingerprint_Manager m_fingerprints;
     Lua_Hot_Reload_Manager m_hotReload;
     Lua_Binding_Context m_bindingContext;

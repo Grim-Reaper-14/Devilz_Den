@@ -18,12 +18,16 @@ Scripting/Lua/
       Lua_Settings_Binding.*
     Features/
       Lua_Features_Binding.*
+    UI/
+      Lua_UI_Binding.*
   Events/
     Lua_Event_Manager.*
   Settings/
     Lua_Setting_Manager.*
   Features/
     Lua_Feature_Manager.*
+  UI/
+    Lua_UI_Manager.*
   Fingerprint/
     Lua_Fingerprint.*
   HotReload/
@@ -43,19 +47,21 @@ Scripting/Lua/
   Lua_Bindings.*              # compatibility facade for the original core API
 ```
 
-`Lua_Binding_Context` is the shared dependency surface passed to every binding library. It currently exposes script-owned commands, events, settings, features, the fingerprint manager, and an injected runtime logging callback. Future binding domains can receive controlled services through this context without expanding every binding-library method signature.
+`Lua_Binding_Context` is the shared dependency surface passed to every binding library. It currently exposes script-owned commands, events, settings, features, UI descriptors/callbacks, the fingerprint manager, and an injected runtime logging callback. Future binding domains can receive controlled services through this context without expanding every binding-library method signature.
 
 ## Thread ownership
 
-Production startup creates a dedicated `Lua` executor through the backend `ThreadManager`. The Lua service loop owns all Sol2 states, drains submitted jobs, scans script fingerprints for hot reload, dispatches events, and ticks script schedulers. The renderer only reads immutable `Lua_Runtime_Snapshot` data and never touches a live `sol::state`.
+Production startup creates a dedicated `Lua` executor through the backend `ThreadManager`. The Lua service loop owns all Sol2 states, drains submitted jobs, scans script fingerprints for hot reload, dispatches events, processes Lua UI actions, and ticks script schedulers.
 
-Each `.lua` script receives a separate `Lua_Engine`. Script-owned commands, event subscriptions, settings, and feature entries are removed before that engine is destroyed or rebuilt.
+The renderer never touches a live `sol::state` or Lua callback. `Lua_UI_Manager` publishes plain descriptor snapshots into `Lua_Runtime_Snapshot`; ImGui renders those copied descriptors and queues only an element ID plus changed value back through `Lua_Runtime::Submit`. The callback then executes on the dedicated Lua service thread.
+
+Each `.lua` script receives a separate `Lua_Engine`. Script-owned commands, event subscriptions, settings, features, and UI elements are removed before that engine is destroyed or rebuilt.
 
 ## Fingerprints
 
 Lua fingerprints are deterministic 64-bit FNV-1a identifiers used for runtime compatibility, diagnostics, script change detection, and hot reload. They are not cryptographic signatures or authentication tokens.
 
-The runtime fingerprint incorporates the Devilz Lua API version, precise Lua release, Sol2 version, binding compatibility versions, scheduler compatibility version, and hot-reload compatibility version. It remains stable across an identical restart and changes when one of those compatibility inputs changes.
+The runtime fingerprint incorporates the Devilz Lua API version, precise Lua release, Sol2 version, binding compatibility versions (including UI), scheduler compatibility version, and hot-reload compatibility version. It remains stable across an identical restart and changes when one of those compatibility inputs changes.
 
 ```lua
 print(devilz.fingerprint)                  -- e.g. 0x0123456789ABCDEF
@@ -84,7 +90,7 @@ Fingerprints are exposed to Lua as fixed-width hexadecimal strings so all 64 bit
 
 `Lua_Hot_Reload_Manager` polls loaded script fingerprints on the dedicated Lua service thread. The default interval is 250 ms, with a 50 ms minimum when changed programmatically. File timestamps are not used as the reload signal, so timestamp-only filesystem noise does not rebuild a script.
 
-When content changes, the script keeps the same script ID/owner while its old owner resources and isolated engine are removed and rebuilt. This preserves owner identity for commands, events, settings, and features across successful reloads without allowing stale callbacks or state to survive.
+When content changes, the script keeps the same script ID/owner while its old owner resources and isolated engine are removed and rebuilt. This preserves owner identity for commands, events, settings, features, and UI across successful reloads without allowing stale callbacks or state to survive.
 
 If a changed revision fails during Lua execution, any resources created by that failed revision are removed immediately, its engine is destroyed, and the script remains resident in `Error` with the failed content fingerprint. The watcher will not repeatedly execute the same broken bytes; after the file changes again, it retries the same script owner and can recover it back to `Running`.
 
@@ -148,7 +154,7 @@ local count = devilz.events.count()
 devilz.events.off(subscription)
 ```
 
-`tick` is the first built-in event. Additional controlled events can be added later for UI, player, entity, vehicle, network, and other runtime domains.
+`tick` is the first built-in event. Additional controlled events can be added later for player, entity, vehicle, network, and other runtime domains.
 
 ## Settings binding
 
@@ -198,8 +204,34 @@ devilz.features.unregister("example_feature")
 
 Feature names are isolated by script owner and all entries are removed automatically when their owner script unloads or reloads.
 
+## UI binding
+
+Lua UI is declarative and owner-scoped. Scripts register controls on the Lua thread; the menu renders immutable snapshots. ImGui never invokes a Lua callback directly.
+
+```lua
+devilz.ui.section("My Script")
+devilz.ui.text("Controls published from Lua")
+
+local button = devilz.ui.button("Run Action", function()
+    devilz.log.info("button pressed", "UI")
+end)
+
+local checkbox = devilz.ui.checkbox("Enabled", false, function(value)
+    devilz.features.set("example_feature", value)
+end)
+
+local slider = devilz.ui.slider_float("Scale", 1.0, 0.0, 5.0, function(value)
+    devilz.settings.set("scale", value)
+end)
+
+print(devilz.ui.count())
+devilz.ui.remove(button)
+```
+
+Supported first-pass element types are section headings, wrapped text, buttons, checkboxes, and float sliders. Interactive callbacks are marshalled back to the Lua service thread with the changed value. Element IDs are owner-scoped for removal, and every element/callback is removed automatically when its script unloads or hot-reloads.
+
 ## Sandbox
 
 Lua states currently open the base, coroutine, math, string, table, and UTF-8 libraries. Lua-side `dofile` and `loadfile` are disabled. Filesystem, OS, debug, package loading, raw memory access, and unrestricted native access are not exposed.
 
-Future binding folders should follow the same domain layout, for example `Bindings/UI`, `Bindings/Players`, `Bindings/Entities`, `Bindings/Vehicles`, `Bindings/Weapons`, `Bindings/World`, and `Bindings/Config`.
+Future binding folders should follow the same domain layout, for example `Bindings/Players`, `Bindings/Entities`, `Bindings/Vehicles`, `Bindings/Weapons`, `Bindings/World`, and `Bindings/Config`.
