@@ -13,7 +13,9 @@
 #undef DrawBanner
 #undef Draw
 
+#define DrawWeaponsPage DrawWeaponsPageLegacy
 #include "Devils_Den_Menu_part01.inc"
+#undef DrawWeaponsPage
 #include "Devils_Den_Menu_part02.inc"
 #include "Devils_Den_Menu_part03.inc"
 #include "Devils_Den_Menu_vehicle_garage.inc"
@@ -32,3 +34,4 @@
 #include "Devils_Den_Menu_settings.inc"
 #include "Devils_Den_Menu_world.inc"
 #include "Devils_Den_Menu_teleport.inc"
+#include "Weapons/Devils_Aimbot_Menu.inc"

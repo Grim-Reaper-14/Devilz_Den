@@ -33,6 +33,7 @@ private:
     void DrawSelfPage();
     void DrawSelfPageLegacy();
     void DrawWeaponsPage();
+    void DrawWeaponsPageLegacy();
     void DrawVehiclePage();
     void DrawTeleportPage();
     void DrawTeleportPageLegacy();

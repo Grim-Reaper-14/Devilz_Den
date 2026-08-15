@@ -4,6 +4,7 @@
 #include "Frontend/Menu/Menu_Appearance.hpp"
 #include "Frontend/Renderer/D3D12_Image_Loader.hpp"
 #include "Frontend/Renderer/D3D12_Targets.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/Devils_Aimbot.hpp"
 #include "Scripting/Lua/Lua_Runtime.hpp"
 
 #include <chrono>
@@ -27,6 +28,8 @@ void Frontend_Manager::Start(
         return;
 
     Menu_Appearance_State::Instance().ConfigureLogger(&logger);
+    if (status.build)
+        Integrations::GTA5_Enhanced::ConfigureDevilsAimbot(logger, status.build->fingerprint);
 
     m_bootstrapThread = std::jthread(
         [this, status, &logger](std::stop_token stopToken) mutable {
@@ -49,6 +52,7 @@ void Frontend_Manager::Stop() noexcept
         m_presentHook.reset();
     }
 
+    Integrations::GTA5_Enhanced::ResetDevilsAimbot();
     m_renderer.Shutdown();
     Renderer::D3D12_Image_Loader::Instance().Shutdown();
     Menu_Appearance_State::Instance().Shutdown();
