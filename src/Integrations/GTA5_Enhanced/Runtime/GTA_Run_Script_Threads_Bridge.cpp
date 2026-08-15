@@ -8,10 +8,9 @@
 #include "GTA_Network_Session_Extension.hpp"
 #include "GTA_Random_Events_Extension.hpp"
 #include "GTA_Self_Online_Extension.hpp"
+#include "GTA_Self_Utility_Extension.hpp"
 #include "GTA_Vehicle_Editor_Extensions.hpp"
 #include "GTA_Vehicle_Personal_Save.hpp"
-#include "Script/GTA_Script.hpp"
-#include "Script/GTA_Script_Manager.hpp"
 #include "State/GTA_Self_Cache.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
@@ -19,7 +18,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cstring>
 #include <limits>
 #include <string>
@@ -28,8 +26,6 @@ namespace Devilz::Integrations::GTA5_Enhanced
 {
 namespace
 {
-using namespace std::chrono_literals;
-
 struct GTA_Tls_Context_View
 {
     std::byte pad00[0x7A0]{};
@@ -46,6 +42,7 @@ constexpr std::array<std::byte, GTA_Run_Script_Threads_Bridge::PatchSize> Verifi
     std::byte{0x85}, std::byte{0xC9}, std::byte{0xBE}, std::byte{0x40},
     std::byte{0x5D}, std::byte{0xC6}, std::byte{0x00}
 };
+constexpr ULONGLONG FeatureTickIntervalMs = 16;
 constexpr ULONGLONG SlowExtensionTickIntervalMs = 50;
 constexpr ULONGLONG VehicleExtensionTickIntervalMs = 200;
 constexpr GTA_Native_Hash SetRunSprintMultiplierHash = 0xA52E1AE3848A506BULL;
@@ -182,6 +179,7 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_smokeAttempting.store(false);
     m_activeCalls.store(0);
     m_cachedScriptThread.store(nullptr);
+    m_nextFeatureTickMs = 0;
     m_nextSlowExtensionTickMs = 0;
     m_nextVehicleExtensionTickMs = 0;
     m_fastRunApplied = false;
@@ -189,35 +187,14 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_gameplay.Configure(natives, logger);
     GTA_Gameplay_State::Instance().Reset();
     GTA_Self_Cache::Instance().Reset();
+    ResetSelfUtilityExtension();
     ConfigureBunkerExtension(scriptThreadsStorageAddress, natives.Fingerprint());
-
-    auto& scheduler = GTA_Script_Manager::Instance();
-    scheduler.Reset();
-    scheduler.AddScript("SelfCache", [this] {
-        while (Installed()) {
-            if (m_natives)
-                GTA_Self_Cache::Instance().Update(*m_natives);
-            auto* script = GTA_Script::Current();
-            if (!script)
-                return;
-            script->YieldFor(16ms);
-        }
-    });
-    scheduler.AddScript("LegacyRuntime", [this] {
-        while (Installed()) {
-            RunLegacyGameplayTick();
-            auto* script = GTA_Script::Current();
-            if (!script)
-                return;
-            script->YieldFor(16ms);
-        }
-    });
 
     s_active = this;
     if (!WriteExecutableBytes(m_targetAddress, patch.data(), patch.size())) {
         s_active = nullptr;
-        scheduler.Reset();
         GTA_Self_Cache::Instance().Reset();
+        ResetSelfUtilityExtension();
         ResetBunkerExtension();
         m_gameplay.Reset();
         ConfigureVehicleEditorLogging(nullptr);
@@ -236,7 +213,7 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_installed.store(true);
     logger.Log(
         Backend::LogLevel::Info,
-        "RunScriptThreads bridge installed | Mode: fiber scheduler + Self cache + legacy compatibility script",
+        "RunScriptThreads bridge installed | Mode: validated direct game-thread feature tick",
         "GTA5_Enhanced.Natives");
     return true;
 }
@@ -264,8 +241,8 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     if (s_active == this)
         s_active = nullptr;
 
-    GTA_Script_Manager::Instance().Reset();
     GTA_Self_Cache::Instance().Reset();
+    ResetSelfUtilityExtension();
     ResetBunkerExtension();
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
@@ -281,6 +258,7 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     m_scriptThreadsStorageAddress = 0;
     m_expectedThreadDispatchAddress = 0;
     m_cachedScriptThread.store(nullptr);
+    m_nextFeatureTickMs = 0;
     m_nextSlowExtensionTickMs = 0;
     m_nextVehicleExtensionTickMs = 0;
     m_fastRunApplied = false;
@@ -306,13 +284,13 @@ bool GTA_Run_Script_Threads_Bridge::HookThunk(int opsToExecute)
 
 bool GTA_Run_Script_Threads_Bridge::OnRunScriptThreads(int opsToExecute) noexcept
 {
-    // Preserve the known-smooth pass-through baseline. The only post-original
-    // work allowed here is the on-demand personal-garage transaction; its tick
-    // returns immediately on an atomic flag while idle. Scheduler, Self cache,
-    // and LegacyRuntime remain disabled.
+    // Preserve GTA's original RunScriptThreads call first, then execute menu
+    // features on a validated script-thread/TLS context. This keeps native
+    // calls off the ImGui/render thread without converting the GTA thread into
+    // a fiber or reviving the old scheduler path.
     const bool result = m_original ? m_original(opsToExecute) : false;
     if (m_installed.load(std::memory_order_relaxed) && m_natives)
-        TickVehiclePersonalSave(*m_natives);
+        RunGameThreadFeatureTick();
     return result;
 }
 
@@ -367,10 +345,15 @@ void GTA_Run_Script_Threads_Bridge::TryNativeSmoke() noexcept
     m_smokeAttempting.store(false);
 }
 
-void GTA_Run_Script_Threads_Bridge::RunSchedulerTick() noexcept
+void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
 {
     if (!m_natives || !m_natives->Ready())
         return;
+
+    const ULONGLONG now = ::GetTickCount64();
+    if (now < m_nextFeatureTickMs)
+        return;
+    m_nextFeatureTickMs = now + FeatureTickIntervalMs;
 
     void* scriptThread = FindValidatedScriptThread();
     if (!scriptThread)
@@ -390,7 +373,8 @@ void GTA_Run_Script_Threads_Bridge::RunSchedulerTick() noexcept
 
     tls->currentScriptThread = scriptThread;
     tls->scriptThreadActive = true;
-    GTA_Script_Manager::Instance().Tick();
+    GTA_Self_Cache::Instance().Update(*m_natives);
+    RunLegacyGameplayTick();
     tls->scriptThreadActive = previousActive;
     tls->currentScriptThread = previousThread;
 }
@@ -450,6 +434,7 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick() noexcept
     m_gameplay.Tick();
     if (explosiveAmmo)
         gameplayState.SetExplosiveBullets(true);
+    TickSelfUtilityExtension(*m_natives);
 
     if (void* scriptThread = FindValidatedScriptThread())
         TickExplosiveAmmoExtension(*m_natives, scriptThread);

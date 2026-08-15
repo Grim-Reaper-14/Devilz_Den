@@ -43,7 +43,7 @@ private:
     static bool HookThunk(int opsToExecute);
     bool OnRunScriptThreads(int opsToExecute) noexcept;
     void TryNativeSmoke() noexcept;
-    void RunSchedulerTick() noexcept;
+    void RunGameThreadFeatureTick() noexcept;
     void RunLegacyGameplayTick() noexcept;
     void TickFrameSensitiveMovement() noexcept;
     [[nodiscard]] void* FindValidatedScriptThread() const noexcept;
@@ -57,6 +57,7 @@ private:
     std::uintptr_t m_targetAddress = 0;
     std::uintptr_t m_scriptThreadsStorageAddress = 0;
     std::uintptr_t m_expectedThreadDispatchAddress = 0;
+    std::uint64_t m_nextFeatureTickMs = 0;
     std::uint64_t m_nextSlowExtensionTickMs = 0;
     std::uint64_t m_nextVehicleExtensionTickMs = 0;
     bool m_fastRunApplied = false;
