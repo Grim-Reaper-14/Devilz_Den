@@ -121,9 +121,12 @@ target_include_directories(Devilz_Den PRIVATE src)
 target_compile_definitions(Devilz_Den PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(Devilz_Den PRIVATE Devilz_Den_Lua Devilz_Den_Sol2)
 
+file(GLOB_RECURSE DEVILZ_DEN_LUA_RUNTIME_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Scripting/Lua/*.cpp"
+)
 add_executable(Devilz_Den_Lua_Runtime_Test
     tests/Lua_Runtime_Test.cpp
-    src/Scripting/Lua/Lua_Runtime.cpp
+    ${DEVILZ_DEN_LUA_RUNTIME_SOURCES}
 )
 target_include_directories(Devilz_Den_Lua_Runtime_Test PRIVATE src)
 target_link_libraries(Devilz_Den_Lua_Runtime_Test PRIVATE Devilz_Den_Lua Devilz_Den_Sol2)

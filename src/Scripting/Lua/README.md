@@ -1,26 +1,27 @@
 # Lua Runtime
 
-The first Sol2 integration owns a single embedded Lua 5.4 state. The Lua menu page initializes it lazily and can run a protected self-test. The state currently opens the base, coroutine, math, string, table, and UTF-8 libraries; filesystem, operating-system, debug, and game bindings are not exposed.
-
-Planned ownership:
+Devilz Den embeds Lua 5.4 through Sol2 and now separates runtime ownership from scripts, modules, commands, engines, and binding libraries.
 
 ```text
 Scripting/Lua/
-  Lua_Runtime.*
-  Lua_Manager.*          # future script discovery and ownership
-  Lua_Context.*          # future per-script environment
-  Lua_Script.*           # future loaded-script model
-  Events/
-  Bindings/
-    Self/
-    Weapons/
-    Vehicle/
-    Teleport/
-    World/
-    Network/
-  API/
+  Lua_Manager.*
+  Lua_Runtime.*                 # compatibility facade used by the existing UI/test
+  Lua_Commands.*
+  Lua_Engine.*
+  Lua_Engine_Manager.*
+  Lua_Script.*
+  Lua_Script_Manager.*
+  Lua_Module.*
+  Lua_Module_Manager.*
+  Lua_Bindings.*
+  Lua_Binding_Library.*
+  Lua_Binding_Library_Manager.*
 ```
 
-Future Lua bindings should expose controlled feature APIs and events while keeping GTA Enhanced native execution inside the validated runtime/game-thread layer.
+`Lua_Manager` owns the subsystem lifecycle. `Lua_Engine_Manager` creates isolated Sol2 states, including per-script states identified by an owner script ID. `Lua_Script_Manager` loads scripts through `safe_script_file`, tracks script state/errors, and removes script-owned commands before destroying the engine. `Lua_Module_Manager` discovers and loads reusable `.lua` modules. Binding libraries are registered independently and applied to every engine.
 
-Expected lifecycle: discover scripts, load, execute, coroutine/tick scheduling, reload, unload, error reporting, and per-script settings.
+The first core binding library exposes `devilz.api_version`, runtime/engine metadata, `devilz.version()`, and a script-owned `devilz.commands` API. Game bindings are intentionally not exposed in this foundation pass.
+
+Lua states currently open the base, coroutine, math, string, table, and UTF-8 libraries. Lua-side `dofile` and `loadfile` are disabled; filesystem, OS, debug, and unrestricted native access remain unavailable.
+
+Next layers can add controlled libraries for features, events, UI, players, entities, vehicles, weapons, configuration, and logging without turning `Lua_Manager` into a monolithic binding class.

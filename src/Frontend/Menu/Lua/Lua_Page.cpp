@@ -1,6 +1,7 @@
 #include "Lua_Page.hpp"
 
 #include "Frontend/Menu/Themes/Menu_Theme.hpp"
+#include "Scripting/Lua/Lua_Manager.hpp"
 #include "Scripting/Lua/Lua_Runtime.hpp"
 
 #include <imgui.h>
@@ -30,6 +31,7 @@ void DrawLuaPage()
 {
     auto& runtime = Scripting::Lua::Lua_Runtime::Instance();
     runtime.Initialize();
+    auto& manager = Scripting::Lua::Lua_Manager::Instance();
 
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
     ImGui::TextColored(palette.emberRed, "LUA");
@@ -48,6 +50,16 @@ void DrawLuaPage()
     ImGui::TextColored(statusColor, "%s", runtime.Ready() ? "READY" : "UNAVAILABLE");
     ImGui::SameLine();
     ImGui::TextDisabled("%.*s", static_cast<int>(runtime.Status().size()), runtime.Status().data());
+
+    if (runtime.Ready()) {
+        ImGui::TextDisabled(
+            "Engines: %zu | Scripts: %zu | Modules: %zu | Libraries: %zu | Commands: %zu",
+            manager.Engines().Count(),
+            manager.Scripts().Scripts().size(),
+            manager.Modules().Count(),
+            manager.Libraries().Count(),
+            manager.Commands().Count());
+    }
 
     auto& pageState = PageState();
     ImGui::BeginDisabled(!runtime.Ready());
@@ -68,6 +80,7 @@ void DrawLuaPage()
 
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "BINDINGS");
-    ImGui::TextWrapped("No game bindings are exposed yet. This first pass only owns the Lua state and verifies protected Sol2 execution.");
+    ImGui::TextWrapped(
+        "Core bindings are active. Scripts can use runtime metadata and the script-owned devilz.commands API. Game bindings are still gated for later libraries.");
 }
 }
