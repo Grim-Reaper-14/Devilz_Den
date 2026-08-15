@@ -7,6 +7,7 @@
 
 #include <sol/sol.hpp>
 
+#include <string>
 #include <utility>
 
 namespace Devilz::Scripting::Lua
@@ -29,22 +30,31 @@ bool Lua_Manager::Initialize()
     if (m_initialized)
         return true;
 
+    if (!m_fingerprints.Initialize(Lua_API_Version, LUA_RELEASE, SOL_VERSION_STRING)) {
+        m_status = "Failed to initialize Lua runtime fingerprint";
+        return false;
+    }
+
     m_bindingContext.commands = &m_commands;
     m_bindingContext.events = &m_events;
+    m_bindingContext.fingerprints = &m_fingerprints;
     m_scripts.Configure(&m_engines, &m_libraries, m_bindingContext);
 
     if (!m_libraries.RegisterLibrary(Bindings::Core::CreateCoreLibrary())) {
         m_status = "Failed to register core Lua binding library";
+        m_fingerprints.Reset();
         return false;
     }
     if (!m_libraries.RegisterLibrary(Bindings::Logger::CreateLoggerLibrary())) {
         m_status = "Failed to register logger Lua binding library";
         m_libraries.Clear();
+        m_fingerprints.Reset();
         return false;
     }
     if (!m_libraries.RegisterLibrary(Bindings::Events::CreateEventsLibrary())) {
         m_status = "Failed to register events Lua binding library";
         m_libraries.Clear();
+        m_fingerprints.Reset();
         return false;
     }
 
@@ -53,6 +63,7 @@ bool Lua_Manager::Initialize()
         m_status = std::string{engine.Status()};
         m_engines.Clear();
         m_libraries.Clear();
+        m_fingerprints.Reset();
         return false;
     }
 
@@ -60,12 +71,14 @@ bool Lua_Manager::Initialize()
         m_status = "Failed to bind Lua libraries";
         m_engines.Clear();
         m_libraries.Clear();
+        m_fingerprints.Reset();
         return false;
     }
 
     m_primaryEngineId = engine.GetId();
     m_initialized = true;
-    m_status = "Lua manager initialized";
+    m_status = "Lua manager initialized | Fingerprint: " +
+        Lua_Fingerprint_Manager::ToHex(m_fingerprints.Runtime().value);
     return true;
 }
 
@@ -79,6 +92,7 @@ void Lua_Manager::Shutdown() noexcept
     m_libraries.Clear();
     m_scripts.Configure(nullptr, nullptr, {});
     m_bindingContext = {};
+    m_fingerprints.Reset();
     m_primaryEngineId = 0;
     m_initialized = false;
     m_status = "Not initialized";
@@ -104,7 +118,7 @@ void Lua_Manager::Tick()
 
 bool Lua_Manager::Ready() const noexcept
 {
-    if (!m_initialized || m_primaryEngineId == 0)
+    if (!m_initialized || m_primaryEngineId == 0 || m_fingerprints.Runtime().value == 0)
         return false;
     const auto* engine = m_engines.FindEngine(m_primaryEngineId);
     return engine && engine->Ready();
@@ -117,7 +131,7 @@ std::string_view Lua_Manager::Status() const noexcept
 
 std::string_view Lua_Manager::LuaVersion() const noexcept
 {
-    return LUA_VERSION;
+    return LUA_RELEASE;
 }
 
 std::string_view Lua_Manager::Sol2Version() const noexcept
@@ -136,6 +150,13 @@ Lua_Manager_Self_Test_Result Lua_Manager::RunSelfTest()
         "assert(devilz.api_version == 1)\n"
         "assert(devilz.engine_id > 0)\n"
         "assert(devilz.owner_script_id == 0)\n"
+        "assert(type(devilz.fingerprint) == 'string')\n"
+        "assert(#devilz.fingerprint == 18)\n"
+        "assert(type(devilz.runtime_fingerprint) == 'string')\n"
+        "assert(devilz.runtime_fingerprint == devilz.fingerprint)\n"
+        "assert(type(devilz.runtime_info) == 'table')\n"
+        "assert(devilz.runtime_info.fingerprint == devilz.fingerprint)\n"
+        "assert(devilz.runtime_info.api_version == devilz.api_version)\n"
         "assert(type(devilz.commands.register) == 'function')\n"
         "assert(type(devilz.create_thread) == 'function')\n"
         "assert(type(devilz.yield) == 'function')\n"
@@ -191,6 +212,10 @@ Lua_Manager_Self_Test_Result Lua_Manager::RunSelfTest()
     const auto eventId = devilz.get_or(
         "__self_test_event_id",
         Lua_Event_Manager::Subscription_Id{0});
+    const auto fingerprint = devilz.get_or("fingerprint", std::string{});
+
+    if (fingerprint != Lua_Fingerprint_Manager::ToHex(m_fingerprints.Runtime().value))
+        return {false, "Lua runtime fingerprint did not match the C++ fingerprint manager"};
 
     auto unsubscribeResult = engine->State().safe_script(
         "local removed = devilz.events.off(devilz.__self_test_event_id)\n"
@@ -214,7 +239,9 @@ Lua_Manager_Self_Test_Result Lua_Manager::RunSelfTest()
     if (eventCounter != 1)
         return {false, "Lua event manager did not execute the self-test callback"};
 
-    return {true, "Sol2, Lua scheduler, logger bindings, and events executed successfully"};
+    return {
+        true,
+        "Sol2, scheduler, logger, events, and fingerprinting passed | " + fingerprint};
 }
 
 std::size_t Lua_Manager::ScheduledTaskCount()
@@ -266,5 +293,15 @@ Lua_Commands& Lua_Manager::Commands() noexcept
 Lua_Event_Manager& Lua_Manager::Events() noexcept
 {
     return m_events;
+}
+
+Lua_Fingerprint_Manager& Lua_Manager::Fingerprints() noexcept
+{
+    return m_fingerprints;
+}
+
+const Lua_Fingerprint_Manager& Lua_Manager::Fingerprints() const noexcept
+{
+    return m_fingerprints;
 }
 }

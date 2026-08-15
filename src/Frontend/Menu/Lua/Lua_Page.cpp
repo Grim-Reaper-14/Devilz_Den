@@ -56,6 +56,8 @@ void DrawLuaPage()
         snapshot.dedicatedThread ? "Dedicated backend Lua thread" : "Not threaded");
 
     if (snapshot.ready) {
+        const auto fingerprint = runtime.FingerprintHex();
+        ImGui::TextDisabled("Fingerprint: %s", fingerprint.c_str());
         ImGui::TextDisabled(
             "Engines: %zu | Scripts: %zu | Modules: %zu | Libraries: %zu | Commands: %zu | Events: %zu",
             snapshot.engines,
@@ -90,6 +92,6 @@ void DrawLuaPage()
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "BINDINGS");
     ImGui::TextWrapped(
-        "Bindings are split by domain. Core provides commands and cooperative tasks, Logger routes script messages into the runtime logger, and Events provides script-owned subscriptions such as devilz.events.TICK.");
+        "Bindings are split by domain. Core provides commands, runtime fingerprint metadata, and cooperative tasks; Logger routes script messages into the runtime logger; Events provides script-owned subscriptions such as devilz.events.TICK.");
 }
 }

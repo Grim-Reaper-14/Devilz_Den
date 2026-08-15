@@ -3,6 +3,7 @@
 #include "Bindings/Lua_Binding_Context.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -27,6 +28,7 @@ struct Lua_Runtime_Snapshot
 {
     bool ready{};
     bool dedicatedThread{};
+    std::uint64_t runtimeFingerprint{};
     std::size_t engines{};
     std::size_t scripts{};
     std::size_t modules{};
@@ -60,6 +62,8 @@ public:
     [[nodiscard]] std::string Status() const;
     [[nodiscard]] std::string_view LuaVersion() const noexcept;
     [[nodiscard]] std::string_view Sol2Version() const noexcept;
+    [[nodiscard]] std::uint64_t Fingerprint() const;
+    [[nodiscard]] std::string FingerprintHex() const;
     [[nodiscard]] Lua_Self_Test_Result RunSelfTest();
 
 private:

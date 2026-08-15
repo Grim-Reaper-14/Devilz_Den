@@ -1,5 +1,6 @@
 #include "Lua_Script.hpp"
 
+#include "Fingerprint/Lua_Fingerprint.hpp"
 #include "Lua_Engine.hpp"
 #include "Lua_Scheduler.hpp"
 
@@ -14,14 +15,21 @@ Lua_Script::Lua_Script(Id id, std::filesystem::path path)
 {
 }
 
-bool Lua_Script::Load(Lua_Engine& engine)
+bool Lua_Script::Load(Lua_Engine& engine, const Lua_Fingerprint_Manager& fingerprints)
 {
     m_state = Lua_Script_State::Loading;
     m_lastError.clear();
     m_engineId = engine.GetId();
+    m_fingerprint = {};
 
     if (!engine.Ready()) {
         MarkError(std::string{engine.Status()});
+        return false;
+    }
+
+    std::string fingerprintError;
+    if (!fingerprints.FingerprintScript(m_path, m_fingerprint, &fingerprintError)) {
+        MarkError(std::move(fingerprintError));
         return false;
     }
 
@@ -34,6 +42,9 @@ bool Lua_Script::Load(Lua_Engine& engine)
     auto script = state.create_table();
     script["id"] = m_id;
     script["path"] = m_path.string();
+    script["fingerprint"] = Lua_Fingerprint_Manager::ToHex(m_fingerprint.value);
+    script["content_hash"] = Lua_Fingerprint_Manager::ToHex(m_fingerprint.contentHash);
+    script["runtime_fingerprint"] = Lua_Fingerprint_Manager::ToHex(m_fingerprint.runtimeFingerprint);
     devilz["script"] = script;
 
     auto result = state.safe_script_file(m_path.string(), sol::script_pass_on_error);
@@ -51,6 +62,7 @@ void Lua_Script::Unload() noexcept
 {
     m_state = Lua_Script_State::Unloaded;
     m_engineId = 0;
+    m_fingerprint = {};
 }
 
 void Lua_Script::Tick(Lua_Engine& engine)
@@ -97,5 +109,25 @@ const std::string& Lua_Script::LastError() const noexcept
 std::uint64_t Lua_Script::EngineId() const noexcept
 {
     return m_engineId;
+}
+
+const Lua_Script_Fingerprint& Lua_Script::FingerprintInfo() const noexcept
+{
+    return m_fingerprint;
+}
+
+std::uint64_t Lua_Script::Fingerprint() const noexcept
+{
+    return m_fingerprint.value;
+}
+
+std::uint64_t Lua_Script::ContentHash() const noexcept
+{
+    return m_fingerprint.contentHash;
+}
+
+std::uint64_t Lua_Script::RuntimeFingerprint() const noexcept
+{
+    return m_fingerprint.runtimeFingerprint;
 }
 }

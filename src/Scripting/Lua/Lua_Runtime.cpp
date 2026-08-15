@@ -1,6 +1,7 @@
 #include "Lua_Runtime.hpp"
 
 #include "Backend/Threading/IExecutor.hpp"
+#include "Fingerprint/Lua_Fingerprint.hpp"
 #include "Lua_Manager.hpp"
 
 #include <chrono>
@@ -22,6 +23,7 @@ public:
         Lua_Runtime_Snapshot next;
         next.ready = manager.Ready();
         next.dedicatedThread = threaded;
+        next.runtimeFingerprint = manager.Fingerprints().Runtime().value;
         next.engines = manager.Engines().Count();
         next.scripts = manager.Scripts().Scripts().size();
         next.modules = manager.Modules().Count();
@@ -222,6 +224,17 @@ std::string_view Lua_Runtime::LuaVersion() const noexcept
 std::string_view Lua_Runtime::Sol2Version() const noexcept
 {
     return Lua_Manager::Instance().Sol2Version();
+}
+
+std::uint64_t Lua_Runtime::Fingerprint() const
+{
+    std::scoped_lock lock(m_impl->mutex);
+    return m_impl->snapshot.runtimeFingerprint;
+}
+
+std::string Lua_Runtime::FingerprintHex() const
+{
+    return Lua_Fingerprint_Manager::ToHex(Fingerprint());
 }
 
 Lua_Self_Test_Result Lua_Runtime::RunSelfTest()

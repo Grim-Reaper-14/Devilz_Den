@@ -1,6 +1,7 @@
 #include "Lua_Script_Manager.hpp"
 
 #include "Events/Lua_Event_Manager.hpp"
+#include "Fingerprint/Lua_Fingerprint.hpp"
 #include "Lua_Binding_Library_Manager.hpp"
 #include "Lua_Commands.hpp"
 #include "Lua_Engine_Manager.hpp"
@@ -38,8 +39,10 @@ std::size_t Lua_Script_Manager::DiscoverScripts(const std::filesystem::path& dir
 
 Lua_Script* Lua_Script_Manager::LoadScript(const std::filesystem::path& path)
 {
-    if (!m_engines || !m_libraries || !m_bindingContext.commands || !m_bindingContext.events)
+    if (!m_engines || !m_libraries || !m_bindingContext.commands ||
+        !m_bindingContext.events || !m_bindingContext.fingerprints) {
         return nullptr;
+    }
 
     const auto id = m_nextId++;
     auto script = std::make_unique<Lua_Script>(id, path);
@@ -52,7 +55,7 @@ Lua_Script* Lua_Script_Manager::LoadScript(const std::filesystem::path& path)
         script->MarkError("Failed to bind Lua libraries");
         m_engines->DestroyEngine(engine.GetId());
     } else {
-        script->Load(engine);
+        script->Load(engine, *m_bindingContext.fingerprints);
     }
 
     auto* result = script.get();

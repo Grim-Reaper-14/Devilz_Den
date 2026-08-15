@@ -16,6 +16,8 @@ Scripting/Lua/
       Lua_Events_Binding.*
   Events/
     Lua_Event_Manager.*
+  Fingerprint/
+    Lua_Fingerprint.*
   Lua_Manager.*
   Lua_Runtime.*
   Lua_Commands.*
@@ -31,13 +33,42 @@ Scripting/Lua/
   Lua_Bindings.*              # compatibility facade for the original core API
 ```
 
-`Lua_Binding_Context` is the shared dependency surface passed to every binding library. It currently exposes script-owned commands, the Lua event manager, and an injected runtime logging callback. Future binding domains can receive controlled services through this context without expanding every binding-library method signature.
+`Lua_Binding_Context` is the shared dependency surface passed to every binding library. It currently exposes script-owned commands, the Lua event manager, the fingerprint manager, and an injected runtime logging callback. Future binding domains can receive controlled services through this context without expanding every binding-library method signature.
 
 ## Thread ownership
 
 Production startup creates a dedicated `Lua` executor through the backend `ThreadManager`. The Lua service loop owns all Sol2 states, drains submitted jobs, dispatches events, and ticks script schedulers. The renderer only reads immutable `Lua_Runtime_Snapshot` data and never touches a live `sol::state`.
 
 Each `.lua` script receives a separate `Lua_Engine`. Script-owned commands and event subscriptions are removed before that engine is destroyed.
+
+## Fingerprints
+
+Lua fingerprints are deterministic 64-bit FNV-1a identifiers used for runtime compatibility, diagnostics, and script change detection. They are not cryptographic signatures or authentication tokens.
+
+The runtime fingerprint incorporates the Devilz Lua API version, precise Lua release, Sol2 version, and binding/scheduler compatibility versions. It remains stable across an identical restart and changes when one of those compatibility inputs changes.
+
+```lua
+print(devilz.fingerprint)                  -- e.g. 0x0123456789ABCDEF
+print(devilz.runtime_fingerprint)          -- same runtime fingerprint
+print(devilz.runtime_info.fingerprint)
+print(devilz.runtime_info.api_version)
+print(devilz.runtime_info.lua_version)
+print(devilz.runtime_info.sol2_version)
+```
+
+Every loaded script receives a content-based fingerprint before the script executes:
+
+```lua
+print(devilz.script.id)
+print(devilz.script.path)
+print(devilz.script.fingerprint)
+print(devilz.script.content_hash)
+print(devilz.script.runtime_fingerprint)
+```
+
+The script path is intentionally excluded from the fingerprint. Renaming or moving an unchanged script preserves its content hash and combined script fingerprint. Changing the file bytes changes both the content hash and combined fingerprint. The combined script fingerprint includes the active runtime fingerprint, so the same script content can also be distinguished across incompatible Devilz Lua API builds.
+
+Fingerprints are exposed to Lua as fixed-width hexadecimal strings so all 64 bits remain unambiguous in the Lua API. C++ retains the raw `std::uint64_t` values through `Lua_Fingerprint_Manager`, `Lua_Script`, and `Lua_Runtime_Snapshot`.
 
 ## Core API
 
@@ -46,6 +77,7 @@ devilz.api_version
 devilz.runtime
 devilz.engine_id
 devilz.owner_script_id
+devilz.fingerprint
 devilz.version()
 
 devilz.commands.register("name", function()
