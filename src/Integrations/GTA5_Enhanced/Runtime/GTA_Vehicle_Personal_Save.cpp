@@ -12,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -22,6 +23,7 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace Devilz::Integrations::GTA5_Enhanced
 {
@@ -136,9 +138,11 @@ struct VehiclePersonalSaveRuntime
     std::uintptr_t programTableAddress = 0;
     std::uintptr_t scriptThreadsStorageAddress = 0;
     std::uintptr_t scriptVmAddress = 0;
+    std::uintptr_t isSessionStartedAddress = 0;
     Backend::LoggerService* logger = nullptr;
     std::uint32_t isVehicleValidForPvPc = 0;
     std::uint32_t giveVehicleRewardPc = 0;
+    std::uint8_t slowScriptVmLogsRemaining = 4;
 };
 
 VehiclePersonalSaveRuntime g_runtime{};
@@ -275,69 +279,76 @@ GTA_Script_Program_View* FindScriptProgram(std::uint32_t scriptHash) noexcept
     return nullptr;
 }
 
-bool ReadProgramByte(const GTA_Script_Program_View* program, std::uint32_t pc, std::uint8_t& value) noexcept
+bool SnapshotProgramCode(const GTA_Script_Program_View* program, std::vector<std::uint8_t>& code) noexcept
 {
-    if (!program || !program->codeBlocks || pc >= program->codeSize)
+    if (!program || !program->codeBlocks || program->codeSize == 0)
         return false;
 
     const std::size_t pageCount = (program->codeSize + ScriptCodePageSize - 1U) / ScriptCodePageSize;
-    if (!IsReadableAddress(reinterpret_cast<std::uintptr_t>(program->codeBlocks), pageCount * sizeof(std::uint8_t*)))
+    if (pageCount == 0 ||
+        !IsReadableAddress(reinterpret_cast<std::uintptr_t>(program->codeBlocks),
+                           pageCount * sizeof(std::uint8_t*))) {
         return false;
+    }
 
-    const std::size_t pageIndex = pc / ScriptCodePageSize;
-    const std::size_t pageOffset = pc % ScriptCodePageSize;
-    if (pageIndex >= pageCount)
-        return false;
+    code.resize(program->codeSize);
+    std::size_t copied = 0;
+    for (std::size_t pageIndex = 0; pageIndex < pageCount; ++pageIndex) {
+        std::uint8_t* page = nullptr;
+        std::memcpy(&page, program->codeBlocks + pageIndex, sizeof(page));
+        const std::size_t pageSize = (std::min<std::size_t>)(
+            ScriptCodePageSize,
+            static_cast<std::size_t>(program->codeSize) - copied);
+        if (!page || !IsReadableAddress(reinterpret_cast<std::uintptr_t>(page), pageSize)) {
+            code.clear();
+            return false;
+        }
 
-    std::uint8_t* page = nullptr;
-    std::memcpy(&page, program->codeBlocks + pageIndex, sizeof(page));
-    if (!page || !IsReadableAddress(reinterpret_cast<std::uintptr_t>(page + pageOffset), 1U))
-        return false;
+        std::memcpy(code.data() + copied, page, pageSize);
+        copied += pageSize;
+    }
 
-    value = page[pageOffset];
-    return true;
+    return copied == code.size();
 }
 
 template <std::size_t N>
-std::uint32_t FindUniquePatternPc(const GTA_Script_Program_View* program, const std::array<int, N>& pattern) noexcept
+std::uint32_t FindUniquePatternPc(
+    const std::vector<std::uint8_t>& code,
+    const std::array<int, N>& pattern) noexcept
 {
-    if (!program || program->codeSize < N)
+    if (code.size() < N)
         return 0;
 
     std::uint32_t found = 0;
     std::size_t matches = 0;
-    for (std::uint32_t pc = 0; pc + N <= program->codeSize; ++pc) {
+    for (std::size_t pc = 0; pc + N <= code.size(); ++pc) {
         bool match = true;
         for (std::size_t offset = 0; offset < N; ++offset) {
             if (pattern[offset] < 0)
                 continue;
-            std::uint8_t value = 0;
-            if (!ReadProgramByte(program, pc + static_cast<std::uint32_t>(offset), value) ||
-                value != static_cast<std::uint8_t>(pattern[offset])) {
+            if (code[pc + offset] != static_cast<std::uint8_t>(pattern[offset])) {
                 match = false;
                 break;
             }
         }
         if (!match)
             continue;
-        found = pc;
+        if (pc > (std::numeric_limits<std::uint32_t>::max)())
+            return 0;
+        found = static_cast<std::uint32_t>(pc);
         if (++matches > 1U)
             return 0;
     }
     return matches == 1U ? found : 0U;
 }
 
-std::uint32_t ReadProgramU24(const GTA_Script_Program_View* program, std::uint32_t pc) noexcept
+std::uint32_t ReadProgramU24(const std::vector<std::uint8_t>& code, std::uint32_t pc) noexcept
 {
-    std::uint8_t bytes[3]{};
-    if (!ReadProgramByte(program, pc, bytes[0]) ||
-        !ReadProgramByte(program, pc + 1U, bytes[1]) ||
-        !ReadProgramByte(program, pc + 2U, bytes[2])) {
+    if (pc > code.size() || code.size() - pc < 3U)
         return 0;
-    }
-    return static_cast<std::uint32_t>(bytes[0]) |
-           (static_cast<std::uint32_t>(bytes[1]) << 8U) |
-           (static_cast<std::uint32_t>(bytes[2]) << 16U);
+    return static_cast<std::uint32_t>(code[pc]) |
+           (static_cast<std::uint32_t>(code[pc + 1U]) << 8U) |
+           (static_cast<std::uint32_t>(code[pc + 2U]) << 16U);
 }
 
 GTA_Tls_Context_View* CurrentTls() noexcept
@@ -400,12 +411,22 @@ std::optional<std::uint64_t> CallScriptFunctionRaw(
     const bool previousActive = tls->scriptThreadActive;
     tls->currentScriptThread = thread;
     tls->scriptThreadActive = true;
+    const auto vmStart = std::chrono::steady_clock::now();
     (void)scriptVm(thread->stack,
                    reinterpret_cast<std::int64_t**>(g_runtime.scriptGlobalsAddress),
                    program,
                    &context);
+    const auto vmUs = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - vmStart).count();
     tls->scriptThreadActive = previousActive;
     tls->currentScriptThread = previousThread;
+
+    if (vmUs >= 2000 && g_runtime.slowScriptVmLogsRemaining != 0) {
+        --g_runtime.slowScriptVmLogsRemaining;
+        Log(Backend::LogLevel::Warning,
+            "Save Personal Vehicle ScriptVM call was slow | Script: " + std::to_string(thread->scriptHash) +
+                " | PC: " + std::to_string(pc) + " | DurationUs: " + std::to_string(vmUs));
+    }
 
     if (!IsReadableAddress(reinterpret_cast<std::uintptr_t>(thread->stack + topStack), sizeof(std::uint64_t)))
         return std::nullopt;
@@ -421,10 +442,23 @@ std::optional<bool> IsVehicleValidForPersonalVehicle(std::uint32_t modelHash) no
         return std::nullopt;
 
     if (g_runtime.isVehicleValidForPvPc == 0) {
-        const auto match = FindUniquePatternPc(program, IsVehicleValidForPvPattern);
+        const auto scanStart = std::chrono::steady_clock::now();
+        std::vector<std::uint8_t> code;
+        if (!SnapshotProgramCode(program, code)) {
+            Log(Backend::LogLevel::Warning,
+                "Save Personal Vehicle could not snapshot freemode bytecode for IsVehicleValidForPV");
+            return std::nullopt;
+        }
+        const auto match = FindUniquePatternPc(code, IsVehicleValidForPvPattern);
         if (match == 0)
             return std::nullopt;
-        g_runtime.isVehicleValidForPvPc = ReadProgramU24(program, match + 1U);
+        g_runtime.isVehicleValidForPvPc = ReadProgramU24(code, match + 1U);
+        const auto scanUs = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - scanStart).count();
+        Log(Backend::LogLevel::Info,
+            "Resolved IsVehicleValidForPV from local bytecode snapshot | Bytes: " +
+                std::to_string(code.size()) + " | ScanUs: " + std::to_string(scanUs) +
+                " | PC: " + std::to_string(g_runtime.isVehicleValidForPvPc));
     }
     if (g_runtime.isVehicleValidForPvPc == 0)
         return std::nullopt;
@@ -443,6 +477,21 @@ bool IsBlacklistedModel(std::uint32_t modelHash) noexcept
     return std::find(blacklisted.begin(), blacklisted.end(), modelHash) != blacklisted.end();
 }
 
+bool IsOnlineSessionStarted() noexcept
+{
+    if (g_runtime.isSessionStartedAddress == 0)
+        return FindScriptThread(Joaat("freemode")) != nullptr;
+
+    if (!IsReadableAddress(g_runtime.isSessionStartedAddress, sizeof(bool)))
+        return false;
+
+    bool started = false;
+    std::memcpy(&started,
+                reinterpret_cast<const void*>(g_runtime.isSessionStartedAddress),
+                sizeof(started));
+    return started;
+}
+
 bool DriveGarageReward(int vehicle) noexcept
 {
     const auto rewardHash = Joaat("AM_MP_VEHICLE_REWARD");
@@ -455,8 +504,23 @@ bool DriveGarageReward(int vehicle) noexcept
         return false;
     }
 
-    if (g_runtime.giveVehicleRewardPc == 0)
-        g_runtime.giveVehicleRewardPc = FindUniquePatternPc(program, GiveVehicleRewardPattern);
+    if (g_runtime.giveVehicleRewardPc == 0) {
+        const auto scanStart = std::chrono::steady_clock::now();
+        std::vector<std::uint8_t> code;
+        if (!SnapshotProgramCode(program, code)) {
+            g_status.store(GTA_Vehicle_Personal_Save_Status::Unavailable, std::memory_order_release);
+            Log(Backend::LogLevel::Warning,
+                "Save Personal Vehicle could not snapshot AM_MP_VEHICLE_REWARD bytecode");
+            return false;
+        }
+        g_runtime.giveVehicleRewardPc = FindUniquePatternPc(code, GiveVehicleRewardPattern);
+        const auto scanUs = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - scanStart).count();
+        Log(Backend::LogLevel::Info,
+            "Resolved GiveVehicleReward from local bytecode snapshot | Bytes: " +
+                std::to_string(code.size()) + " | ScanUs: " + std::to_string(scanUs) +
+                " | PC: " + std::to_string(g_runtime.giveVehicleRewardPc));
+    }
     if (g_runtime.giveVehicleRewardPc == 0) {
         g_status.store(GTA_Vehicle_Personal_Save_Status::Unavailable, std::memory_order_release);
         Log(Backend::LogLevel::Warning,
@@ -525,6 +589,7 @@ void ConfigureVehiclePersonalSave(
     std::uintptr_t programTableAddress,
     std::uintptr_t scriptThreadsStorageAddress,
     std::uintptr_t scriptVmAddress,
+    std::uintptr_t isSessionStartedAddress,
     Backend::LoggerService* logger) noexcept
 {
     g_runtime = {};
@@ -532,6 +597,7 @@ void ConfigureVehiclePersonalSave(
     g_runtime.programTableAddress = programTableAddress;
     g_runtime.scriptThreadsStorageAddress = scriptThreadsStorageAddress;
     g_runtime.scriptVmAddress = scriptVmAddress;
+    g_runtime.isSessionStartedAddress = isSessionStartedAddress;
     g_runtime.logger = logger;
     g_requestPending.store(false, std::memory_order_release);
     g_status.store(GTA_Vehicle_Personal_Save_Status::Idle, std::memory_order_release);
@@ -539,7 +605,10 @@ void ConfigureVehiclePersonalSave(
     const bool ready = VehiclePersonalSaveRuntimeReady();
     Log(ready ? Backend::LogLevel::Info : Backend::LogLevel::Warning,
         ready
-            ? "Save Personal Vehicle ready | AM_MP_VEHICLE_REWARD ScriptVM path enabled"
+            ? std::string("Save Personal Vehicle ready | AM_MP_VEHICLE_REWARD ScriptVM path enabled | SessionState: ") +
+                (g_runtime.isSessionStartedAddress != 0
+                    ? "IsSessionStarted pointer"
+                    : "freemode-thread fallback")
             : "Save Personal Vehicle unavailable: ScriptGlobals, ProgramTable, ScriptThreads, or ScriptVM target missing");
 }
 
@@ -599,7 +668,7 @@ void TickVehiclePersonalSave(GTA_Native_Manager& natives) noexcept
         status == GTA_Vehicle_Personal_Save_Status::Validating) {
         g_status.store(GTA_Vehicle_Personal_Save_Status::Validating, std::memory_order_release);
 
-        if (!FindScriptThread(Joaat("freemode"))) {
+        if (!IsOnlineSessionStarted() || !FindScriptThread(Joaat("freemode"))) {
             g_status.store(GTA_Vehicle_Personal_Save_Status::Unavailable, std::memory_order_release);
             g_requestPending.store(false, std::memory_order_release);
             Log(Backend::LogLevel::Warning,

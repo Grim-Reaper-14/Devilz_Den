@@ -31,6 +31,7 @@ void ConfigureVehiclePersonalSave(
     std::uintptr_t programTableAddress,
     std::uintptr_t scriptThreadsStorageAddress,
     std::uintptr_t scriptVmAddress,
+    std::uintptr_t isSessionStartedAddress,
     Backend::LoggerService* logger) noexcept;
 void ResetVehiclePersonalSave() noexcept;
 

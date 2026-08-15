@@ -81,6 +81,17 @@ GTA_Build_Target_Registry::GTA_Build_Target_Registry()
             GTA_Target_Candidate_Kind::CodeSite
         },
         {
+            GTA_Runtime_Target_Id::IsSessionStarted,
+            "IsSessionStarted",
+            "GTA5_Enhanced.exe",
+            "0F B6 05 ? ? ? ? 0A 05 ? ? ? ? 75 2A",
+            {
+                {GTA_Address_Resolve_Op_Type::RipRelative32, 3}
+            },
+            false,
+            GTA_Target_Candidate_Kind::DirectData
+        },
+        {
             GTA_Runtime_Target_Id::NativeTable,
             "NativeTable",
             "GTA5_Enhanced.exe",

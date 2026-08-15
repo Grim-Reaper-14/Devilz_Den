@@ -288,6 +288,7 @@ void Runtime_Manager::InitializeGameThreadBridge(
     std::uintptr_t validatedScriptGlobals = 0;
     std::uintptr_t programTable = 0;
     std::uintptr_t scriptVm = 0;
+    std::uintptr_t isSessionStarted = 0;
 
     for (const auto& target : status.targetReport->targets) {
         if (target.status.id == GTA_Runtime_Target_Id::RunScriptThreads &&
@@ -306,6 +307,8 @@ void Runtime_Manager::InitializeGameThreadBridge(
                 programTable = target.address;
             } else if (target.status.id == GTA_Runtime_Target_Id::ScriptVM) {
                 scriptVm = target.address;
+            } else if (target.status.id == GTA_Runtime_Target_Id::IsSessionStarted) {
+                isSessionStarted = target.address;
             }
         }
     }
@@ -365,6 +368,7 @@ void Runtime_Manager::InitializeGameThreadBridge(
         programTable,
         scriptThreadsStorage,
         scriptVm,
+        isSessionStarted,
         &m_logger);
 
     ConfigureBunkerGlobals(
