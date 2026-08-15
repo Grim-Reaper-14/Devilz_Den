@@ -1,0 +1,160 @@
++    return std::any_of(module.sections.begin(), module.sections.end(), [&](const auto& section) {
++        return section.Executable() && section.range.Contains(address, size);
++    });
++}
++
++bool ResolvePatch(
++    const Backend::Module_Info& module,
++    std::string_view name,
++    std::string_view signature,
++    std::ptrdiff_t patchOffset,
++    std::initializer_list<std::uint8_t> replacement,
++    Patch_Site& out,
++    std::string& error)
++{
++    auto compiled = Backend::Pattern::Compile(signature);
++    if (!compiled) {
++        error = std::string(name) + ": pattern compile failed";
++        return false;
++    }
++
++    Backend::Pattern_Scanner scanner;
++    std::vector<std::uintptr_t> matches;
++    for (const auto& section : module.sections) {
++        if (!section.Executable())
++            continue;
++
++        Backend::Pattern_Scanner::Options options{};
++        options.maxResults = 2;
++        options.collectStatistics = false;
++        auto result = scanner.Scan(section.range, compiled.Value(), options);
++        if (!result)
++            continue;
++
++        for (const auto& match : result.Value()) {
++            matches.push_back(match.address.Address());
++            if (matches.size() > 1)
++                break;
++        }
++        if (matches.size() > 1)
++            break;
++    }
++
++    if (matches.empty()) {
++        error = std::string(name) + ": pattern not found";
++        return false;
++    }
++    if (matches.size() != 1) {
++        error = std::string(name) + ": pattern was not unique";
++        return false;
++    }
++
++    const auto target = static_cast<std::uintptr_t>(
++        static_cast<std::intptr_t>(matches.front()) + patchOffset);
++    if (replacement.size() == 0 || replacement.size() > Patch_Site::Capacity ||
++        !AddressInExecutableSection(module, target, replacement.size()) ||
++        !IsExecutableRange(target, replacement.size())) {
++        error = std::string(name) + ": patch target is outside executable GTA code";
++        return false;
++    }
++
++    out.name = std::string(name);
++    out.address = target;
++    out.size = replacement.size();
++    std::size_t index = 0;
++    for (const auto value : replacement)
++        out.replacement[index++] = static_cast<std::byte>(value);
++    std::memcpy(out.original.data(), reinterpret_cast<const void*>(target), out.size);
++
++    if (std::equal(out.original.begin(), out.original.begin() + out.size, out.replacement.begin())) {
++        error = std::string(name) + ": target already contains patched bytes";
++        out = {};
++        return false;
++    }
++
++    return true;
++}
++
++class Devils_Aimbot_Service
++{
++public:
++    bool Configure(Backend::LoggerService& logger, std::uint64_t fingerprint)
++    {
++        std::scoped_lock lock(m_mutex);
++        RestoreAllLocked();
++        ClearLocked();
++        m_logger = &logger;
++
++        if (fingerprint != SupportedFingerprint) {
++            m_status = Devils_Aimbot_Status::UnsupportedBuild;
++            m_detail = "Unsupported GTA Enhanced build fingerprint";
++            LogLocked(Backend::LogLevel::Warning, m_detail);
++            return false;
++        }
++
++        Backend::Module_Manager modules;
++        auto module = modules.FindLoaded("GTA5_Enhanced.exe");
++        if (!module)
++            module = modules.MainModule();
++        if (!module) {
++            m_status = Devils_Aimbot_Status::PatternFailure;
++            m_detail = "GTA5_Enhanced.exe module image is unavailable";
++            LogLocked(Backend::LogLevel::Warning, m_detail);
++            return false;
++        }
++
++        std::string error;
++        if (!ResolvePatch(module.Value(), "ShouldNotTargetEntity",
++                "F6 80 A9 14 00 00 01", -0x53,
++                {0xB0, 0x00, 0xC3}, m_shouldNotTarget, error) ||
++            !ResolvePatch(module.Value(), "GetAssistedAimType",
++                "FF E0 48 8D 86", -0x15,
++                {0xBD, 0x01, 0x00, 0x00, 0x00}, m_assistedAimType, error) ||
++            !ResolvePatch(module.Value(), "GetLockOnPos",
++                "0F 29 74 24 ? 48 89 D6 48 89 CF 48 8B 05", 0x22,
++                {0xEB}, m_lockOnHead, error) ||
++            !ResolvePatch(module.Value(), "ShouldAllowDriverLockOn",
++                "75 ? 45 89 C7 49 89 CE", -0x2C,
++                {0xB0, 0x01, 0xC3}, m_targetDrivers, error)) {
++            m_status = Devils_Aimbot_Status::PatternFailure;
++            m_detail = error;
++            ClearPatchSitesLocked();
++            LogLocked(Backend::LogLevel::Warning, "Unavailable | " + m_detail);
++            return false;
++        }
++
++        m_status = Devils_Aimbot_Status::Ready;
++        m_detail = "Ready | Devils_Aimbot assisted-aim patches resolved";
++        LogLocked(Backend::LogLevel::Info, m_detail);
++        return true;
++    }
++
++    void Reset()
++    {
++        std::scoped_lock lock(m_mutex);
++        RestoreAllLocked();
++        ClearLocked();
++    }
++
++    [[nodiscard]] Devils_Aimbot_Status Status() const noexcept
++    {
++        std::scoped_lock lock(m_mutex);
++        return m_status;
++    }
++
++    [[nodiscard]] bool Available() const noexcept
++    {
++        std::scoped_lock lock(m_mutex);
++        return m_status == Devils_Aimbot_Status::Ready;
++    }
++
++    [[nodiscard]] bool Enabled() const noexcept
++    {
++        std::scoped_lock lock(m_mutex);
++        return m_enabled;
++    }
++
++    [[nodiscard]] bool AimForHead() const noexcept
++    {
++        std::scoped_lock lock(m_mutex);
++        return m_aimForHead;
