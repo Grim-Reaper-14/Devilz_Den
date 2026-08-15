@@ -2,7 +2,9 @@
 
 #include "Bindings/Core/Lua_Core_Binding.hpp"
 #include "Bindings/Events/Lua_Events_Binding.hpp"
+#include "Bindings/Features/Lua_Features_Binding.hpp"
 #include "Bindings/Logger/Lua_Logger_Binding.hpp"
+#include "Bindings/Settings/Lua_Settings_Binding.hpp"
 #include "Lua_Scheduler.hpp"
 
 #include <sol/sol.hpp>
@@ -38,6 +40,8 @@ bool Lua_Manager::Initialize()
     m_bindingContext.commands = &m_commands;
     m_bindingContext.events = &m_events;
     m_bindingContext.fingerprints = &m_fingerprints;
+    m_bindingContext.settings = &m_settings;
+    m_bindingContext.features = &m_features;
     m_scripts.Configure(&m_engines, &m_libraries, m_bindingContext);
 
     if (!m_libraries.RegisterLibrary(Bindings::Core::CreateCoreLibrary())) {
@@ -53,6 +57,18 @@ bool Lua_Manager::Initialize()
     }
     if (!m_libraries.RegisterLibrary(Bindings::Events::CreateEventsLibrary())) {
         m_status = "Failed to register events Lua binding library";
+        m_libraries.Clear();
+        m_fingerprints.Reset();
+        return false;
+    }
+    if (!m_libraries.RegisterLibrary(Bindings::Settings::CreateSettingsLibrary())) {
+        m_status = "Failed to register settings Lua binding library";
+        m_libraries.Clear();
+        m_fingerprints.Reset();
+        return false;
+    }
+    if (!m_libraries.RegisterLibrary(Bindings::Features::CreateFeaturesLibrary())) {
+        m_status = "Failed to register features Lua binding library";
         m_libraries.Clear();
         m_fingerprints.Reset();
         return false;
@@ -85,6 +101,8 @@ bool Lua_Manager::Initialize()
 void Lua_Manager::Shutdown() noexcept
 {
     m_scripts.UnloadAll();
+    m_features.Clear();
+    m_settings.Clear();
     m_events.Clear();
     m_commands.Clear();
     m_modules.Clear();
@@ -164,6 +182,30 @@ Lua_Manager_Self_Test_Result Lua_Manager::RunSelfTest()
         "assert(type(devilz.log.available) == 'boolean')\n"
         "assert(type(devilz.events.on) == 'function')\n"
         "assert(type(devilz.events.off) == 'function')\n"
+        "assert(type(devilz.settings.register) == 'function')\n"
+        "assert(type(devilz.features.register) == 'function')\n"
+        "assert(devilz.settings.register('__self_bool', false))\n"
+        "assert(devilz.settings.register('__self_int', 7))\n"
+        "assert(devilz.settings.register('__self_number', 1.5))\n"
+        "assert(devilz.settings.register('__self_string', 'ready'))\n"
+        "assert(devilz.settings.type('__self_bool') == 'boolean')\n"
+        "assert(devilz.settings.type('__self_int') == 'integer')\n"
+        "assert(devilz.settings.type('__self_number') == 'number')\n"
+        "assert(devilz.settings.type('__self_string') == 'string')\n"
+        "assert(devilz.settings.set('__self_bool', true))\n"
+        "assert(devilz.settings.get('__self_bool') == true)\n"
+        "assert(not devilz.settings.set('__self_bool', 'wrong-type'))\n"
+        "assert(devilz.settings.reset('__self_bool'))\n"
+        "assert(devilz.settings.get('__self_bool') == false)\n"
+        "assert(devilz.features.register('__self_feature', false))\n"
+        "assert(devilz.features.available('__self_feature'))\n"
+        "assert(not devilz.features.enabled('__self_feature'))\n"
+        "assert(devilz.features.set('__self_feature', true))\n"
+        "assert(devilz.features.enabled('__self_feature'))\n"
+        "local toggled, enabled = devilz.features.toggle('__self_feature')\n"
+        "assert(toggled and enabled == false)\n"
+        "assert(devilz.features.reset('__self_feature'))\n"
+        "assert(not devilz.features.enabled('__self_feature'))\n"
         "devilz.__self_test_counter = 0\n"
         "devilz.__self_test_event_counter = 0\n"
         "devilz.__self_test_event_id = devilz.events.on('__devilz_self_test', function()\n"
@@ -217,21 +259,29 @@ Lua_Manager_Self_Test_Result Lua_Manager::RunSelfTest()
     if (fingerprint != Lua_Fingerprint_Manager::ToHex(m_fingerprints.Runtime().value))
         return {false, "Lua runtime fingerprint did not match the C++ fingerprint manager"};
 
-    auto unsubscribeResult = engine->State().safe_script(
-        "local removed = devilz.events.off(devilz.__self_test_event_id)\n"
+    auto cleanupResult = engine->State().safe_script(
+        "local event_removed = devilz.events.off(devilz.__self_test_event_id)\n"
+        "local feature_removed = devilz.features.unregister('__self_feature')\n"
+        "local bool_removed = devilz.settings.unregister('__self_bool')\n"
+        "local int_removed = devilz.settings.unregister('__self_int')\n"
+        "local number_removed = devilz.settings.unregister('__self_number')\n"
+        "local string_removed = devilz.settings.unregister('__self_string')\n"
         "devilz.__self_test_counter = nil\n"
         "devilz.__self_test_event_counter = nil\n"
         "devilz.__self_test_event_id = nil\n"
-        "return removed",
+        "return event_removed and feature_removed and bool_removed and int_removed and number_removed and string_removed",
         sol::script_pass_on_error);
 
-    if (!unsubscribeResult.valid()) {
-        const sol::error error = unsubscribeResult;
+    if (!cleanupResult.valid()) {
+        const sol::error error = cleanupResult;
         return {false, error.what()};
     }
 
-    if (!unsubscribeResult.get<bool>() || eventId == 0)
-        return {false, "Lua event subscription could not be removed"};
+    if (!cleanupResult.get<bool>() || eventId == 0)
+        return {false, "Lua self-test resources could not be removed"};
+
+    if (m_settings.CountByOwner(0) != 0 || m_features.CountByOwner(0) != 0)
+        return {false, "Lua settings/features self-test leaked owner resources"};
 
     if (counter != 2 || Lua_Scheduler::TaskCount(*engine) != 0)
         return {false, "Lua coroutine scheduler did not resume and retire the self-test task"};
@@ -241,7 +291,7 @@ Lua_Manager_Self_Test_Result Lua_Manager::RunSelfTest()
 
     return {
         true,
-        "Sol2, scheduler, logger, events, and fingerprinting passed | " + fingerprint};
+        "Sol2, scheduler, logger, events, settings, features, and fingerprinting passed | " + fingerprint};
 }
 
 std::size_t Lua_Manager::ScheduledTaskCount()
@@ -293,6 +343,16 @@ Lua_Commands& Lua_Manager::Commands() noexcept
 Lua_Event_Manager& Lua_Manager::Events() noexcept
 {
     return m_events;
+}
+
+Lua_Setting_Manager& Lua_Manager::Settings() noexcept
+{
+    return m_settings;
+}
+
+Lua_Feature_Manager& Lua_Manager::Features() noexcept
+{
+    return m_features;
 }
 
 Lua_Fingerprint_Manager& Lua_Manager::Fingerprints() noexcept

@@ -14,8 +14,16 @@ Scripting/Lua/
       Lua_Logger_Binding.*
     Events/
       Lua_Events_Binding.*
+    Settings/
+      Lua_Settings_Binding.*
+    Features/
+      Lua_Features_Binding.*
   Events/
     Lua_Event_Manager.*
+  Settings/
+    Lua_Setting_Manager.*
+  Features/
+    Lua_Feature_Manager.*
   Fingerprint/
     Lua_Fingerprint.*
   Lua_Manager.*
@@ -33,19 +41,19 @@ Scripting/Lua/
   Lua_Bindings.*              # compatibility facade for the original core API
 ```
 
-`Lua_Binding_Context` is the shared dependency surface passed to every binding library. It currently exposes script-owned commands, the Lua event manager, the fingerprint manager, and an injected runtime logging callback. Future binding domains can receive controlled services through this context without expanding every binding-library method signature.
+`Lua_Binding_Context` is the shared dependency surface passed to every binding library. It currently exposes script-owned commands, events, settings, features, the fingerprint manager, and an injected runtime logging callback. Future binding domains can receive controlled services through this context without expanding every binding-library method signature.
 
 ## Thread ownership
 
 Production startup creates a dedicated `Lua` executor through the backend `ThreadManager`. The Lua service loop owns all Sol2 states, drains submitted jobs, dispatches events, and ticks script schedulers. The renderer only reads immutable `Lua_Runtime_Snapshot` data and never touches a live `sol::state`.
 
-Each `.lua` script receives a separate `Lua_Engine`. Script-owned commands and event subscriptions are removed before that engine is destroyed.
+Each `.lua` script receives a separate `Lua_Engine`. Script-owned commands, event subscriptions, settings, and feature entries are removed before that engine is destroyed.
 
 ## Fingerprints
 
 Lua fingerprints are deterministic 64-bit FNV-1a identifiers used for runtime compatibility, diagnostics, and script change detection. They are not cryptographic signatures or authentication tokens.
 
-The runtime fingerprint incorporates the Devilz Lua API version, precise Lua release, Sol2 version, and binding/scheduler compatibility versions. It remains stable across an identical restart and changes when one of those compatibility inputs changes.
+The runtime fingerprint incorporates the Devilz Lua API version, precise Lua release, Sol2 version, binding compatibility versions, and scheduler compatibility version. It remains stable across an identical restart and changes when one of those compatibility inputs changes.
 
 ```lua
 print(devilz.fingerprint)                  -- e.g. 0x0123456789ABCDEF
@@ -128,8 +136,56 @@ devilz.events.off(subscription)
 
 `tick` is the first built-in event. Additional controlled events can be added later for UI, player, entity, vehicle, network, and other runtime domains.
 
+## Settings binding
+
+Settings are typed and owner-scoped. Supported values are Lua booleans, integers, floating-point numbers, and strings. A setting's type is fixed when it is registered; `set` rejects values of a different type instead of coercing them.
+
+```lua
+assert(devilz.settings.register("enabled", false))
+assert(devilz.settings.register("attempts", 3))
+assert(devilz.settings.register("scale", 1.25))
+assert(devilz.settings.register("label", "example"))
+
+print(devilz.settings.type("attempts")) -- integer
+print(devilz.settings.get("scale"))
+
+devilz.settings.set("enabled", true)
+devilz.settings.reset("enabled")
+
+print(devilz.settings.exists("label"))
+print(devilz.settings.count())
+devilz.settings.unregister("label")
+```
+
+Scripts with different owner IDs may use the same setting names without sharing values. Unloading a script removes all settings owned by that script.
+
+## Features binding
+
+Features are controlled owner-scoped boolean toggles. The current registry is Lua-local infrastructure; it does not directly expose GTA memory, raw native state, or frontend internals. Future adapters can map approved Devilz features into this controlled layer.
+
+```lua
+assert(devilz.features.register("example_feature", false))
+
+if devilz.features.available("example_feature") then
+    devilz.features.set("example_feature", true)
+end
+
+print(devilz.features.enabled("example_feature"))
+
+local ok, enabled = devilz.features.toggle("example_feature")
+if ok then
+    print(enabled)
+end
+
+devilz.features.reset("example_feature")
+print(devilz.features.count())
+devilz.features.unregister("example_feature")
+```
+
+Feature names are isolated by script owner and all entries are removed automatically when their owner script unloads.
+
 ## Sandbox
 
 Lua states currently open the base, coroutine, math, string, table, and UTF-8 libraries. Lua-side `dofile` and `loadfile` are disabled. Filesystem, OS, debug, package loading, raw memory access, and unrestricted native access are not exposed.
 
-Future binding folders should follow the same domain layout, for example `Bindings/Settings`, `Bindings/UI`, `Bindings/Players`, `Bindings/Entities`, `Bindings/Vehicles`, `Bindings/Weapons`, `Bindings/World`, and `Bindings/Config`.
+Future binding folders should follow the same domain layout, for example `Bindings/UI`, `Bindings/Players`, `Bindings/Entities`, `Bindings/Vehicles`, `Bindings/Weapons`, `Bindings/World`, and `Bindings/Config`.

@@ -30,6 +30,8 @@ public:
         next.libraries = manager.Libraries().Count();
         next.commands = manager.Commands().Count();
         next.events = manager.Events().Count();
+        next.settings = manager.Settings().Count();
+        next.features = manager.Features().Count();
         next.scheduledTasks = manager.ScheduledTaskCount();
         next.status = std::string{manager.Status()};
 

@@ -1,10 +1,12 @@
 #include "Lua_Script_Manager.hpp"
 
 #include "Events/Lua_Event_Manager.hpp"
+#include "Features/Lua_Feature_Manager.hpp"
 #include "Fingerprint/Lua_Fingerprint.hpp"
 #include "Lua_Binding_Library_Manager.hpp"
 #include "Lua_Commands.hpp"
 #include "Lua_Engine_Manager.hpp"
+#include "Settings/Lua_Setting_Manager.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -40,7 +42,8 @@ std::size_t Lua_Script_Manager::DiscoverScripts(const std::filesystem::path& dir
 Lua_Script* Lua_Script_Manager::LoadScript(const std::filesystem::path& path)
 {
     if (!m_engines || !m_libraries || !m_bindingContext.commands ||
-        !m_bindingContext.events || !m_bindingContext.fingerprints) {
+        !m_bindingContext.events || !m_bindingContext.fingerprints ||
+        !m_bindingContext.settings || !m_bindingContext.features) {
         return nullptr;
     }
 
@@ -73,6 +76,10 @@ bool Lua_Script_Manager::UnloadScript(Lua_Script::Id id) noexcept
         return false;
 
     const auto engineId = (*it)->EngineId();
+    if (m_bindingContext.features)
+        m_bindingContext.features->RemoveByOwner(id);
+    if (m_bindingContext.settings)
+        m_bindingContext.settings->RemoveByOwner(id);
     if (m_bindingContext.events)
         m_bindingContext.events->RemoveByOwner(id);
     if (m_bindingContext.commands)

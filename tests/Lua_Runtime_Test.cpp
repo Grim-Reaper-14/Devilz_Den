@@ -103,14 +103,36 @@ Script_Fingerprint_Probe ProbeScript(
             probe.fingerprint = script->Fingerprint();
             probe.contentHash = script->ContentHash();
             probe.runtimeFingerprint = script->RuntimeFingerprint();
-            probe.succeeded =
+
+            const bool registriesPopulated =
+                manager.Settings().CountByOwner(scriptId) == 1 &&
+                manager.Features().CountByOwner(scriptId) == 1;
+
+            const bool fingerprintReady =
                 probe.fingerprint != 0 &&
                 probe.contentHash != 0 &&
                 probe.runtimeFingerprint == manager.Fingerprints().Runtime().value;
-            if (!probe.succeeded)
-                probe.message = "Lua script fingerprint fields were not populated consistently";
 
-            manager.Scripts().UnloadScript(scriptId);
+            if (!manager.Scripts().UnloadScript(scriptId)) {
+                probe.message = "Lua script manager could not unload the registry test script";
+                promise->set_value(std::move(probe));
+                return;
+            }
+
+            const bool registriesCleaned =
+                manager.Settings().CountByOwner(scriptId) == 0 &&
+                manager.Features().CountByOwner(scriptId) == 0;
+
+            probe.succeeded = fingerprintReady && registriesPopulated && registriesCleaned;
+            if (!probe.succeeded) {
+                if (!fingerprintReady)
+                    probe.message = "Lua script fingerprint fields were not populated consistently";
+                else if (!registriesPopulated)
+                    probe.message = "Lua script settings/features were not registered for the script owner";
+                else
+                    probe.message = "Lua script settings/features survived script unload";
+            }
+
             promise->set_value(std::move(probe));
         })) {
         return {false, "Lua runtime rejected the fingerprint test job"};
@@ -156,8 +178,8 @@ int main()
         return 1;
     }
 
-    if (snapshot.libraries < 3) {
-        std::cerr << "Lua runtime did not register core/logger/events binding libraries\n";
+    if (snapshot.libraries < 5) {
+        std::cerr << "Lua runtime did not register core/logger/events/settings/features binding libraries\n";
         return 1;
     }
 
@@ -184,7 +206,14 @@ int main()
         "assert(#devilz.script.fingerprint == 18)\n"
         "assert(type(devilz.script.content_hash) == 'string')\n"
         "assert(#devilz.script.content_hash == 18)\n"
-        "assert(devilz.script.runtime_fingerprint == devilz.fingerprint)\n";
+        "assert(devilz.script.runtime_fingerprint == devilz.fingerprint)\n"
+        "assert(devilz.settings.register('probe_integer', 41))\n"
+        "assert(devilz.settings.type('probe_integer') == 'integer')\n"
+        "assert(devilz.settings.set('probe_integer', 42))\n"
+        "assert(devilz.settings.get('probe_integer') == 42)\n"
+        "assert(devilz.features.register('probe_feature', false))\n"
+        "assert(devilz.features.set('probe_feature', true))\n"
+        "assert(devilz.features.enabled('probe_feature'))\n";
     const std::string contentB = contentA + "-- fingerprint content changed\n";
 
     if (!WriteScript(scriptA, contentA) || !WriteScript(scriptB, contentA)) {
@@ -195,7 +224,7 @@ int main()
     const auto first = ProbeScript(runtime, scriptA);
     const auto renamed = ProbeScript(runtime, scriptB);
     if (!first.succeeded || !renamed.succeeded) {
-        std::cerr << "Lua script fingerprint test failed: "
+        std::cerr << "Lua script fingerprint/registry test failed: "
                   << (!first.succeeded ? first.message : renamed.message) << '\n';
         return 1;
     }
@@ -212,7 +241,7 @@ int main()
 
     const auto changed = ProbeScript(runtime, scriptA);
     if (!changed.succeeded) {
-        std::cerr << "Changed Lua script fingerprint test failed: " << changed.message << '\n';
+        std::cerr << "Changed Lua script fingerprint/registry test failed: " << changed.message << '\n';
         return 1;
     }
 

@@ -9,7 +9,9 @@ namespace Devilz::Scripting::Lua
 {
 class Lua_Commands;
 class Lua_Event_Manager;
+class Lua_Feature_Manager;
 class Lua_Fingerprint_Manager;
+class Lua_Setting_Manager;
 
 using Lua_Log_Callback = std::function<void(
     Backend::LogLevel,
@@ -21,6 +23,8 @@ struct Lua_Binding_Context
     Lua_Commands* commands{};
     Lua_Event_Manager* events{};
     Lua_Fingerprint_Manager* fingerprints{};
+    Lua_Setting_Manager* settings{};
+    Lua_Feature_Manager* features{};
     Lua_Log_Callback logger;
 };
 }

@@ -63,6 +63,8 @@ bool Lua_Fingerprint_Manager::Initialize(
     HashString(hash, "binding.core.v1");
     HashString(hash, "binding.logger.v1");
     HashString(hash, "binding.events.v1");
+    HashString(hash, "binding.settings.v1");
+    HashString(hash, "binding.features.v1");
     HashString(hash, "scheduler.v1");
     next.value = hash;
 

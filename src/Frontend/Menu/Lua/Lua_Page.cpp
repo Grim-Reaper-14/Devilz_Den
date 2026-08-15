@@ -67,7 +67,9 @@ void DrawLuaPage()
             snapshot.commands,
             snapshot.events);
         ImGui::TextDisabled(
-            "Scheduled tasks: %zu | Pending Lua jobs: %zu",
+            "Settings: %zu | Features: %zu | Scheduled tasks: %zu | Pending Lua jobs: %zu",
+            snapshot.settings,
+            snapshot.features,
             snapshot.scheduledTasks,
             snapshot.pendingJobs);
     }
@@ -92,6 +94,6 @@ void DrawLuaPage()
     Themes::Menu_Theme_Manager::Instance().DrawDivider();
     ImGui::TextColored(palette.bronze, "BINDINGS");
     ImGui::TextWrapped(
-        "Bindings are split by domain. Core provides commands, runtime fingerprint metadata, and cooperative tasks; Logger routes script messages into the runtime logger; Events provides script-owned subscriptions such as devilz.events.TICK.");
+        "Bindings are split by domain. Core provides commands, fingerprint metadata, and cooperative tasks; Logger routes script messages into the runtime logger; Events provides owner-scoped callbacks; Settings provides typed script-owned values; Features provides controlled script-owned toggles.");
 }
 }

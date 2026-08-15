@@ -35,6 +35,8 @@ struct Lua_Runtime_Snapshot
     std::size_t libraries{};
     std::size_t commands{};
     std::size_t events{};
+    std::size_t settings{};
+    std::size_t features{};
     std::size_t scheduledTasks{};
     std::size_t pendingJobs{};
     std::string status{"Not started"};
