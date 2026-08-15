@@ -43,7 +43,10 @@ constexpr std::array<std::byte, GTA_Run_Script_Threads_Bridge::PatchSize> Verifi
     std::byte{0x5D}, std::byte{0xC6}, std::byte{0x00}
 };
 constexpr ULONGLONG FeatureTickIntervalMs = 16;
-constexpr ULONGLONG SlowExtensionTickIntervalMs = 50;
+constexpr ULONGLONG SelfCacheTickIntervalMs = 100;
+constexpr ULONGLONG OnlineExtensionTickIntervalMs = 100;
+constexpr ULONGLONG SlowExtensionTickIntervalMs = 250;
+constexpr ULONGLONG SnapshotExtensionTickIntervalMs = 500;
 constexpr ULONGLONG VehicleExtensionTickIntervalMs = 200;
 constexpr GTA_Native_Hash SetRunSprintMultiplierHash = 0xA52E1AE3848A506BULL;
 constexpr GTA_Native_Hash SetSwimMultiplierHash = 0x289497A4BA9049E0ULL;
@@ -180,7 +183,10 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_activeCalls.store(0);
     m_cachedScriptThread.store(nullptr);
     m_nextFeatureTickMs = 0;
+    m_nextSelfCacheTickMs = 0;
+    m_nextOnlineExtensionTickMs = 0;
     m_nextSlowExtensionTickMs = 0;
+    m_nextSnapshotExtensionTickMs = 0;
     m_nextVehicleExtensionTickMs = 0;
     m_fastRunApplied = false;
     m_fastSwimApplied = false;
@@ -259,7 +265,10 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     m_expectedThreadDispatchAddress = 0;
     m_cachedScriptThread.store(nullptr);
     m_nextFeatureTickMs = 0;
+    m_nextSelfCacheTickMs = 0;
+    m_nextOnlineExtensionTickMs = 0;
     m_nextSlowExtensionTickMs = 0;
+    m_nextSnapshotExtensionTickMs = 0;
     m_nextVehicleExtensionTickMs = 0;
     m_fastRunApplied = false;
     m_fastSwimApplied = false;
@@ -373,7 +382,10 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
 
     tls->currentScriptThread = scriptThread;
     tls->scriptThreadActive = true;
-    GTA_Self_Cache::Instance().Update(*m_natives);
+    if (now >= m_nextSelfCacheTickMs) {
+        m_nextSelfCacheTickMs = now + SelfCacheTickIntervalMs;
+        GTA_Self_Cache::Instance().Update(*m_natives);
+    }
     RunLegacyGameplayTick();
     tls->scriptThreadActive = previousActive;
     tls->currentScriptThread = previousThread;
@@ -396,13 +408,13 @@ void GTA_Run_Script_Threads_Bridge::TickFrameSensitiveMovement() noexcept
 
     const float runMultiplier = fastRun ? state.RunSpeed() : 1.0F;
     const float swimMultiplier = fastSwim ? state.SwimSpeed() : 1.0F;
-    (void)m_natives->InvokeHash<void>(SetRunSprintMultiplierHash, *player, runMultiplier);
-    (void)m_natives->InvokeHash<void>(SetSwimMultiplierHash, *player, swimMultiplier);
+    (void)m_natives->InvokeDirectHash<void>(SetRunSprintMultiplierHash, *player, runMultiplier);
+    (void)m_natives->InvokeDirectHash<void>(SetSwimMultiplierHash, *player, swimMultiplier);
 
     if (fastRun) {
         const auto ped = m_natives->Invoke<int>(GTA_Native_Id::PlayerPedId);
         if (ped && *ped != 0)
-            (void)m_natives->InvokeHash<void>(SetPedMoveRateOverrideHash, *ped, FastRunMoveRateOverride);
+            (void)m_natives->InvokeDirectHash<void>(SetPedMoveRateOverrideHash, *ped, FastRunMoveRateOverride);
     }
 
     m_fastRunApplied = fastRun;
@@ -417,14 +429,22 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick() noexcept
     TickVehiclePersonalSave(*m_natives);
 
     const auto now = ::GetTickCount64();
+    if (now >= m_nextOnlineExtensionTickMs) {
+        m_nextOnlineExtensionTickMs = now + OnlineExtensionTickIntervalMs;
+        TickSelfOnlineExtension(*m_natives);
+    }
+
     if (now >= m_nextSlowExtensionTickMs) {
         m_nextSlowExtensionTickMs = now + SlowExtensionTickIntervalMs;
         TickNetworkSessionExtension();
         TickRandomEventsExtension(*m_natives);
         TickBunkerExtension();
+    }
+
+    if (now >= m_nextSnapshotExtensionTickMs) {
+        m_nextSnapshotExtensionTickMs = now + SnapshotExtensionTickIntervalMs;
         TickBusinessExtension(*m_natives);
         TickCasinoExtension(*m_natives);
-        TickSelfOnlineExtension(*m_natives);
     }
 
     auto& gameplayState = GTA_Gameplay_State::Instance();

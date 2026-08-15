@@ -180,6 +180,16 @@ public:
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
     }
 
+    // Invoke a cached native handler without running InvokeHash()'s legacy
+    // extension-service side effects. Use this for frame-sensitive movement
+    // natives that are already driven by the game-thread bridge.
+    template <typename Ret, typename... Args>
+    [[nodiscard]] auto InvokeDirectHash(GTA_Native_Hash hash, Args&&... args) noexcept
+        -> typename GTA_Native_Invoke_Result<Ret>::Type
+    {
+        return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
+    }
+
     template <typename Ret, typename... Args>
     [[nodiscard]] auto InvokeOptionalHash(GTA_Native_Hash hash, Args&&... args) noexcept
         -> typename GTA_Native_Invoke_Result<Ret>::Type
