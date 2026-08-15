@@ -9,6 +9,7 @@
 #include "GTA_Random_Events_Extension.hpp"
 #include "GTA_Self_Online_Extension.hpp"
 #include "GTA_Self_Utility_Extension.hpp"
+#include "GTA_Stats_Extension.hpp"
 #include "GTA_Vehicle_Editor_Extensions.hpp"
 #include "GTA_Vehicle_Personal_Save.hpp"
 #include "State/GTA_Self_Cache.hpp"
@@ -52,6 +53,7 @@ constexpr ULONGLONG SlowExtensionSliceIntervalMs = 167;
 constexpr ULONGLONG SnapshotExtensionSliceIntervalMs = 503;
 constexpr ULONGLONG VehicleExtensionTickIntervalMs = 500;
 constexpr ULONGLONG ForgeSnapshotTickIntervalMs = 1000;
+constexpr std::size_t RegularStatDrainBudget = 4;
 constexpr GTA_Native_Hash SetRunSprintMultiplierHash = 0xA52E1AE3848A506BULL;
 constexpr GTA_Native_Hash SetSwimMultiplierHash = 0x289497A4BA9049E0ULL;
 constexpr GTA_Native_Hash SetPedMoveRateOverrideHash = 0xB27B08E34AC92345ULL;
@@ -205,6 +207,7 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     GTA_Gameplay_State::Instance().Reset();
     GTA_Self_Cache::Instance().Reset();
     ResetSelfUtilityExtension();
+    ResetStatsExtension();
     ConfigureBunkerExtension(scriptThreadsStorageAddress, natives.Fingerprint());
 
     s_active = this;
@@ -212,6 +215,7 @@ bool GTA_Run_Script_Threads_Bridge::Install(
         s_active = nullptr;
         GTA_Self_Cache::Instance().Reset();
         ResetSelfUtilityExtension();
+        ResetStatsExtension();
         ResetBunkerExtension();
         m_gameplay.Reset();
         ConfigureVehicleEditorLogging(nullptr);
@@ -260,6 +264,7 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
 
     GTA_Self_Cache::Instance().Reset();
     ResetSelfUtilityExtension();
+    ResetStatsExtension();
     ResetBunkerExtension();
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
@@ -483,6 +488,7 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
             gameplayState.SetExplosiveBullets(false);
         m_gameplay.Tick();
         m_gameplay.TickSlow();
+        (void)TickStatsExtension(*m_natives, RegularStatDrainBudget);
         if (explosiveAmmo)
             gameplayState.SetExplosiveBullets(true);
         return;

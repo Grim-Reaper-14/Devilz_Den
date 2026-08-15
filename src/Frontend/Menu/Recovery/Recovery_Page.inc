@@ -3,6 +3,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Collection_Unlocks.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Halloween_Unlocks.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Packed_Stats_State.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Stats_Extension.hpp"
 
 #include <imgui.h>
 
@@ -37,6 +38,10 @@ using Integrations::GTA5_Enhanced::GTA_Halloween_Jack_O_Lantern_Count;
 using Integrations::GTA5_Enhanced::GTA_Halloween_Unlock_Source;
 using Integrations::GTA5_Enhanced::GTA_Halloween_Verified_Unique_Count;
 using Integrations::GTA5_Enhanced::GTA_Packed_Stats_State;
+using Integrations::GTA5_Enhanced::GTA_Stat_Request_Status;
+using Integrations::GTA5_Enhanced::GTA_Stat_Snapshot;
+using Integrations::GTA5_Enhanced::GTA_Stats_State;
+using Integrations::GTA5_Enhanced::GTAStatRequestStatusName;
 
 struct UnlockBatchUiState
 {
@@ -44,9 +49,20 @@ struct UnlockBatchUiState
     std::string label;
 };
 
+struct CharacterUnlockUiState
+{
+    std::uint64_t requestId = 0;
+};
+
 UnlockBatchUiState& UnlockState()
 {
     static UnlockBatchUiState state;
+    return state;
+}
+
+CharacterUnlockUiState& CharacterUnlockState()
+{
+    static CharacterUnlockUiState state;
     return state;
 }
 
@@ -67,6 +83,12 @@ void DrawDisabledRow(const char* label, const char* description)
     ImGui::TextDisabled("%s", description);
     ImGui::Unindent();
     ImGui::Spacing();
+}
+
+[[nodiscard]] bool StatRequestFinished(GTA_Stat_Request_Status status) noexcept
+{
+    return status != GTA_Stat_Request_Status::Idle &&
+        status != GTA_Stat_Request_Status::Queued;
 }
 
 void QueuePackedBoolUnlocks(
@@ -120,6 +142,60 @@ void DrawUnlockBatchStatus()
                 ImVec4{0.92F, 0.32F, 0.28F, 1.0F},
                 "[PARTIAL] %zu packed BOOL writes failed.",
                 batch.failed);
+        }
+    }
+}
+
+void DrawCharacterUnlocks()
+{
+    auto& stats = GTA_Stats_State::Instance();
+    auto& state = CharacterUnlockState();
+    const auto metrics = stats.QueueSnapshot();
+    GTA_Stat_Snapshot result{};
+    if (state.requestId != 0) {
+        const auto snapshot = stats.Snapshot(state.requestId);
+        if (snapshot)
+            result = *snapshot;
+    }
+    const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
+    const bool busy = state.requestId != 0 &&
+        result.requestId == state.requestId &&
+        !StatRequestFinished(result.status);
+    const bool queueFull = metrics.pending + metrics.inFlight >= metrics.capacity;
+
+    ImGui::TextColored(palette.bronze, "CHARACTER UNLOCKS");
+    ImGui::TextWrapped(
+        "Allow Gender Change writes MPX_ALLOW_GENDER_CHANGE through the verified regular-stat queue. "
+        "The value 52 matches YimMenuV2 Enhanced; Reset writes the default locked value 0.");
+    ImGui::Spacing();
+
+    ImGui::BeginDisabled(busy || queueFull);
+    if (ImGui::Button("ALLOW GENDER CHANGE", ImVec2{210.0F, 36.0F}))
+        state.requestId = stats.RequestWrite("MPX_ALLOW_GENDER_CHANGE", "52");
+    ImGui::SameLine();
+    if (ImGui::Button("RESET GENDER CHANGE", ImVec2{205.0F, 36.0F}))
+        state.requestId = stats.RequestWrite("MPX_ALLOW_GENDER_CHANGE", "0");
+    ImGui::EndDisabled();
+
+    ImGui::TextDisabled(
+        "Regular stat queue: %zu pending + %zu active / %zu capacity | %llu completed | %llu failed",
+        metrics.pending,
+        metrics.inFlight,
+        metrics.capacity,
+        static_cast<unsigned long long>(metrics.completed),
+        static_cast<unsigned long long>(metrics.failed));
+
+    if (state.requestId != 0 && result.requestId == state.requestId) {
+        ImVec4 color = palette.bronze;
+        if (result.status == GTA_Stat_Request_Status::Succeeded)
+            color = ImVec4{0.42F, 0.78F, 0.42F, 1.0F};
+        else if (StatRequestFinished(result.status))
+            color = ImVec4{0.92F, 0.32F, 0.28F, 1.0F};
+
+        ImGui::TextColored(color, "[%s]", GTAStatRequestStatusName(result.status));
+        if (!result.detail.empty()) {
+            ImGui::SameLine();
+            ImGui::TextWrapped("%s", result.detail.c_str());
         }
     }
 }
@@ -449,7 +525,7 @@ void DrawRecoveryPage()
 
     ImGui::TextWrapped(
         "Recovery owns curated progression and unlock presets. Writes are queued onto the GTA "
-        "game thread through the Enhanced packed-stat runtime.");
+        "game thread through the Enhanced packed-stat and regular-stat runtimes.");
     ImGui::Spacing();
 
     if (ImGui::BeginTabBar("##RecoveryPageTabs")) {
@@ -462,6 +538,8 @@ void DrawRecoveryPage()
         }
 
         if (ImGui::BeginTabItem("UNLOCKS")) {
+            DrawCharacterUnlocks();
+            DrawDivider();
             DrawHalloweenUnlocks();
             DrawDivider();
             DrawClothingUnlocks();

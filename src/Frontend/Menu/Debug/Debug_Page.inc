@@ -167,6 +167,7 @@ void DrawRegularEditor(
 {
     auto& stats = GTA_Stats_State::Instance();
     auto& editor = RegularState();
+    const auto metrics = stats.QueueSnapshot();
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
 
     SynchronizeRegularValue(editor, snapshot);
@@ -183,10 +184,11 @@ void DrawRegularEditor(
     const bool queued = snapshot.status == GTA_Stat_Request_Status::Queued;
     const bool hasName = editor.name[0] != '\0';
     const bool sameRequest = snapshot.requestedName == editor.name.data();
+    const bool queueFull = metrics.pending + metrics.inFlight >= metrics.capacity;
 
-    ImGui::BeginDisabled(!hasName || queued || clipboardImportActive);
+    ImGui::BeginDisabled(!hasName || queued || clipboardImportActive || queueFull);
     if (ImGui::Button("READ / REFRESH", ImVec2{160.0F, 34.0F}))
-        stats.RequestRead(editor.name.data());
+        (void)stats.RequestRead(editor.name.data());
     ImGui::EndDisabled();
 
     if (snapshot.typeKnown && sameRequest) {
@@ -207,16 +209,18 @@ void DrawRegularEditor(
 
     const bool canWrite = sameRequest && snapshot.typeKnown &&
         snapshot.writeSupported && !snapshot.controlledByNetShop &&
-        !queued && !clipboardImportActive;
+        !queued && !clipboardImportActive && !queueFull;
     ImGui::BeginDisabled(!canWrite);
     if (ImGui::Button("WRITE + VERIFY", ImVec2{160.0F, 34.0F}))
-        stats.RequestWrite(editor.name.data(), editor.value.data());
+        (void)stats.RequestWrite(editor.name.data(), editor.value.data());
     ImGui::EndDisabled();
 
     if (!sameRequest && hasName)
         ImGui::TextDisabled("Read this stat before writing it.");
     if (clipboardImportActive)
         ImGui::TextDisabled("Regular controls are paused while a clipboard batch is running.");
+    if (queueFull)
+        ImGui::TextDisabled("Regular stat queue is full; clear pending work or let the game thread drain it.");
 
     if (snapshot.serverAuthoritative && sameRequest) {
         ImGui::TextColored(
@@ -464,28 +468,27 @@ void DrawPackedRangeEditor()
 
 void AdvanceClipboardImport(
     ClipboardImportState& importer,
-    GTA_Stats_State& stats,
-    const GTA_Stat_Snapshot& snapshot)
+    GTA_Stats_State& stats)
 {
     if (!importer.active)
         return;
 
     if (importer.activeRequestId != 0) {
-        if (snapshot.requestId != importer.activeRequestId) {
+        const auto snapshot = stats.Snapshot(importer.activeRequestId);
+        if (!snapshot) {
             ++importer.failed;
             importer.pending.clear();
             importer.activeRequestId = 0;
             importer.activeName.clear();
             importer.active = false;
             importer.total = importer.completed + importer.failed;
-            importer.detail = "Clipboard import stopped because the stat runtime was reset or replaced.";
+            importer.detail = "Clipboard import stopped because the stat runtime was reset.";
             return;
         }
-        if (!IsFinished(snapshot.status)) {
+        if (!IsFinished(snapshot->status))
             return;
-        }
 
-        if (snapshot.status == GTA_Stat_Request_Status::Succeeded)
+        if (snapshot->status == GTA_Stat_Request_Status::Succeeded)
             ++importer.completed;
         else
             ++importer.failed;
@@ -504,15 +507,15 @@ void AdvanceClipboardImport(
     auto operation = std::move(importer.pending.front());
     importer.pending.pop_front();
     importer.activeName = operation.name;
-    stats.RequestWrite(std::move(operation.name), std::move(operation.value));
-    importer.activeRequestId = stats.Snapshot().requestId;
+    importer.activeRequestId = stats.RequestWrite(
+        std::move(operation.name),
+        std::move(operation.value));
 }
 
-void DrawClipboardImporter(
-    ClipboardImportState& importer,
-    const GTA_Stat_Snapshot& snapshot)
+void DrawClipboardImporter(ClipboardImportState& importer)
 {
     auto& stats = GTA_Stats_State::Instance();
+    const auto metrics = stats.QueueSnapshot();
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
 
     ImGui::TextColored(palette.bronze, "LOAD NAME=VALUE PAIRS");
@@ -521,8 +524,8 @@ void DrawClipboardImporter(
         "with //, #, or ; are ignored. MPX_ normalization is applied to every entry.");
     ImGui::Spacing();
 
-    const bool statBusy = snapshot.status == GTA_Stat_Request_Status::Queued;
-    ImGui::BeginDisabled(importer.active || statBusy);
+    const bool queueFull = metrics.pending + metrics.inFlight >= metrics.capacity;
+    ImGui::BeginDisabled(importer.active || queueFull);
     if (ImGui::Button("LOAD FROM CLIPBOARD", ImVec2{210.0F, 34.0F})) {
         importer = {};
         const char* clipboard = ImGui::GetClipboardText();
@@ -536,7 +539,7 @@ void DrawClipboardImporter(
             } else {
                 importer.active = true;
                 importer.detail = "Clipboard import started.";
-                AdvanceClipboardImport(importer, stats, stats.Snapshot());
+                AdvanceClipboardImport(importer, stats);
             }
         }
     }
@@ -572,7 +575,76 @@ void DrawClipboardImporter(
 
     DrawDivider();
     ImGui::TextDisabled(
-        "Imports are intentionally serialized so every write runs on the game thread and receives native readback verification.");
+        "Imports are serialized by request ID, so unrelated regular-stat requests cannot replace or confuse the active import result.");
+}
+
+void DrawQueueMonitor()
+{
+    auto& stats = GTA_Stats_State::Instance();
+    const auto metrics = stats.QueueSnapshot();
+    const auto history = stats.RecentHistory(32);
+    const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
+
+    ImGui::TextColored(palette.bronze, "REGULAR STAT QUEUE");
+    ImGui::TextWrapped(
+        "FIFO transport for regular stat reads and writes. Up to %zu commands can wait or execute at once; "
+        "the game-thread bridge drains a bounded number every gameplay tick.",
+        metrics.capacity);
+    ImGui::Spacing();
+
+    ImGui::Text("Pending: %zu", metrics.pending);
+    ImGui::SameLine();
+    ImGui::TextDisabled("| In flight: %zu | Capacity: %zu", metrics.inFlight, metrics.capacity);
+    ImGui::TextDisabled(
+        "Completed %llu | Success %llu | Failed %llu | Cancelled %llu | Rejected %llu",
+        static_cast<unsigned long long>(metrics.completed),
+        static_cast<unsigned long long>(metrics.succeeded),
+        static_cast<unsigned long long>(metrics.failed),
+        static_cast<unsigned long long>(metrics.cancelled),
+        static_cast<unsigned long long>(metrics.rejected));
+
+    ImGui::BeginDisabled(metrics.pending == 0);
+    if (ImGui::Button("CLEAR PENDING", ImVec2{170.0F, 34.0F}))
+        (void)stats.ClearPending();
+    ImGui::EndDisabled();
+
+    DrawDivider();
+    ImGui::TextColored(palette.bronze, "RECENT COMPLETIONS");
+    if (history.empty()) {
+        ImGui::TextDisabled("No completed regular-stat requests have run this session.");
+        return;
+    }
+
+    constexpr auto flags =
+        ImGuiTableFlags_BordersInnerH |
+        ImGuiTableFlags_RowBg |
+        ImGuiTableFlags_ScrollY |
+        ImGuiTableFlags_SizingStretchProp;
+    if (ImGui::BeginTable("##RegularStatQueueHistory", 4, flags, ImVec2{0.0F, 360.0F})) {
+        ImGui::TableSetupScrollFreeze(0, 1);
+        ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 80.0F);
+        ImGui::TableSetupColumn("STAT", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("STATUS", ImGuiTableColumnFlags_WidthFixed, 115.0F);
+        ImGui::TableSetupColumn("VALUE", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+
+        for (const auto& request : history) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("%llu", static_cast<unsigned long long>(request.requestId));
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextUnformatted(request.requestedName.c_str());
+            ImGui::TableSetColumnIndex(2);
+            ImGui::TextColored(StatusColor(request.status), "%s", GTAStatRequestStatusName(request.status));
+            ImGui::TableSetColumnIndex(3);
+            if (!request.value.empty())
+                ImGui::TextUnformatted(request.value.c_str());
+            else
+                ImGui::TextDisabled("-");
+        }
+
+        ImGui::EndTable();
+    }
 }
 }
 
@@ -580,9 +652,8 @@ void DrawDebugPage()
 {
     auto& stats = GTA_Stats_State::Instance();
     auto& importer = ClipboardState();
-    auto snapshot = stats.Snapshot();
-    AdvanceClipboardImport(importer, stats, snapshot);
-    snapshot = stats.Snapshot();
+    AdvanceClipboardImport(importer, stats);
+    const auto snapshot = stats.Snapshot();
 
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
     ImGui::TextColored(palette.emberRed, "DEBUG");
@@ -613,7 +684,12 @@ void DrawDebugPage()
         }
 
         if (ImGui::BeginTabItem("CLIPBOARD")) {
-            DrawClipboardImporter(importer, snapshot);
+            DrawClipboardImporter(importer);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("QUEUE")) {
+            DrawQueueMonitor();
             ImGui::EndTabItem();
         }
 

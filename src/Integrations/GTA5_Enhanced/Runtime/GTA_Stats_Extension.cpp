@@ -379,36 +379,228 @@ struct NativeStatRead
 }
 }
 
-GTA_Stats_State& GTA_Stats_State::Instance() noexcept { static GTA_Stats_State state; return state; }
+GTA_Stats_State& GTA_Stats_State::Instance() noexcept
+{
+    static GTA_Stats_State state;
+    return state;
+}
 
-void GTA_Stats_State::RequestRead(std::string statName)
+std::uint64_t GTA_Stats_State::RequestRead(std::string statName)
+{
+    return Queue(Command_Kind::Read, std::move(statName), {});
+}
+
+std::uint64_t GTA_Stats_State::RequestWrite(std::string statName, std::string value)
+{
+    return Queue(Command_Kind::Write, std::move(statName), std::move(value));
+}
+
+std::uint64_t GTA_Stats_State::Queue(
+    Command_Kind kind,
+    std::string statName,
+    std::string value)
 {
     std::scoped_lock lock(m_mutex);
     const auto id = m_nextRequestId++;
-    m_pending = Command{id, Command_Kind::Read, std::move(statName), {}};
-    m_snapshot.requestId = id;
-    m_snapshot.status = GTA_Stat_Request_Status::Queued;
-    m_snapshot.requestedName = m_pending->statName;
-    m_snapshot.detail = "Read queued for the GTA game thread";
-    ++m_snapshot.revision;
+
+    if (m_pending.size() + (m_inFlight.has_value() ? 1U : 0U) >= MaxQueuedCommands) {
+        GTA_Stat_Snapshot rejected{};
+        rejected.revision = ++m_revision;
+        rejected.requestId = id;
+        rejected.status = GTA_Stat_Request_Status::QueueFull;
+        rejected.requestedName = std::move(statName);
+        rejected.detail = "Regular stat queue is full";
+        ++m_completed;
+        ++m_failed;
+        ++m_rejected;
+        m_snapshot = rejected;
+        PushHistoryLocked(std::move(rejected));
+        return id;
+    }
+
+    Command command{id, kind, std::move(statName), std::move(value)};
+    m_pending.push_back(command);
+    m_snapshot = QueuedSnapshotLocked(command);
+    m_snapshot.revision = ++m_revision;
+    return id;
 }
 
-void GTA_Stats_State::RequestWrite(std::string statName, std::string value)
+GTA_Stat_Snapshot GTA_Stats_State::QueuedSnapshotLocked(const Command& command) const
+{
+    GTA_Stat_Snapshot snapshot{};
+    snapshot.requestId = command.id;
+    snapshot.status = GTA_Stat_Request_Status::Queued;
+    snapshot.requestedName = command.statName;
+    snapshot.detail = command.kind == Command_Kind::Read
+        ? "Read queued for the GTA game thread"
+        : "Write queued for the GTA game thread";
+    return snapshot;
+}
+
+GTA_Stat_Snapshot GTA_Stats_State::Snapshot() const
 {
     std::scoped_lock lock(m_mutex);
-    const auto id = m_nextRequestId++;
-    m_pending = Command{id, Command_Kind::Write, std::move(statName), std::move(value)};
-    m_snapshot.requestId = id;
-    m_snapshot.status = GTA_Stat_Request_Status::Queued;
-    m_snapshot.requestedName = m_pending->statName;
-    m_snapshot.detail = "Write queued for the GTA game thread";
-    ++m_snapshot.revision;
+    return m_snapshot;
 }
 
-GTA_Stat_Snapshot GTA_Stats_State::Snapshot() const { std::scoped_lock lock(m_mutex); return m_snapshot; }
-void GTA_Stats_State::Reset() { std::scoped_lock lock(m_mutex); m_pending.reset(); m_snapshot = {}; m_nextRequestId = 1; }
-bool GTA_Stats_State::Consume(Command& command) { std::scoped_lock lock(m_mutex); if (!m_pending) return false; command = std::move(*m_pending); m_pending.reset(); return true; }
-void GTA_Stats_State::Publish(GTA_Stat_Snapshot snapshot) { std::scoped_lock lock(m_mutex); if (snapshot.requestId < m_snapshot.requestId) return; snapshot.revision = m_snapshot.revision + 1; m_snapshot = std::move(snapshot); }
+std::optional<GTA_Stat_Snapshot> GTA_Stats_State::Snapshot(std::uint64_t requestId) const
+{
+    if (requestId == 0)
+        return std::nullopt;
+
+    std::scoped_lock lock(m_mutex);
+    if (m_inFlight && m_inFlight->id == requestId) {
+        auto snapshot = QueuedSnapshotLocked(*m_inFlight);
+        snapshot.revision = m_revision;
+        snapshot.detail = "Stat request is executing on the GTA game thread";
+        return snapshot;
+    }
+
+    for (const auto& command : m_pending) {
+        if (command.id == requestId) {
+            auto snapshot = QueuedSnapshotLocked(command);
+            snapshot.revision = m_revision;
+            return snapshot;
+        }
+    }
+
+    for (auto it = m_history.rbegin(); it != m_history.rend(); ++it) {
+        if (it->requestId == requestId)
+            return *it;
+    }
+
+    if (m_snapshot.requestId == requestId)
+        return m_snapshot;
+    return std::nullopt;
+}
+
+GTA_Stats_Queue_Snapshot GTA_Stats_State::QueueSnapshot() const
+{
+    std::scoped_lock lock(m_mutex);
+    GTA_Stats_Queue_Snapshot snapshot{};
+    snapshot.revision = m_revision;
+    snapshot.pending = m_pending.size();
+    snapshot.inFlight = m_inFlight.has_value() ? 1U : 0U;
+    snapshot.capacity = MaxQueuedCommands;
+    snapshot.completed = m_completed;
+    snapshot.succeeded = m_succeeded;
+    snapshot.failed = m_failed;
+    snapshot.cancelled = m_cancelled;
+    snapshot.rejected = m_rejected;
+    return snapshot;
+}
+
+std::vector<GTA_Stat_Snapshot> GTA_Stats_State::RecentHistory(std::size_t maxCount) const
+{
+    std::scoped_lock lock(m_mutex);
+    maxCount = (std::min)(maxCount, m_history.size());
+    std::vector<GTA_Stat_Snapshot> history;
+    history.reserve(maxCount);
+    for (auto it = m_history.rbegin(); it != m_history.rend() && history.size() < maxCount; ++it)
+        history.push_back(*it);
+    return history;
+}
+
+bool GTA_Stats_State::CancelPending(std::uint64_t requestId)
+{
+    std::scoped_lock lock(m_mutex);
+    const auto it = std::find_if(
+        m_pending.begin(),
+        m_pending.end(),
+        [requestId](const Command& command) { return command.id == requestId; });
+    if (it == m_pending.end())
+        return false;
+
+    GTA_Stat_Snapshot cancelled{};
+    cancelled.revision = ++m_revision;
+    cancelled.requestId = it->id;
+    cancelled.status = GTA_Stat_Request_Status::Cancelled;
+    cancelled.requestedName = it->statName;
+    cancelled.detail = "Stat request cancelled before game-thread execution";
+    m_pending.erase(it);
+    ++m_completed;
+    ++m_cancelled;
+    if (m_snapshot.requestId == requestId)
+        m_snapshot = cancelled;
+    PushHistoryLocked(std::move(cancelled));
+    return true;
+}
+
+std::size_t GTA_Stats_State::ClearPending()
+{
+    std::scoped_lock lock(m_mutex);
+    const std::size_t count = m_pending.size();
+    for (const auto& command : m_pending) {
+        GTA_Stat_Snapshot cancelled{};
+        cancelled.revision = ++m_revision;
+        cancelled.requestId = command.id;
+        cancelled.status = GTA_Stat_Request_Status::Cancelled;
+        cancelled.requestedName = command.statName;
+        cancelled.detail = "Stat request cleared before game-thread execution";
+        ++m_completed;
+        ++m_cancelled;
+        if (m_snapshot.requestId == command.id)
+            m_snapshot = cancelled;
+        PushHistoryLocked(std::move(cancelled));
+    }
+    m_pending.clear();
+    return count;
+}
+
+void GTA_Stats_State::Reset()
+{
+    std::scoped_lock lock(m_mutex);
+    m_pending.clear();
+    m_inFlight.reset();
+    m_history.clear();
+    m_snapshot = {};
+    m_nextRequestId = 1;
+    m_revision = 0;
+    m_completed = 0;
+    m_succeeded = 0;
+    m_failed = 0;
+    m_cancelled = 0;
+    m_rejected = 0;
+}
+
+bool GTA_Stats_State::Consume(Command& command)
+{
+    std::scoped_lock lock(m_mutex);
+    if (m_inFlight || m_pending.empty())
+        return false;
+    m_inFlight = std::move(m_pending.front());
+    m_pending.pop_front();
+    command = *m_inFlight;
+    ++m_revision;
+    return true;
+}
+
+void GTA_Stats_State::PushHistoryLocked(GTA_Stat_Snapshot snapshot)
+{
+    m_history.push_back(std::move(snapshot));
+    while (m_history.size() > MaxHistoryEntries)
+        m_history.pop_front();
+}
+
+void GTA_Stats_State::Publish(GTA_Stat_Snapshot snapshot)
+{
+    std::scoped_lock lock(m_mutex);
+    if (m_inFlight && m_inFlight->id == snapshot.requestId)
+        m_inFlight.reset();
+
+    snapshot.revision = ++m_revision;
+    ++m_completed;
+    if (snapshot.status == GTA_Stat_Request_Status::Succeeded)
+        ++m_succeeded;
+    else if (snapshot.status == GTA_Stat_Request_Status::Cancelled)
+        ++m_cancelled;
+    else
+        ++m_failed;
+
+    if (snapshot.requestId >= m_snapshot.requestId)
+        m_snapshot = snapshot;
+    PushHistoryLocked(std::move(snapshot));
+}
 
 const char* GTAStatTypeName(GTA_Stat_Data::Type type) noexcept
 {
@@ -439,31 +631,48 @@ const char* GTAStatRequestStatusName(GTA_Stat_Request_Status status) noexcept
     case GTA_Stat_Request_Status::UnsupportedType: return "Unsupported type";
     case GTA_Stat_Request_Status::ControlledByNetShop: return "Netshop controlled";
     case GTA_Stat_Request_Status::InvalidValue: return "Invalid value";
+    case GTA_Stat_Request_Status::QueueFull: return "Queue full";
+    case GTA_Stat_Request_Status::Cancelled: return "Cancelled";
     case GTA_Stat_Request_Status::Failed: return "Failed";
     default: return "Unknown";
     }
 }
 
-void TickStatsExtension(GTA_Native_Manager& natives) noexcept
+std::size_t TickStatsExtension(GTA_Native_Manager& natives, std::size_t budget) noexcept
 {
-    GTA_Stats_State::Command command{};
+    if (budget == 0)
+        return 0;
+
     auto& state = GTA_Stats_State::Instance();
-    if (!state.Consume(command)) return;
-    try { state.Publish(Execute(natives, command)); }
-    catch (...) {
+    std::size_t processed = 0;
+    while (processed < budget) {
+        GTA_Stats_State::Command command{};
+        if (!state.Consume(command))
+            break;
+
         try {
-            GTA_Stat_Snapshot result{};
-            result.requestId = command.id;
-            result.requestedName = command.statName;
-            result.status = GTA_Stat_Request_Status::Failed;
-            result.detail = "Stat operation failed on the GTA game thread";
-            state.Publish(std::move(result));
-        } catch (...) {}
+            state.Publish(Execute(natives, command));
+        } catch (...) {
+            try {
+                GTA_Stat_Snapshot result{};
+                result.requestId = command.id;
+                result.requestedName = command.statName;
+                result.status = GTA_Stat_Request_Status::Failed;
+                result.detail = "Stat operation failed on the GTA game thread";
+                state.Publish(std::move(result));
+            } catch (...) {
+            }
+        }
+        ++processed;
     }
+    return processed;
 }
 
 void ResetStatsExtension() noexcept
 {
-    try { GTA_Stats_State::Instance().Reset(); } catch (...) {}
+    try {
+        GTA_Stats_State::Instance().Reset();
+    } catch (...) {
+    }
 }
 }
