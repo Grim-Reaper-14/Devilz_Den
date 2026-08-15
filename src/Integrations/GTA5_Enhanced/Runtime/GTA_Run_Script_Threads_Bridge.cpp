@@ -374,13 +374,20 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
 
     const ULONGLONG now = ::GetTickCount64();
     auto& gameplayState = GTA_Gameplay_State::Instance();
+    const auto personalSaveStatus = VehiclePersonalSaveStatus();
+    const bool personalSaveActive =
+        personalSaveStatus == GTA_Vehicle_Personal_Save_Status::Queued ||
+        personalSaveStatus == GTA_Vehicle_Personal_Save_Status::Validating ||
+        personalSaveStatus == GTA_Vehicle_Personal_Save_Status::OpeningGarageMenu ||
+        personalSaveStatus == GTA_Vehicle_Personal_Save_Status::WaitingForGarageSelection;
     const bool frameFeatureActive =
         gameplayState.SuperJump() ||
         gameplayState.FastRun() ||
         gameplayState.FastSwim() ||
         gameplayState.ExplosiveBullets() ||
         m_fastRunApplied ||
-        m_fastSwimApplied;
+        m_fastSwimApplied ||
+        personalSaveActive;
     const bool frameDue = frameFeatureActive && now >= m_nextFeatureTickMs;
     const bool scheduledWorkReady =
         now >= m_nextGameplayTickMs ||
@@ -389,8 +396,7 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
         now >= m_nextOnlineExtensionTickMs ||
         now >= m_nextSlowExtensionTickMs ||
         now >= m_nextSnapshotExtensionTickMs ||
-        now >= m_nextVehicleExtensionTickMs ||
-        now >= m_nextForgeSnapshotTickMs;
+        now >= m_nextVehicleExtensionTickMs;
     const bool scheduledDue =
         scheduledWorkReady && now >= m_nextScheduledDispatchMs;
     if (!frameDue && !scheduledDue)
@@ -416,6 +422,8 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
     tls->scriptThreadActive = true;
     if (frameDue) {
         m_nextFeatureTickMs = now + FeatureTickIntervalMs;
+        if (personalSaveActive)
+            TickVehiclePersonalSave(*m_natives);
         m_gameplay.TickFrameSensitive();
         if (gameplayState.ExplosiveBullets())
             TickExplosiveAmmoExtension(*m_natives, scriptThread);
@@ -469,12 +477,12 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
 
     if (now >= m_nextGameplayTickMs) {
         m_nextGameplayTickMs = now + GameplayTickIntervalMs;
-        TickVehiclePersonalSave(*m_natives);
         auto& gameplayState = GTA_Gameplay_State::Instance();
         const bool explosiveAmmo = gameplayState.ExplosiveBullets();
         if (explosiveAmmo)
             gameplayState.SetExplosiveBullets(false);
         m_gameplay.Tick();
+        m_gameplay.TickSlow();
         if (explosiveAmmo)
             gameplayState.SetExplosiveBullets(true);
         return;
@@ -530,11 +538,6 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
             TickCasinoExtension(*m_natives);
         m_snapshotExtensionCursor ^= 1U;
         return;
-    }
-
-    if (now >= m_nextForgeSnapshotTickMs) {
-        m_nextForgeSnapshotTickMs = now + ForgeSnapshotTickIntervalMs;
-        m_gameplay.TickSlow();
     }
 }
 

@@ -3,6 +3,7 @@
 #include "Backend/Logging/LoggerService.hpp"
 #include "Frontend/Menu/Devils_Den_Theme.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Gameplay_State.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Personal_Save.hpp"
 
 #include <backends/imgui_impl_dx12.h>
 #include <backends/imgui_impl_win32.h>
@@ -298,6 +299,21 @@ void D3D12_Renderer::OnPresent() noexcept
         m_resizing.load(std::memory_order_acquire) ||
         !ImGui::GetCurrentContext()) {
         return;
+    }
+
+    const auto saveStatus = Integrations::GTA5_Enhanced::VehiclePersonalSaveStatus();
+    const bool gtaGarageOwnsInput =
+        saveStatus == Integrations::GTA5_Enhanced::GTA_Vehicle_Personal_Save_Status::OpeningGarageMenu ||
+        saveStatus == Integrations::GTA5_Enhanced::GTA_Vehicle_Personal_Save_Status::WaitingForGarageSelection;
+    if (gtaGarageOwnsInput && m_menuOpen.exchange(false)) {
+        Integrations::GTA5_Enhanced::GTA_Gameplay_State::Instance().SetMenuInputCaptured(false);
+        ImGui::GetIO().MouseDrawCursor = false;
+        if (m_logger) {
+            m_logger->Log(
+                Backend::LogLevel::Info,
+                "Devils Den menu closed so GTA garage selection owns input",
+                "GTA5_Enhanced.Frontend");
+        }
     }
 
     const auto index = m_targets.swapChain->GetCurrentBackBufferIndex();
