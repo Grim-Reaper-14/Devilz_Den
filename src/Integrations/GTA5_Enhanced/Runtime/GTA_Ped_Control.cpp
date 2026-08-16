@@ -36,6 +36,8 @@ struct PoolEncryption
 };
 static_assert(sizeof(PoolEncryption) == 0x18);
 
+[[nodiscard]] bool Readable(const void* address, std::size_t bytes) noexcept;
+
 struct BasePool
 {
     void* vtable = nullptr;
@@ -55,6 +57,19 @@ struct BasePool
     [[nodiscard]] int ScriptGuid(std::uint32_t index) const noexcept
     {
         return static_cast<int>((index << 8U) + flags[index]);
+    }
+
+    [[nodiscard]] void* GetAt(std::uint32_t index) const noexcept
+    {
+        if (!IsValid(index) || entries == 0 || itemSize == 0)
+            return nullptr;
+        if (index > ((std::numeric_limits<std::uintptr_t>::max)() - entries) / itemSize)
+            return nullptr;
+        const auto address = entries + static_cast<std::uintptr_t>(index) * itemSize;
+        if (!Readable(reinterpret_cast<const void*>(address), 0x18))
+            return nullptr;
+        const auto objectMarker = *reinterpret_cast<void* const*>(address + 0x10);
+        return objectMarker ? reinterpret_cast<void*>(address) : nullptr;
     }
 };
 static_assert(sizeof(BasePool) == 0x30);
@@ -173,6 +188,7 @@ static_assert(sizeof(BasePool) == 0x30);
         (static_cast<std::uint8_t>(x) & 0x1FU) + 2U);
     auto* pool = reinterpret_cast<BasePool*>(decoded);
     if (!Readable(pool, sizeof(BasePool)) || pool->size == 0 || pool->size > 8192 ||
+        pool->entries == 0 || pool->itemSize < 0x18 || pool->itemSize > 0x1000 ||
         !pool->flags || !Readable(pool->flags, pool->size)) {
         return nullptr;
     }
@@ -246,58 +262,102 @@ void GTA_Ped_Control_State::Reset() noexcept
 
 void TickPedControl(GTA_Native_Manager& natives) noexcept
 {
+    struct PendingScan
+    {
+        GTA_Ped_Action action = GTA_Ped_Action::None;
+        BasePool* pool = nullptr;
+        std::uint32_t nextIndex = 0;
+        int playerPed = 0;
+        GTA_Native_Script_Vector playerCoords{};
+        float radiusSquared = 0.0F;
+        GTA_Ped_Action_Snapshot result{};
+    };
+
+    constexpr std::uint32_t PoolSlotsPerTick = 64;
+    static PendingScan scan{};
+
     auto& state = GTA_Ped_Control_State::Instance();
-    const auto action = state.ConsumeAction();
-    if (action == GTA_Ped_Action::None)
-        return;
+    const auto requested = state.ConsumeAction();
+    if (requested != GTA_Ped_Action::None) {
+        scan = {};
+        scan.action = requested;
+        scan.result.action = requested;
+        scan.pool = PedPool();
+        scan.result.poolReady = scan.pool != nullptr;
 
-    GTA_Ped_Action_Snapshot result{};
-    result.action = action;
+        if (!scan.pool) {
+            state.Publish(scan.result);
+            scan = {};
+            return;
+        }
 
-    auto* pool = PedPool();
-    result.poolReady = pool != nullptr;
-    if (!pool) {
-        state.Publish(result);
-        return;
+        const auto playerPed = natives.Invoke<int>(GTA_Native_Id::PlayerPedId);
+        if (!playerPed || *playerPed == 0) {
+            state.Publish(scan.result);
+            scan = {};
+            return;
+        }
+        scan.playerPed = *playerPed;
+
+        const auto playerCoords = natives.Invoke<GTA_Native_Script_Vector>(
+            GTA_Native_Id::GetEntityCoords,
+            scan.playerPed,
+            true);
+        if (!playerCoords) {
+            state.Publish(scan.result);
+            scan = {};
+            return;
+        }
+        scan.playerCoords = *playerCoords;
+        const float radius = state.Radius();
+        scan.radiusSquared = radius * radius;
     }
 
-    const auto playerPed = natives.Invoke<int>(GTA_Native_Id::PlayerPedId);
-    if (!playerPed || *playerPed == 0) {
-        state.Publish(result);
+    if (scan.action == GTA_Ped_Action::None || !scan.pool)
         return;
-    }
-    const auto playerCoords = natives.Invoke<GTA_Native_Script_Vector>(GTA_Native_Id::GetEntityCoords, *playerPed, true);
-    if (!playerCoords) {
-        state.Publish(result);
-        return;
-    }
 
-    const float radius = state.Radius();
-    const float radiusSquared = radius * radius;
+    const std::uint32_t endIndex = (std::min)(
+        scan.pool->size,
+        scan.nextIndex + PoolSlotsPerTick);
 
-    for (std::uint32_t index = 0; index < pool->size; ++index) {
-        if (!pool->IsValid(index))
+    for (; scan.nextIndex < endIndex; ++scan.nextIndex) {
+        const std::uint32_t index = scan.nextIndex;
+        if (!scan.pool->IsValid(index) || !scan.pool->GetAt(index))
             continue;
 
-        const int ped = pool->ScriptGuid(index);
-        if (ped == 0 || ped == *playerPed)
+        const int ped = scan.pool->ScriptGuid(index);
+        if (ped == 0 || ped == scan.playerPed)
             continue;
 
         const auto isPlayer = natives.InvokeHash<bool>(IsPedAPlayer, ped);
-        if (!isPlayer || *isPlayer) {
-            if (isPlayer && *isPlayer)
-                ++result.skippedPlayers;
+        if (!isPlayer)
+            continue;
+        if (*isPlayer) {
+            ++scan.result.skippedPlayers;
             continue;
         }
 
-        const auto coords = natives.Invoke<GTA_Native_Script_Vector>(GTA_Native_Id::GetEntityCoords, ped, true);
-        if (!coords || DistanceSquared(*coords, *playerCoords) > radiusSquared)
+        const auto coords = natives.Invoke<GTA_Native_Script_Vector>(
+            GTA_Native_Id::GetEntityCoords,
+            ped,
+            true);
+        if (!coords || DistanceSquared(*coords, scan.playerCoords) > scan.radiusSquared)
             continue;
 
-        if (action == GTA_Ped_Action::KillEnemies) {
-            const auto relationshipToPlayer = natives.InvokeHash<int>(GetRelationshipBetweenPeds, ped, *playerPed);
-            const auto relationshipFromPlayer = natives.InvokeHash<int>(GetRelationshipBetweenPeds, *playerPed, ped);
-            const auto inCombat = natives.InvokeHash<bool>(IsPedInCombat, ped, *playerPed);
+        if (scan.action == GTA_Ped_Action::KillEnemies) {
+            const auto relationshipToPlayer = natives.InvokeHash<int>(
+                GetRelationshipBetweenPeds,
+                ped,
+                scan.playerPed);
+            const auto relationshipFromPlayer = natives.InvokeHash<int>(
+                GetRelationshipBetweenPeds,
+                scan.playerPed,
+                ped);
+            const auto inCombat = natives.InvokeHash<bool>(
+                IsPedInCombat,
+                ped,
+                scan.playerPed);
+
             const bool hostileRelationship =
                 (relationshipToPlayer && *relationshipToPlayer >= 3 && *relationshipToPlayer <= 5) ||
                 (relationshipFromPlayer && *relationshipFromPlayer >= 3 && *relationshipFromPlayer <= 5);
@@ -305,11 +365,20 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
                 continue;
         }
 
-        if (natives.InvokeHash<void>(SetEntityHealth, ped, 0, 0))
-            ++result.affected;
+        if (natives.InvokeHash<void>(
+                SetEntityHealth,
+                ped,
+                0,
+                scan.playerPed,
+                0)) {
+            ++scan.result.affected;
+        }
     }
 
-    state.Publish(result);
+    if (scan.nextIndex >= scan.pool->size) {
+        state.Publish(scan.result);
+        scan = {};
+    }
 }
 
 void ResetPedControl() noexcept
