@@ -8,6 +8,8 @@
 
 #include <imgui.h>
 
+#include <array>
+#include <charconv>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -20,6 +22,8 @@ namespace
 using Integrations::GTA5_Enhanced::GTAAllClothingUnlockIndices;
 using Integrations::GTA5_Enhanced::GTAAllCollectionUnlockIndices;
 using Integrations::GTA5_Enhanced::GTAAllVerifiedHalloweenUnlockIndices;
+using Integrations::GTA5_Enhanced::GTACareerProgressCompletedTierCount;
+using Integrations::GTA5_Enhanced::GTACareerProgressIsComplete;
 using Integrations::GTA5_Enhanced::GTACareerProgressMaskValue;
 using Integrations::GTA5_Enhanced::GTACareerProgressRequestName;
 using Integrations::GTA5_Enhanced::GTAClothingUnlockIndices;
@@ -34,6 +38,7 @@ using Integrations::GTA5_Enhanced::GTA_Career_Progress_Count;
 using Integrations::GTA5_Enhanced::GTA_Career_Progress_Entries;
 using Integrations::GTA5_Enhanced::GTA_Career_Progress_Entry;
 using Integrations::GTA5_Enhanced::GTA_Career_Progress_Source;
+using Integrations::GTA5_Enhanced::GTA_Career_Progress_Tiers_Per_Career;
 using Integrations::GTA5_Enhanced::GTA_Clothing_Unlock_Groups;
 using Integrations::GTA5_Enhanced::GTA_Clothing_Unlock_Source_Version;
 using Integrations::GTA5_Enhanced::GTA_Clothing_Unlock_Unique_Count;
@@ -67,6 +72,9 @@ struct CareerProgressUiState
 {
     std::vector<std::uint64_t> requestIds;
     std::string label;
+    std::array<std::uint64_t, GTA_Career_Progress_All_Stat_Masks.size()> refreshRequestIds{};
+    std::array<std::uint32_t, GTA_Career_Progress_All_Stat_Masks.size()> fieldValues{};
+    bool snapshotValid = false;
 };
 
 UnlockBatchUiState& UnlockState()
@@ -98,6 +106,25 @@ void DrawDivider()
 {
     return status != GTA_Stat_Request_Status::Idle &&
         status != GTA_Stat_Request_Status::Queued;
+}
+
+[[nodiscard]] bool ParseSignedStatBits(std::string_view text, std::uint32_t& bits) noexcept
+{
+    std::int32_t value = 0;
+    const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (result.ec != std::errc{} || result.ptr != text.data() + text.size())
+        return false;
+    bits = static_cast<std::uint32_t>(value);
+    return true;
+}
+
+[[nodiscard]] std::size_t CareerFieldSlot(std::int32_t statIndex) noexcept
+{
+    for (std::size_t i = 0; i < GTA_Career_Progress_All_Stat_Masks.size(); ++i) {
+        if (GTA_Career_Progress_All_Stat_Masks[i].statIndex == statIndex)
+            return i;
+    }
+    return GTA_Career_Progress_All_Stat_Masks.size();
 }
 
 void QueuePackedBoolUnlocks(
@@ -217,6 +244,12 @@ struct CareerRequestProgress
     bool active = false;
 };
 
+struct CareerCompletionSummary
+{
+    std::size_t completedCareers = 0;
+    std::size_t completedTiers = 0;
+};
+
 [[nodiscard]] CareerRequestProgress CareerProgressStatus()
 {
     CareerRequestProgress progress{};
@@ -226,7 +259,12 @@ struct CareerRequestProgress
 
     for (const auto requestId : state.requestIds) {
         const auto snapshot = stats.Snapshot(requestId);
-        if (!snapshot || !StatRequestFinished(snapshot->status)) {
+        if (!snapshot) {
+            ++progress.completed;
+            ++progress.failed;
+            continue;
+        }
+        if (!StatRequestFinished(snapshot->status)) {
             progress.active = true;
             continue;
         }
@@ -237,12 +275,88 @@ struct CareerRequestProgress
     return progress;
 }
 
+[[nodiscard]] CareerRequestProgress CareerRefreshStatus()
+{
+    CareerRequestProgress progress{};
+    auto& state = CareerState();
+    auto& stats = GTA_Stats_State::Instance();
+    bool anyRequest = false;
+    bool allSucceeded = true;
+    progress.total = state.refreshRequestIds.size();
+
+    for (std::size_t i = 0; i < state.refreshRequestIds.size(); ++i) {
+        const auto requestId = state.refreshRequestIds[i];
+        if (requestId == 0) {
+            allSucceeded = false;
+            continue;
+        }
+        anyRequest = true;
+        const auto snapshot = stats.Snapshot(requestId);
+        if (!snapshot) {
+            ++progress.completed;
+            ++progress.failed;
+            allSucceeded = false;
+            continue;
+        }
+        if (!StatRequestFinished(snapshot->status)) {
+            progress.active = true;
+            allSucceeded = false;
+            continue;
+        }
+
+        ++progress.completed;
+        if (snapshot->status != GTA_Stat_Request_Status::Succeeded ||
+            !ParseSignedStatBits(snapshot->value, state.fieldValues[i])) {
+            ++progress.failed;
+            allSucceeded = false;
+        }
+    }
+
+    if (!anyRequest)
+        progress.total = 0;
+    if (anyRequest && !progress.active && progress.completed == state.refreshRequestIds.size())
+        state.snapshotValid = allSucceeded && progress.failed == 0;
+    return progress;
+}
+
+[[nodiscard]] CareerCompletionSummary CareerSummary() noexcept
+{
+    CareerCompletionSummary summary{};
+    const auto& state = CareerState();
+    if (!state.snapshotValid)
+        return summary;
+
+    for (const auto& entry : GTA_Career_Progress_Entries) {
+        const auto slot = CareerFieldSlot(entry.statIndex);
+        if (slot >= state.fieldValues.size())
+            continue;
+        const auto fieldValue = state.fieldValues[slot];
+        summary.completedTiers += GTACareerProgressCompletedTierCount(entry, fieldValue);
+        if (GTACareerProgressIsComplete(entry, fieldValue))
+            ++summary.completedCareers;
+    }
+    return summary;
+}
+
+void QueueCareerProgressRefresh()
+{
+    auto& state = CareerState();
+    auto& stats = GTA_Stats_State::Instance();
+    state.snapshotValid = false;
+    state.refreshRequestIds.fill(0);
+    for (std::size_t i = 0; i < GTA_Career_Progress_All_Stat_Masks.size(); ++i) {
+        state.refreshRequestIds[i] = stats.RequestRead(
+            GTACareerProgressRequestName(GTA_Career_Progress_All_Stat_Masks[i].statIndex));
+    }
+}
+
 void QueueCareerProgress(std::string_view label, const GTA_Career_Progress_Entry& entry)
 {
     auto& state = CareerState();
     auto& stats = GTA_Stats_State::Instance();
     state.label.assign(label);
     state.requestIds.clear();
+    state.snapshotValid = false;
     state.requestIds.push_back(stats.RequestWrite(
         GTACareerProgressRequestName(entry.statIndex),
         GTACareerProgressMaskValue(entry.completionMask)));
@@ -254,11 +368,51 @@ void QueueAllCareerProgress()
     auto& stats = GTA_Stats_State::Instance();
     state.label = "All Career Progress Tiers";
     state.requestIds.clear();
+    state.snapshotValid = false;
     state.requestIds.reserve(GTA_Career_Progress_All_Stat_Masks.size());
     for (const auto& field : GTA_Career_Progress_All_Stat_Masks) {
         state.requestIds.push_back(stats.RequestWrite(
             GTACareerProgressRequestName(field.statIndex),
             GTACareerProgressMaskValue(field.completionMask)));
+    }
+}
+
+void DrawCareerRefreshStatus()
+{
+    const auto refresh = CareerRefreshStatus();
+    const auto& state = CareerState();
+    const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
+    if (refresh.total == 0) {
+        ImGui::TextDisabled("Career tier status has not been refreshed this session.");
+        return;
+    }
+
+    if (refresh.active) {
+        const float ratio = static_cast<float>(refresh.completed) /
+            static_cast<float>(refresh.total);
+        ImGui::ProgressBar(ratio, ImVec2{-1.0F, 0.0F});
+        ImGui::TextDisabled(
+            "%zu / %zu Career stat fields read",
+            refresh.completed,
+            refresh.total);
+        return;
+    }
+
+    if (state.snapshotValid) {
+        const auto summary = CareerSummary();
+        ImGui::TextColored(
+            ImVec4{0.42F, 0.78F, 0.42F, 1.0F},
+            "[CURRENT] %zu / %zu careers complete | %zu / %zu tiers complete",
+            summary.completedCareers,
+            GTA_Career_Progress_Count,
+            summary.completedTiers,
+            GTA_Career_Progress_Completion_Bit_Count);
+    } else {
+        ImGui::TextColored(
+            ImVec4{0.92F, 0.32F, 0.28F, 1.0F},
+            "[REFRESH FAILED] %zu of %zu Career stat reads failed or disappeared.",
+            refresh.failed,
+            refresh.total);
     }
 }
 
@@ -268,7 +422,7 @@ void DrawCareerProgressStatus()
     const auto& state = CareerState();
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
     if (progress.total == 0) {
-        ImGui::TextDisabled("No Career Progress operation has been queued this session.");
+        ImGui::TextDisabled("No Career Progress write has been queued this session.");
         return;
     }
 
@@ -287,7 +441,7 @@ void DrawCareerProgressStatus()
         if (progress.failed == 0) {
             ImGui::TextColored(
                 ImVec4{0.42F, 0.78F, 0.42F, 1.0F},
-                "[SUCCEEDED] Career completion bits were merged and verified.");
+                "[SUCCEEDED] Career completion bits were merged and verified. Refresh tier status to read current progress.");
         } else {
             ImGui::TextColored(
                 ImVec4{0.92F, 0.32F, 0.28F, 1.0F},
@@ -302,10 +456,11 @@ void DrawCareerProgression()
     auto& stats = GTA_Stats_State::Instance();
     const auto metrics = stats.QueueSnapshot();
     const auto progress = CareerProgressStatus();
+    const auto refresh = CareerRefreshStatus();
     const auto& palette = Themes::Menu_Theme_Manager::Instance().Palette();
     const std::size_t queueUsed = metrics.pending + metrics.inFlight;
     const std::size_t queueFree = metrics.capacity > queueUsed ? metrics.capacity - queueUsed : 0;
-    const bool busy = progress.active;
+    const bool busy = progress.active || refresh.active;
 
     ImGui::TextColored(palette.bronze, "CAREER PROGRESS");
     ImGui::TextWrapped(
@@ -315,6 +470,15 @@ void DrawCareerProgression()
         GTA_Career_Progress_Completion_Bit_Count,
         static_cast<int>(GTA_Career_Progress_Source.size()),
         GTA_Career_Progress_Source.data());
+    ImGui::Spacing();
+
+    ImGui::BeginDisabled(busy || queueFree < GTA_Career_Progress_All_Stat_Masks.size());
+    if (ImGui::Button("REFRESH TIER STATUS", ImVec2{190.0F, 36.0F}))
+        QueueCareerProgressRefresh();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::TextDisabled("read-only | 5 character-stat reads");
+    DrawCareerRefreshStatus();
     ImGui::Spacing();
 
     ImGui::BeginDisabled(busy || queueFree < GTA_Career_Progress_All_Stat_Masks.size());
@@ -354,12 +518,13 @@ void DrawCareerProgression()
         ImGuiTableFlags_SizingStretchProp;
     if (ImGui::BeginTable(
             "##CareerProgressTable",
-            4,
+            5,
             tableFlags,
             ImVec2{0.0F, 430.0F})) {
         ImGui::TableSetupScrollFreeze(0, 1);
         ImGui::TableSetupColumn("CAREER", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableSetupColumn("STAT", ImGuiTableColumnFlags_WidthFixed, 74.0F);
+        ImGui::TableSetupColumn("TIERS", ImGuiTableColumnFlags_WidthFixed, 64.0F);
         ImGui::TableSetupColumn("BITS", ImGuiTableColumnFlags_WidthFixed, 100.0F);
         ImGui::TableSetupColumn("ACTION", ImGuiTableColumnFlags_WidthFixed, 108.0F);
         ImGui::TableHeadersRow();
@@ -378,9 +543,23 @@ void DrawCareerProgression()
             ImGui::Text("%d", entry.statIndex);
 
             ImGui::TableSetColumnIndex(2);
-            ImGui::Text("0x%08X", static_cast<unsigned int>(entry.completionMask));
+            const auto slot = CareerFieldSlot(entry.statIndex);
+            if (CareerState().snapshotValid && slot < CareerState().fieldValues.size()) {
+                const auto tiers = GTACareerProgressCompletedTierCount(
+                    entry,
+                    CareerState().fieldValues[slot]);
+                ImGui::Text(
+                    "%zu/%zu",
+                    tiers,
+                    GTA_Career_Progress_Tiers_Per_Career);
+            } else {
+                ImGui::TextDisabled("--/4");
+            }
 
             ImGui::TableSetColumnIndex(3);
+            ImGui::Text("0x%08X", static_cast<unsigned int>(entry.completionMask));
+
+            ImGui::TableSetColumnIndex(4);
             ImGui::BeginDisabled(busy || queueFree == 0);
             if (ImGui::Button("COMPLETE", ImVec2{92.0F, 28.0F}))
                 QueueCareerProgress(entry.name, entry);
@@ -391,6 +570,8 @@ void DrawCareerProgression()
     }
 
     ImGui::Spacing();
+    ImGui::TextDisabled(
+        "Tier status is a read-only snapshot. Career writes mark it stale until the five raw fields are refreshed again.");
     ImGui::TextDisabled(
         "Reward-claim state is intentionally untouched so Career rewards are not falsely marked as already collected.");
     ImGui::TextDisabled(
@@ -724,7 +905,7 @@ void DrawRecoveryPage()
     ImGui::TextColored(ImVec4{0.42F, 0.78F, 0.42F, 1.0F}, "[PROGRESSION + PRESETS READY]");
 
     ImGui::TextWrapped(
-        "Recovery owns curated progression and unlock presets. Writes are queued onto the GTA "
+        "Recovery owns curated progression and unlock presets. Reads and writes are queued onto the GTA "
         "game thread through the Enhanced packed-stat and regular-stat runtimes.");
     ImGui::Spacing();
 
@@ -751,7 +932,10 @@ void DrawRecoveryPage()
         if (ImGui::BeginTabItem("ACTIVITY")) {
             ImGui::TextColored(palette.bronze, "RECOVERY ACTIVITY");
             DrawDivider();
-            ImGui::TextColored(palette.bronze, "CAREER PROGRESS");
+            ImGui::TextColored(palette.bronze, "CAREER TIER SNAPSHOT");
+            DrawCareerRefreshStatus();
+            DrawDivider();
+            ImGui::TextColored(palette.bronze, "CAREER PROGRESS WRITES");
             DrawCareerProgressStatus();
             DrawDivider();
             ImGui::TextColored(palette.bronze, "PACKED UNLOCK BATCH");

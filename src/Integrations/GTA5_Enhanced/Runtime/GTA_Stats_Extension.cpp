@@ -291,11 +291,6 @@ struct NativeStatRead
         snapshot.detail = "GTA native manager is unavailable";
         return snapshot;
     }
-    if (command.kind != GTA_Stats_State::Command_Kind::Write) {
-        snapshot.status = GTA_Stat_Request_Status::InvalidValue;
-        snapshot.detail = "Character-stat bitmask requests are write-only";
-        return snapshot;
-    }
 
     std::int32_t statIndex = 0;
     if (!ParseInt(
@@ -303,13 +298,6 @@ struct NativeStatRead
             statIndex) || statIndex <= 0) {
         snapshot.status = GTA_Stat_Request_Status::InvalidValue;
         snapshot.detail = "Character-stat request contains an invalid stat index";
-        return snapshot;
-    }
-
-    std::uint32_t mask = 0;
-    if (!ParseUInt32(command.value, mask) || mask == 0U) {
-        snapshot.status = GTA_Stat_Request_Status::InvalidValue;
-        snapshot.detail = "Character-stat request contains an invalid completion mask";
         return snapshot;
     }
 
@@ -341,7 +329,23 @@ struct NativeStatRead
     const auto read = natives.InvokeHash<bool>(StatGetInt, snapshot.hash, &currentValue, -1);
     if (!read.has_value() || !read.value()) {
         snapshot.status = GTA_Stat_Request_Status::NotFound;
-        snapshot.detail = "Raw character stat could not be read before applying the completion mask";
+        snapshot.detail = command.kind == GTA_Stats_State::Command_Kind::Read
+            ? "Raw character stat could not be read"
+            : "Raw character stat could not be read before applying the completion mask";
+        return snapshot;
+    }
+
+    snapshot.value = std::to_string(currentValue);
+    if (command.kind == GTA_Stats_State::Command_Kind::Read) {
+        snapshot.status = GTA_Stat_Request_Status::Succeeded;
+        snapshot.detail = "Raw character stat read through GTA's character-stat resolver";
+        return snapshot;
+    }
+
+    std::uint32_t mask = 0;
+    if (!ParseUInt32(command.value, mask) || mask == 0U) {
+        snapshot.status = GTA_Stat_Request_Status::InvalidValue;
+        snapshot.detail = "Character-stat request contains an invalid completion mask";
         return snapshot;
     }
 
@@ -686,7 +690,6 @@ void GTA_Stats_State::Reset()
     m_inFlight.reset();
     m_history.clear();
     m_snapshot = {};
-    m_nextRequestId = 1;
     m_revision = 0;
     m_completed = 0;
     m_succeeded = 0;

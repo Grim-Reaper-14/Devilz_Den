@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -89,10 +90,27 @@ inline constexpr std::array<GTA_Career_Progress_Entry, GTA_Career_Progress_Count
     return std::to_string(static_cast<unsigned long long>(mask));
 }
 
+[[nodiscard]] constexpr std::size_t GTACareerProgressCompletedTierCount(
+    const GTA_Career_Progress_Entry& entry,
+    std::uint32_t fieldValue) noexcept
+{
+    return static_cast<std::size_t>(std::popcount(fieldValue & entry.completionMask));
+}
+
+[[nodiscard]] constexpr bool GTACareerProgressIsComplete(
+    const GTA_Career_Progress_Entry& entry,
+    std::uint32_t fieldValue) noexcept
+{
+    return (fieldValue & entry.completionMask) == entry.completionMask;
+}
+
 [[nodiscard]] consteval bool GTAValidateCareerProgressLayout()
 {
     std::array<std::uint32_t, GTA_Career_Progress_All_Stat_Masks.size()> combined{};
     for (const auto& entry : GTA_Career_Progress_Entries) {
+        if (std::popcount(entry.completionMask) != GTA_Career_Progress_Tiers_Per_Career)
+            return false;
+
         bool found = false;
         for (std::size_t i = 0; i < GTA_Career_Progress_All_Stat_Masks.size(); ++i) {
             if (GTA_Career_Progress_All_Stat_Masks[i].statIndex != entry.statIndex)

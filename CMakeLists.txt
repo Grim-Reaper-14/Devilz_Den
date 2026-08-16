@@ -141,10 +141,16 @@ add_executable(Devilz_Den_Casino_Lucky_Wheel_Test
 )
 target_include_directories(Devilz_Den_Casino_Lucky_Wheel_Test PRIVATE src)
 
+add_executable(Devilz_Den_Career_Progress_Test
+    tests/GTA_Career_Progress_Test.cpp
+)
+target_include_directories(Devilz_Den_Career_Progress_Test PRIVATE src)
+
 if(BUILD_TESTING)
     add_test(NAME Devilz_Den.LuaRuntime COMMAND Devilz_Den_Lua_Runtime_Test)
     add_test(NAME Devilz_Den.ClothingUnlocks COMMAND Devilz_Den_Clothing_Unlocks_Test)
     add_test(NAME Devilz_Den.CasinoLuckyWheel COMMAND Devilz_Den_Casino_Lucky_Wheel_Test)
+    add_test(NAME Devilz_Den.CareerProgress COMMAND Devilz_Den_Career_Progress_Test)
 endif()
 
 if(WIN32)
@@ -247,6 +253,7 @@ if(MSVC)
     target_compile_options(Devilz_Den_Lua_Runtime_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Clothing_Unlocks_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Casino_Lucky_Wheel_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
+    target_compile_options(Devilz_Den_Career_Progress_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_ImGui PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Smoke_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
     target_compile_options(Devilz_Den_Address_Resolver_Test PRIVATE /W4 /permissive- /EHsc /utf-8)
