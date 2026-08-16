@@ -4,6 +4,27 @@ project(Devilz_Den LANGUAGES C CXX)
 include(CTest)
 include(FetchContent)
 
+# GTA V Enhanced decompiled scripts are developer reference data only.
+# Keep them out of the normal configure/build path and sync them explicitly.
+set(DEVILZ_DECOMPILE_SCRIPTS_REPOSITORY
+    "https://github.com/acidlabsdev/gtav-enhanced-scripts.git"
+    CACHE STRING "Repository containing GTA V Enhanced decompiled scripts")
+set(DEVILZ_DECOMPILE_SCRIPTS_REVISION
+    "30dd0df8bce87bdc21103555bae380be9fc0a916"
+    CACHE STRING "Pinned GTA V Enhanced decompiled-script revision")
+set(DEVILZ_DECOMPILE_SCRIPTS_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/decompileScripts"
+    CACHE PATH "Local GTA V Enhanced decompiled-script checkout")
+
+add_custom_target(Devilz_Den_Sync_DecompileScripts
+    COMMAND "${CMAKE_COMMAND}"
+        "-DDEVILZ_DECOMPILE_SCRIPTS_REPOSITORY=${DEVILZ_DECOMPILE_SCRIPTS_REPOSITORY}"
+        "-DDEVILZ_DECOMPILE_SCRIPTS_REVISION=${DEVILZ_DECOMPILE_SCRIPTS_REVISION}"
+        "-DDEVILZ_DECOMPILE_SCRIPTS_DESTINATION=${DEVILZ_DECOMPILE_SCRIPTS_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SyncDecompileScripts.cmake"
+    COMMENT "Syncing pinned GTA V Enhanced decompiled scripts"
+    VERBATIM)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
