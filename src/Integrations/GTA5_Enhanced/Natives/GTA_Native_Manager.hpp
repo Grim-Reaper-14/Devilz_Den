@@ -6,6 +6,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Business_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Outfit_Editor_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Packed_Stats_State.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Ped_Control.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Online_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Self_Utility_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Stats_Extension.hpp"
@@ -47,104 +48,97 @@ struct GTA_Native_Invoke_Result<void>
 class GTA_Native_Manager final
 {
 public:
-    // Validated Enhanced handlers which do not need a public named-id yet live
-    // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self,
-    // Weapons, Garage, World, Outfit Editor, Stats, and Unlocks use the final
-    // handlers for their game-thread actions.
-    static constexpr std::array<GTA_Native_Hash, 83> BootstrapProbeHashes{
+    static constexpr std::array<GTA_Native_Hash, 86> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
         0xEB1C67C3A5333A92ULL,
-        0xFF4B16F297D9CB3EULL, // GET_VEHICLE_COLOURS
-        0x741D9B0685E67684ULL, // GET_VEHICLE_EXTRA_COLOURS
-        0xB8090FC59766A88CULL, // GET_VEHICLE_MOD_COLOR_1
-        0x07AE5F5D5A7D0936ULL, // GET_VEHICLE_MOD_COLOR_2
-        0xA9D64A14804D119BULL, // GET_IS_VEHICLE_PRIMARY_COLOUR_CUSTOM
-        0xD9B9D4D1CCED7CA6ULL, // GET_VEHICLE_CUSTOM_PRIMARY_COLOUR
-        0x2C0B2BB7913E8DBAULL, // GET_IS_VEHICLE_SECONDARY_COLOUR_CUSTOM
-        0x04434FA56DED5500ULL, // GET_VEHICLE_CUSTOM_SECONDARY_COLOUR
-        0xEFDD8C5443F6C9E4ULL, // GET_VEHICLE_MOD_VARIATION
-        0x1D5A665629D417A7ULL, // IS_TOGGLE_MOD_ON
-        0xCA7159F2C5FF745AULL, // GET_VEHICLE_NUMBER_PLATE_TEXT
-        0x963D9A7202C06F65ULL, // CLEAR_VEHICLE_CUSTOM_PRIMARY_COLOUR
-        0x588D8FDC61F7CFADULL, // CLEAR_VEHICLE_CUSTOM_SECONDARY_COLOUR
-        0x90E3EAFF8AAA1A42ULL, // GET_NUM_MOD_KITS
-        0xE62930EC6FAABCA5ULL, // SET_VEHICLE_NEON_ENABLED
-        0xF1B79038130E3C08ULL, // GET_VEHICLE_NEON_ENABLED
-        0xEAB8A43F6621850FULL, // SET_VEHICLE_NEON_COLOUR
-        0x64FEACF0AD019F1FULL, // GET_VEHICLE_NEON_COLOUR
-        0x89D1FDCA3735A1E0ULL, // SET_VEHICLE_XENON_LIGHT_COLOR_INDEX
-        0xD6BA8C57BDF9DEB9ULL, // GET_VEHICLE_XENON_LIGHT_COLOR_INDEX
-        0xD772F6AA66750D2BULL, // SET_VEHICLE_EXTRA
-        0x579FA5568DE0C2A0ULL, // DOES_EXTRA_EXIST
-        0x5318DF85BEB6B95FULL, // IS_VEHICLE_EXTRA_TURNED_ON
-        0x5DA0536AEAD1FF31ULL, // SET_VEHICLE_TYRE_SMOKE_COLOR
-        0x9D35AABAEE206518ULL, // GET_VEHICLE_TYRE_SMOKE_COLOR
-        0x439C904840715871ULL, // SET_VEHICLE_TYRES_CAN_BURST
-        0xE6BE8A525BA6BD44ULL, // GET_VEHICLE_TYRES_CAN_BURST
-        0x519F76A38952BBD0ULL, // SET_DRIFT_TYRES
-        0x4497678941C27E46ULL, // GET_DRIFT_TYRES_SET
-        0xC0C8E6AAA00F1A58ULL, // SET_VEHICLE_EXTRA_COLOUR_5
-        0xE10BD9712D7B0CBFULL, // GET_VEHICLE_EXTRA_COLOUR_5
-        0x77B012A683295B6EULL, // SET_VEHICLE_EXTRA_COLOUR_6
-        0x4C5611B5008205EBULL, // GET_VEHICLE_EXTRA_COLOUR_6
-        0xA1C03303EC67320BULL, // SET_VEHICLE_LIVERY
-        0xA089B04A208DBD0BULL, // GET_VEHICLE_LIVERY
-        0xBA3ECE95D3094B0FULL, // GET_VEHICLE_LIVERY_COUNT
-        0xA52E1AE3848A506BULL, // SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER
-        0x289497A4BA9049E0ULL, // SET_SWIM_MULTIPLIER_FOR_PLAYER
-        0xB27B08E34AC92345ULL, // SET_PED_MOVE_RATE_OVERRIDE
-        0x11552FA9DCB8E126ULL, // IS_PED_ARMED
-        0xB73833BDAAE31047ULL, // IS_PED_PERFORMING_MELEE_ACTION
-        0x7E3F74F641EE6B27ULL, // GET_NETWORK_TIME
-        0x71A6F836422FDD2BULL, // _SEND_TU_SCRIPT_EVENT_NEW
-        0xA7E4AA8D29D3DAC1ULL, // STOP_CUTSCENE_IMMEDIATELY
-        0xAFD3BC0F6EBB5474ULL, // NETWORK_OVERRIDE_CLOCK_TIME
-        0x99599AE2C0FDB2A1ULL, // NETWORK_CLEAR_CLOCK_TIME_OVERRIDE
-        0x88791F880F624022ULL, // SET_OVERRIDE_WEATHER
-        0x58A3B74F26D2B532ULL, // CLEAR_OVERRIDE_WEATHER
-        0xD25E9BDC14A0B649ULL, // SET_ENTITY_HEALTH
-        0x92EBF838856DCF63ULL, // RESTORE_PLAYER_STAMINA
-        0xC2BF1F6F84E31EB2ULL, // GET_PED_STEALTH_MOVEMENT
-        0xD33BCB9F50C1E588ULL, // SPECIAL_ABILITY_UNLOCK
-        0xE3D5A2DE522F29C1ULL, // SPECIAL_ABILITY_LOCK
-        0x5F5FDED45A3345C9ULL, // SET_SPECIAL_ABILITY_MP
-        0xD1C578C204015E1FULL, // SET_PED_COMPONENT_VARIATION
-        0xC0120BBCC298EA2FULL, // GET_PED_DRAWABLE_VARIATION
-        0x1A4EFE92822E3123ULL, // GET_NUMBER_OF_PED_DRAWABLE_VARIATIONS
-        0xD6AED6BFCC58AF7FULL, // GET_PED_TEXTURE_VARIATION
-        0x8401C77F508D70FDULL, // GET_NUMBER_OF_PED_TEXTURE_VARIATIONS
-        0xDAF263B0E792EAECULL, // GET_PED_PALETTE_VARIATION
-        0xB204F40D393426B6ULL, // GET_PED_PROP_INDEX
-        0x4D0F04723A52D0E9ULL, // GET_NUMBER_OF_PED_PROP_DRAWABLE_VARIATIONS
-        0x0DC23FA727759F9FULL, // GET_PED_PROP_TEXTURE_INDEX
-        0x1D77F90D87ACD2BAULL, // GET_NUMBER_OF_PED_PROP_TEXTURE_VARIATIONS
-        0x7F08C4791E6D6969ULL, // SET_PED_PROP_INDEX
-        0x09397806857F5DFBULL, // CLEAR_PED_PROP
-        0xDF7F16323520B858ULL, // STAT_GET_INT
-        0x2F0966A034F5ADC6ULL, // STAT_GET_FLOAT
-        0xF249567F2E83E093ULL, // STAT_GET_BOOL
-        0xCEA81DACD6DA3ADBULL, // STAT_GET_STRING
-        0x1164A75E490C27B6ULL, // STAT_SET_INT
-        0x4F8678C02360C3D2ULL, // STAT_SET_FLOAT
-        0xF1D0B0CE940F620DULL, // STAT_SET_BOOL
-        0x1A43F9BE4B6AAB67ULL, // STAT_SET_STRING
-        0xD69CE161FE614531ULL, // _GET_STAT_HASH_FOR_CHARACTER_STAT
-        0xA6D3C21763E25496ULL, // GET_PACKED_STAT_BOOL_CODE
-        0x03CFFD51CE515454ULL, // GET_PACKED_STAT_INT_CODE
-        0xA595AA1819B05EA0ULL, // SET_PACKED_STAT_BOOL_CODE
-        0x0F575D68F532124CULL  // SET_PACKED_STAT_INT_CODE
+        0xFF4B16F297D9CB3EULL,
+        0x741D9B0685E67684ULL,
+        0xB8090FC59766A88CULL,
+        0x07AE5F5D5A7D0936ULL,
+        0xA9D64A14804D119BULL,
+        0xD9B9D4D1CCED7CA6ULL,
+        0x2C0B2BB7913E8DBAULL,
+        0x04434FA56DED5500ULL,
+        0xEFDD8C5443F6C9E4ULL,
+        0x1D5A665629D417A7ULL,
+        0xCA7159F2C5FF745AULL,
+        0x963D9A7202C06F65ULL,
+        0x588D8FDC61F7CFADULL,
+        0x90E3EAFF8AAA1A42ULL,
+        0xE62930EC6FAABCA5ULL,
+        0xF1B79038130E3C08ULL,
+        0xEAB8A43F6621850FULL,
+        0x64FEACF0AD019F1FULL,
+        0x89D1FDCA3735A1E0ULL,
+        0xD6BA8C57BDF9DEB9ULL,
+        0xD772F6AA66750D2BULL,
+        0x579FA5568DE0C2A0ULL,
+        0x5318DF85BEB6B95FULL,
+        0x5DA0536AEAD1FF31ULL,
+        0x9D35AABAEE206518ULL,
+        0x439C904840715871ULL,
+        0xE6BE8A525BA6BD44ULL,
+        0x519F76A38952BBD0ULL,
+        0x4497678941C27E46ULL,
+        0xC0C8E6AAA00F1A58ULL,
+        0xE10BD9712D7B0CBFULL,
+        0x77B012A683295B6EULL,
+        0x4C5611B5008205EBULL,
+        0xA1C03303EC67320BULL,
+        0xA089B04A208DBD0BULL,
+        0xBA3ECE95D3094B0FULL,
+        0xA52E1AE3848A506BULL,
+        0x289497A4BA9049E0ULL,
+        0xB27B08E34AC92345ULL,
+        0x11552FA9DCB8E126ULL,
+        0xB73833BDAAE31047ULL,
+        0x7E3F74F641EE6B27ULL,
+        0x71A6F836422FDD2BULL,
+        0xA7E4AA8D29D3DAC1ULL,
+        0xAFD3BC0F6EBB5474ULL,
+        0x99599AE2C0FDB2A1ULL,
+        0x88791F880F624022ULL,
+        0x58A3B74F26D2B532ULL,
+        0xD25E9BDC14A0B649ULL,
+        0x501EBB0523078750ULL,
+        0x1B32E388988DD296ULL,
+        0x1E37AEC038A241A3ULL,
+        0x92EBF838856DCF63ULL,
+        0xC2BF1F6F84E31EB2ULL,
+        0xD33BCB9F50C1E588ULL,
+        0xE3D5A2DE522F29C1ULL,
+        0x5F5FDED45A3345C9ULL,
+        0xD1C578C204015E1FULL,
+        0xC0120BBCC298EA2FULL,
+        0x1A4EFE92822E3123ULL,
+        0xD6AED6BFCC58AF7FULL,
+        0x8401C77F508D70FDULL,
+        0xDAF263B0E792EAECULL,
+        0xB204F40D393426B6ULL,
+        0x4D0F04723A52D0E9ULL,
+        0x0DC23FA727759F9FULL,
+        0x1D77F90D87ACD2BAULL,
+        0x7F08C4791E6D6969ULL,
+        0x09397806857F5DFBULL,
+        0xDF7F16323520B858ULL,
+        0x2F0966A034F5ADC6ULL,
+        0xF249567F2E83E093ULL,
+        0xCEA81DACD6DA3ADBULL,
+        0x1164A75E490C27B6ULL,
+        0x4F8678C02360C3D2ULL,
+        0xF1D0B0CE940F620DULL,
+        0x1A43F9BE4B6AAB67ULL,
+        0xD69CE161FE614531ULL,
+        0xA6D3C21763E25496ULL,
+        0x03CFFD51CE515454ULL,
+        0xA595AA1819B05EA0ULL,
+        0x0F575D68F532124CULL
     };
 
-    [[nodiscard]] GTA_Native_Manager_Status Initialize(
-        std::uintptr_t initNativeTablesAddress,
-        std::uintptr_t moduleBase,
-        std::size_t moduleSize,
-        std::uint64_t fingerprint);
-
+    [[nodiscard]] GTA_Native_Manager_Status Initialize(std::uintptr_t initNativeTablesAddress, std::uintptr_t moduleBase, std::size_t moduleSize, std::uint64_t fingerprint);
     void Reset() noexcept;
-
     [[nodiscard]] bool Ready() const noexcept { return m_ready; }
     [[nodiscard]] std::uint64_t Fingerprint() const noexcept { return m_fingerprint; }
     [[nodiscard]] std::size_t CachedHandlerCount() const noexcept { return m_handlers.size(); }
@@ -152,20 +146,14 @@ public:
     [[nodiscard]] GTA_Native_Handler Find(GTA_Native_Id id) const noexcept;
 
     template <typename Ret, typename... Args>
-    [[nodiscard]] auto Invoke(GTA_Native_Id id, Args&&... args) noexcept
-        -> typename GTA_Native_Invoke_Result<Ret>::Type
+    [[nodiscard]] auto Invoke(GTA_Native_Id id, Args&&... args) noexcept -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
         return InvokeHandler<Ret>(Find(id), std::forward<Args>(args)...);
     }
 
     template <typename Ret, typename... Args>
-    [[nodiscard]] auto InvokeHash(GTA_Native_Hash hash, Args&&... args) noexcept
-        -> typename GTA_Native_Invoke_Result<Ret>::Type
+    [[nodiscard]] auto InvokeHash(GTA_Native_Hash hash, Args&&... args) noexcept -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
-        // Vehicle Forge calls SET_RUN_SPRINT_MULTIPLIER_FOR_PLAYER every game
-        // tick. Use that guaranteed game-thread point to service the online,
-        // Self, business, outfit, teleport, garage, world, stat, and unlock
-        // extensions without another hook.
         if (hash == 0xA52E1AE3848A506BULL) {
             TickSelfOnlineExtension(*this);
             TickSelfUtilityExtension(*this);
@@ -174,60 +162,43 @@ public:
             TickTeleportExtension(*this);
             TickVehicleGarageSave(*this);
             TickWorldEnvironmentExtension(*this);
+            TickPedControl(*this);
             TickStatsExtension(*this);
             DrainPackedStatsQueue();
         }
-
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
     }
 
-    // Invoke a cached native handler without running InvokeHash()'s legacy
-    // extension-service side effects. Use this for frame-sensitive movement
-    // natives that are already driven by the game-thread bridge.
     template <typename Ret, typename... Args>
-    [[nodiscard]] auto InvokeDirectHash(GTA_Native_Hash hash, Args&&... args) noexcept
-        -> typename GTA_Native_Invoke_Result<Ret>::Type
+    [[nodiscard]] auto InvokeDirectHash(GTA_Native_Hash hash, Args&&... args) noexcept -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
     }
 
     template <typename Ret, typename... Args>
-    [[nodiscard]] auto InvokeOptionalHash(GTA_Native_Hash hash, Args&&... args) noexcept
-        -> typename GTA_Native_Invoke_Result<Ret>::Type
+    [[nodiscard]] auto InvokeOptionalHash(GTA_Native_Hash hash, Args&&... args) noexcept -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
-        // Optional helpers are deliberately kept outside the required native
-        // bootstrap set so a convenience feature cannot break runtime startup.
         return InvokeHandler<Ret>(FindOptional(hash), std::forward<Args>(args)...);
     }
 
 private:
     template <typename Ret, typename... Args>
-    [[nodiscard]] auto InvokeHandler(GTA_Native_Handler handler, Args&&... args) noexcept
-        -> typename GTA_Native_Invoke_Result<Ret>::Type
+    [[nodiscard]] auto InvokeHandler(GTA_Native_Handler handler, Args&&... args) noexcept -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
         if (!m_ready || !handler) {
-            if constexpr (std::is_void_v<Ret>)
-                return false;
-            else
-                return std::nullopt;
+            if constexpr (std::is_void_v<Ret>) return false;
+            else return std::nullopt;
         }
-
         GTA_Native_Call_Frame frame;
         const bool packed = (frame.Push(std::forward<Args>(args)) && ...);
         if (!packed) {
-            if constexpr (std::is_void_v<Ret>)
-                return false;
-            else
-                return std::nullopt;
+            if constexpr (std::is_void_v<Ret>) return false;
+            else return std::nullopt;
         }
-
         handler(&frame.Context());
         frame.FixVectors();
-
-        if constexpr (std::is_void_v<Ret>)
-            return true;
-        else
-            return frame.Return<Ret>();
+        if constexpr (std::is_void_v<Ret>) return true;
+        else return frame.Return<Ret>();
     }
 
     void DrainPackedStatsQueue() noexcept
@@ -237,49 +208,28 @@ private:
         constexpr GTA_Native_Hash SetPackedStatBoolCode = 0xA595AA1819B05EA0ULL;
         constexpr GTA_Native_Hash SetPackedStatIntCode = 0x0F575D68F532124CULL;
         constexpr std::size_t CommandsPerTick = 8;
-
         auto& state = GTA_Packed_Stats_State::Instance();
         for (std::size_t processed = 0; processed < CommandsPerTick; ++processed) {
             GTA_Packed_Stats_State::Command command{};
-            if (!state.Consume(command))
-                break;
-
+            if (!state.Consume(command)) break;
             if (command.kind == GTA_Packed_Stats_State::Command_Kind::Read) {
                 if (command.valueType == GTA_Packed_Stat_Value_Type::Bool) {
-                    const auto value = InvokeHandler<bool>(
-                        Find(GetPackedStatBoolCode),
-                        command.index,
-                        -1);
+                    const auto value = InvokeHandler<bool>(Find(GetPackedStatBoolCode), command.index, -1);
                     state.Complete(command, value.has_value(), value.value_or(false) ? 1 : 0);
                 } else {
-                    const auto value = InvokeHandler<std::int32_t>(
-                        Find(GetPackedStatIntCode),
-                        command.index,
-                        -1);
+                    const auto value = InvokeHandler<std::int32_t>(Find(GetPackedStatIntCode), command.index, -1);
                     state.Complete(command, value.has_value(), value.value_or(0));
                 }
                 continue;
             }
-
             const bool success = command.valueType == GTA_Packed_Stat_Value_Type::Bool
-                ? InvokeHandler<void>(
-                    Find(SetPackedStatBoolCode),
-                    command.index,
-                    command.value != 0,
-                    -1)
-                : InvokeHandler<void>(
-                    Find(SetPackedStatIntCode),
-                    command.index,
-                    command.value,
-                    -1);
+                ? InvokeHandler<void>(Find(SetPackedStatBoolCode), command.index, command.value != 0, -1)
+                : InvokeHandler<void>(Find(SetPackedStatIntCode), command.index, command.value, -1);
             state.Complete(command, success, command.value);
         }
     }
 
-    [[nodiscard]] static bool IsExecutableImageAddress(
-        std::uintptr_t address,
-        std::uintptr_t moduleBase,
-        std::size_t moduleSize) noexcept;
+    [[nodiscard]] static bool IsExecutableImageAddress(std::uintptr_t address, std::uintptr_t moduleBase, std::size_t moduleSize) noexcept;
     [[nodiscard]] GTA_Native_Handler FindOptional(GTA_Native_Hash hash) const noexcept;
 
     bool m_ready = false;
