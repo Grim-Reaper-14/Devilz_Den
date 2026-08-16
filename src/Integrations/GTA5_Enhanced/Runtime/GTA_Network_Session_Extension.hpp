@@ -11,9 +11,7 @@ namespace Devilz::Integrations::GTA5_Enhanced
 {
 void ConfigureNetworkSessionExtension(
     std::uintptr_t scriptGlobalsAddress,
-    std::uintptr_t programTableAddress,
-    std::uintptr_t scriptThreadsStorageAddress,
-    std::uintptr_t scriptVmAddress,
+    std::uint64_t buildFingerprint,
     Backend::LoggerService* logger) noexcept;
 
 void ResetNetworkSessionExtension() noexcept;

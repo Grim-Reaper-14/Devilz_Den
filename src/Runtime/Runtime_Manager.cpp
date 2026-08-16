@@ -395,9 +395,7 @@ void Runtime_Manager::InitializeGameThreadBridge(
 
     ConfigureNetworkSessionExtension(
         scriptGlobals,
-        programTable,
-        scriptThreadsStorage,
-        scriptVm,
+        status.build ? status.build->fingerprint : 0,
         &m_logger);
     ConfigureRandomEventsExtension(
         scriptGlobals,

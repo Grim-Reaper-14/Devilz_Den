@@ -396,6 +396,7 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
         personalSaveActive;
     const bool frameDue = frameFeatureActive && now >= m_nextFeatureTickMs;
     const bool scheduledWorkReady =
+        HasPendingScriptFunctionInvocation() ||
         now >= m_nextGameplayTickMs ||
         now >= m_nextSelfCacheTickMs ||
         now >= m_nextSelfUtilityTickMs ||
@@ -481,6 +482,11 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
     // one at a time with a small dispatch gap between slices.
     m_nextScheduledDispatchMs = now + ScheduledDispatchGapMs;
 
+    if (HasPendingScriptFunctionInvocation()) {
+        (void)TickScriptFunctionInvoker();
+        return;
+    }
+
     if (now >= m_nextGameplayTickMs) {
         m_nextGameplayTickMs = now + GameplayTickIntervalMs;
         auto& gameplayState = GTA_Gameplay_State::Instance();
@@ -489,7 +495,6 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
             gameplayState.SetExplosiveBullets(false);
         m_gameplay.Tick();
         m_gameplay.TickSlow();
-        (void)TickScriptFunctionInvoker();
         (void)TickStatsExtension(*m_natives, RegularStatDrainBudget);
         if (explosiveAmmo)
             gameplayState.SetExplosiveBullets(true);
