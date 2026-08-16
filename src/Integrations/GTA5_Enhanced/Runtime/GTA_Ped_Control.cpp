@@ -1,0 +1,319 @@
+#include "GTA_Ped_Control.hpp"
+
+#include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Manager.hpp"
+#include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
+
+#include <Windows.h>
+#include <intrin.h>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <limits>
+
+namespace Devilz::Integrations::GTA5_Enhanced
+{
+namespace
+{
+constexpr std::array<std::uint8_t, 13> PedPoolPattern{
+    0x80, 0x79, 0x4B, 0x00, 0x0F, 0x84, 0xF5, 0x00, 0x00, 0x00, 0x48, 0x89, 0xF1
+};
+constexpr std::size_t PedPoolRipInstructionOffset = 0x18;
+constexpr GTA_Native_Hash IsPedAPlayer = 0x501EBB0523078750ULL;
+constexpr GTA_Native_Hash IsPedInCombat = 0x1B32E388988DD296ULL;
+constexpr GTA_Native_Hash GetRelationshipBetweenPeds = 0x1E37AEC038A241A3ULL;
+constexpr GTA_Native_Hash SetEntityHealth = 0xD25E9BDC14A0B649ULL;
+
+struct PoolEncryption
+{
+    bool isSet = false;
+    std::byte pad[7]{};
+    std::uint64_t first = 0;
+    std::uint64_t second = 0;
+};
+static_assert(sizeof(PoolEncryption) == 0x18);
+
+struct BasePool
+{
+    void* vtable = nullptr;
+    std::uintptr_t entries = 0;
+    std::uint8_t* flags = nullptr;
+    std::uint32_t size = 0;
+    std::uint32_t itemSize = 0;
+    std::uint32_t nextSlotIndex = 0;
+    std::uint32_t unknown24 = 0;
+    std::uint32_t freeSlotIndex = 0;
+
+    [[nodiscard]] bool IsValid(std::uint32_t index) const noexcept
+    {
+        return flags && index < size && (flags[index] & 0x80U) == 0;
+    }
+
+    [[nodiscard]] int ScriptGuid(std::uint32_t index) const noexcept
+    {
+        return static_cast<int>((index << 8U) + flags[index]);
+    }
+};
+static_assert(sizeof(BasePool) == 0x30);
+
+[[nodiscard]] bool Readable(const void* address, std::size_t bytes) noexcept
+{
+    if (!address || bytes == 0)
+        return false;
+    MEMORY_BASIC_INFORMATION memory{};
+    if (::VirtualQuery(address, &memory, sizeof(memory)) == 0)
+        return false;
+    if (memory.State != MEM_COMMIT || (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0)
+        return false;
+    const auto begin = reinterpret_cast<std::uintptr_t>(memory.BaseAddress);
+    const auto current = reinterpret_cast<std::uintptr_t>(address);
+    if (begin > (std::numeric_limits<std::uintptr_t>::max)() - memory.RegionSize)
+        return false;
+    const auto end = begin + memory.RegionSize;
+    return current >= begin && current <= end && bytes <= end - current;
+}
+
+[[nodiscard]] std::size_t ImageSize(std::uintptr_t moduleBase) noexcept
+{
+    if (!Readable(reinterpret_cast<const void*>(moduleBase), sizeof(IMAGE_DOS_HEADER)))
+        return 0;
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(moduleBase);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0)
+        return 0;
+    const auto ntAddress = moduleBase + static_cast<std::uintptr_t>(dos->e_lfanew);
+    if (!Readable(reinterpret_cast<const void*>(ntAddress), sizeof(IMAGE_NT_HEADERS64)))
+        return 0;
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(ntAddress);
+    return nt->Signature == IMAGE_NT_SIGNATURE ? nt->OptionalHeader.SizeOfImage : 0;
+}
+
+[[nodiscard]] PoolEncryption* ResolveEncryptedPedPool() noexcept
+{
+    static PoolEncryption* cached = nullptr;
+    static bool attempted = false;
+    if (attempted)
+        return cached;
+    attempted = true;
+
+    const auto module = ::GetModuleHandleW(L"GTA5_Enhanced.exe");
+    const auto base = reinterpret_cast<std::uintptr_t>(module);
+    const auto size = ImageSize(base);
+    if (!base || size < PedPoolPattern.size() ||
+        base > (std::numeric_limits<std::uintptr_t>::max)() - size) {
+        return nullptr;
+    }
+
+    const auto moduleEnd = base + size;
+    std::uintptr_t cursor = base;
+    while (cursor < moduleEnd) {
+        MEMORY_BASIC_INFORMATION memory{};
+        if (::VirtualQuery(reinterpret_cast<const void*>(cursor), &memory, sizeof(memory)) == 0)
+            return nullptr;
+
+        const auto regionBase = reinterpret_cast<std::uintptr_t>(memory.BaseAddress);
+        if (regionBase > (std::numeric_limits<std::uintptr_t>::max)() - memory.RegionSize)
+            return nullptr;
+        const auto regionEndRaw = regionBase + memory.RegionSize;
+        const auto regionStart = (std::max)(cursor, regionBase);
+        const auto regionEnd = (std::min)(moduleEnd, regionEndRaw);
+
+        if (memory.State == MEM_COMMIT &&
+            (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) == 0 &&
+            regionEnd > regionStart &&
+            regionEnd - regionStart >= PedPoolPattern.size()) {
+            const auto* bytes = reinterpret_cast<const std::uint8_t*>(regionStart);
+            const std::size_t regionSize = regionEnd - regionStart;
+            for (std::size_t i = 0; i + PedPoolPattern.size() <= regionSize; ++i) {
+                if (std::memcmp(bytes + i, PedPoolPattern.data(), PedPoolPattern.size()) != 0)
+                    continue;
+
+                const auto match = regionStart + i;
+                if (match > (std::numeric_limits<std::uintptr_t>::max)() - PedPoolRipInstructionOffset)
+                    return nullptr;
+                const auto instruction = match + PedPoolRipInstructionOffset;
+                if (instruction > (std::numeric_limits<std::uintptr_t>::max)() - 7 ||
+                    !Readable(reinterpret_cast<const void*>(instruction + 3), sizeof(std::int32_t))) {
+                    return nullptr;
+                }
+
+                std::int32_t displacement = 0;
+                std::memcpy(&displacement, reinterpret_cast<const void*>(instruction + 3), sizeof(displacement));
+                const auto instructionEnd = static_cast<std::intptr_t>(instruction + 7);
+                const auto targetSigned = instructionEnd + static_cast<std::intptr_t>(displacement);
+                if (targetSigned <= 0)
+                    return nullptr;
+                auto* encrypted = reinterpret_cast<PoolEncryption*>(
+                    static_cast<std::uintptr_t>(targetSigned));
+                if (!Readable(encrypted, sizeof(PoolEncryption)))
+                    return nullptr;
+                cached = encrypted;
+                return cached;
+            }
+        }
+
+        if (regionEnd <= cursor)
+            return nullptr;
+        cursor = regionEnd;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] BasePool* PedPool() noexcept
+{
+    auto* encrypted = ResolveEncryptedPedPool();
+    if (!encrypted || !encrypted->isSet)
+        return nullptr;
+
+    const std::uint64_t x = _rotl64(encrypted->second, 30);
+    const std::uint64_t decoded = ~_rotl64(
+        _rotl64(x ^ encrypted->first, 32),
+        (static_cast<std::uint8_t>(x) & 0x1FU) + 2U);
+    auto* pool = reinterpret_cast<BasePool*>(decoded);
+    if (!Readable(pool, sizeof(BasePool)) || pool->size == 0 || pool->size > 8192 ||
+        !pool->flags || !Readable(pool->flags, pool->size)) {
+        return nullptr;
+    }
+    return pool;
+}
+
+[[nodiscard]] float DistanceSquared(const GTA_Native_Script_Vector& a, const GTA_Native_Script_Vector& b) noexcept
+{
+    const float dx = a.x - b.x;
+    const float dy = a.y - b.y;
+    const float dz = a.z - b.z;
+    return dx * dx + dy * dy + dz * dz;
+}
+}
+
+GTA_Ped_Control_State& GTA_Ped_Control_State::Instance() noexcept
+{
+    static GTA_Ped_Control_State state;
+    return state;
+}
+
+void GTA_Ped_Control_State::SetRadius(float radius) noexcept
+{
+    m_radius.store(std::clamp(radius, 10.0F, 1000.0F), std::memory_order_release);
+}
+
+float GTA_Ped_Control_State::Radius() const noexcept
+{
+    return m_radius.load(std::memory_order_acquire);
+}
+
+void GTA_Ped_Control_State::RequestKillEnemies() noexcept
+{
+    m_action.store(GTA_Ped_Action::KillEnemies, std::memory_order_release);
+}
+
+void GTA_Ped_Control_State::RequestKillPeds() noexcept
+{
+    m_action.store(GTA_Ped_Action::KillPeds, std::memory_order_release);
+}
+
+GTA_Ped_Action GTA_Ped_Control_State::ConsumeAction() noexcept
+{
+    return m_action.exchange(GTA_Ped_Action::None, std::memory_order_acq_rel);
+}
+
+void GTA_Ped_Control_State::Publish(GTA_Ped_Action_Snapshot snapshot) noexcept
+{
+    m_lastAction.store(snapshot.action, std::memory_order_release);
+    m_affected.store(snapshot.affected, std::memory_order_release);
+    m_skippedPlayers.store(snapshot.skippedPlayers, std::memory_order_release);
+    m_poolReady.store(snapshot.poolReady, std::memory_order_release);
+}
+
+GTA_Ped_Action_Snapshot GTA_Ped_Control_State::Snapshot() const noexcept
+{
+    GTA_Ped_Action_Snapshot snapshot{};
+    snapshot.action = m_lastAction.load(std::memory_order_acquire);
+    snapshot.affected = m_affected.load(std::memory_order_acquire);
+    snapshot.skippedPlayers = m_skippedPlayers.load(std::memory_order_acquire);
+    snapshot.poolReady = m_poolReady.load(std::memory_order_acquire);
+    return snapshot;
+}
+
+void GTA_Ped_Control_State::Reset() noexcept
+{
+    m_radius.store(150.0F, std::memory_order_release);
+    m_action.store(GTA_Ped_Action::None, std::memory_order_release);
+    Publish({});
+}
+
+void TickPedControl(GTA_Native_Manager& natives) noexcept
+{
+    auto& state = GTA_Ped_Control_State::Instance();
+    const auto action = state.ConsumeAction();
+    if (action == GTA_Ped_Action::None)
+        return;
+
+    GTA_Ped_Action_Snapshot result{};
+    result.action = action;
+
+    auto* pool = PedPool();
+    result.poolReady = pool != nullptr;
+    if (!pool) {
+        state.Publish(result);
+        return;
+    }
+
+    const auto playerPed = natives.Invoke<int>(GTA_Native_Id::PlayerPedId);
+    if (!playerPed || *playerPed == 0) {
+        state.Publish(result);
+        return;
+    }
+    const auto playerCoords = natives.Invoke<GTA_Native_Script_Vector>(GTA_Native_Id::GetEntityCoords, *playerPed, true);
+    if (!playerCoords) {
+        state.Publish(result);
+        return;
+    }
+
+    const float radius = state.Radius();
+    const float radiusSquared = radius * radius;
+
+    for (std::uint32_t index = 0; index < pool->size; ++index) {
+        if (!pool->IsValid(index))
+            continue;
+
+        const int ped = pool->ScriptGuid(index);
+        if (ped == 0 || ped == *playerPed)
+            continue;
+
+        const auto isPlayer = natives.InvokeHash<bool>(IsPedAPlayer, ped);
+        if (!isPlayer || *isPlayer) {
+            if (isPlayer && *isPlayer)
+                ++result.skippedPlayers;
+            continue;
+        }
+
+        const auto coords = natives.Invoke<GTA_Native_Script_Vector>(GTA_Native_Id::GetEntityCoords, ped, true);
+        if (!coords || DistanceSquared(*coords, *playerCoords) > radiusSquared)
+            continue;
+
+        if (action == GTA_Ped_Action::KillEnemies) {
+            const auto relationshipToPlayer = natives.InvokeHash<int>(GetRelationshipBetweenPeds, ped, *playerPed);
+            const auto relationshipFromPlayer = natives.InvokeHash<int>(GetRelationshipBetweenPeds, *playerPed, ped);
+            const auto inCombat = natives.InvokeHash<bool>(IsPedInCombat, ped, *playerPed);
+            const bool hostileRelationship =
+                (relationshipToPlayer && *relationshipToPlayer >= 3 && *relationshipToPlayer <= 5) ||
+                (relationshipFromPlayer && *relationshipFromPlayer >= 3 && *relationshipFromPlayer <= 5);
+            if (!hostileRelationship && (!inCombat || !*inCombat))
+                continue;
+        }
+
+        if (natives.InvokeHash<void>(SetEntityHealth, ped, 0, 0))
+            ++result.affected;
+    }
+
+    state.Publish(result);
+}
+
+void ResetPedControl() noexcept
+{
+    GTA_Ped_Control_State::Instance().Reset();
+}
+}
