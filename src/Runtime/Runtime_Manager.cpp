@@ -9,6 +9,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Casino_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Network_Session_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Script_Function_Invoker.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Personal_Save.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 #include "Scripting/Lua/Lua_Runtime.hpp"
@@ -183,6 +184,7 @@ void Runtime_Manager::Stop() noexcept
     try {
         m_frontend.Stop();
         m_gameThreadBridge.Uninstall();
+        Integrations::GTA5_Enhanced::ResetScriptFunctionInvoker();
         Integrations::GTA5_Enhanced::ResetVehiclePersonalSave();
         Integrations::GTA5_Enhanced::ResetBusinessExtension();
         Integrations::GTA5_Enhanced::ResetCasinoExtension();
@@ -260,6 +262,8 @@ void Runtime_Manager::InitializeGameThreadBridge(
     using Integrations::GTA5_Enhanced::ConfigureVehiclePersonalSave;
     using Integrations::GTA5_Enhanced::ResetVehiclePersonalSave;
     using Integrations::GTA5_Enhanced::ConfigureWorldEnvironmentExtension;
+    using Integrations::GTA5_Enhanced::ConfigureScriptFunctionInvoker;
+    using Integrations::GTA5_Enhanced::ResetScriptFunctionInvoker;
     using Integrations::GTA5_Enhanced::ResetBusinessExtension;
     using Integrations::GTA5_Enhanced::ResetCasinoExtension;
     using Integrations::GTA5_Enhanced::ResetNetworkSessionExtension;
@@ -271,6 +275,7 @@ void Runtime_Manager::InitializeGameThreadBridge(
     ResetNetworkSessionExtension();
     ResetRandomEventsExtension();
     ResetVehiclePersonalSave();
+    ResetScriptFunctionInvoker();
     ResetWorldEnvironmentExtension();
     m_scriptGlobals.Clear();
 
@@ -362,6 +367,14 @@ void Runtime_Manager::InitializeGameThreadBridge(
                      "GTA5_Enhanced.Natives");
         return;
     }
+
+    ConfigureScriptFunctionInvoker(
+        scriptGlobals,
+        programTable,
+        scriptThreadsStorage,
+        scriptVm,
+        status.build ? status.build->fingerprint : 0,
+        &m_logger);
 
     ConfigureVehiclePersonalSave(
         scriptGlobals,

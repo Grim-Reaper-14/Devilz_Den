@@ -121,6 +121,7 @@ list(APPEND DEVILZ_DEN_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Random_Events_Extension.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Business_State.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Business_Extension.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Script_Function_Invoker.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Integrations/GTA5_Enhanced/Runtime/GTA_Casino_Extension.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Themes/Menu_Theme.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/Menu/Menu_Appearance.cpp"

@@ -7,6 +7,7 @@
 #include "GTA_Gameplay_State.hpp"
 #include "GTA_Network_Session_Extension.hpp"
 #include "GTA_Random_Events_Extension.hpp"
+#include "GTA_Script_Function_Invoker.hpp"
 #include "GTA_Self_Online_Extension.hpp"
 #include "GTA_Self_Utility_Extension.hpp"
 #include "GTA_Stats_Extension.hpp"
@@ -488,6 +489,7 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
             gameplayState.SetExplosiveBullets(false);
         m_gameplay.Tick();
         m_gameplay.TickSlow();
+        (void)TickScriptFunctionInvoker();
         (void)TickStatsExtension(*m_natives, RegularStatDrainBudget);
         if (explosiveAmmo)
             gameplayState.SetExplosiveBullets(true);
