@@ -51,7 +51,7 @@ public:
     // in this bootstrap cache. Vehicle Forge uses the bulk of these; Self,
     // Weapons, Garage, World, Outfit Editor, Stats, and Unlocks use the final
     // handlers for their game-thread actions.
-    static constexpr std::array<GTA_Native_Hash, 82> BootstrapProbeHashes{
+    static constexpr std::array<GTA_Native_Hash, 83> BootstrapProbeHashes{
         0x4EDE34FBADD967A6ULL,
         0xE81651AD79516E48ULL,
         0xB8BA7F44DF1575E1ULL,
@@ -130,6 +130,7 @@ public:
         0x4F8678C02360C3D2ULL, // STAT_SET_FLOAT
         0xF1D0B0CE940F620DULL, // STAT_SET_BOOL
         0x1A43F9BE4B6AAB67ULL, // STAT_SET_STRING
+        0xD69CE161FE614531ULL, // _GET_STAT_HASH_FOR_CHARACTER_STAT
         0xA6D3C21763E25496ULL, // GET_PACKED_STAT_BOOL_CODE
         0x03CFFD51CE515454ULL, // GET_PACKED_STAT_INT_CODE
         0xA595AA1819B05EA0ULL, // SET_PACKED_STAT_BOOL_CODE

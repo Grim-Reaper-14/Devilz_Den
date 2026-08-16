@@ -347,6 +347,7 @@ constexpr bool IsFslReroutableStatNative(GTA_Native_Hash hash) noexcept
     case 0x4F8678C02360C3D2ULL: // STAT_SET_FLOAT
     case 0xF1D0B0CE940F620DULL: // STAT_SET_BOOL
     case 0x1A43F9BE4B6AAB67ULL: // STAT_SET_STRING
+    case 0xD69CE161FE614531ULL: // _GET_STAT_HASH_FOR_CHARACTER_STAT
     case 0xA6D3C21763E25496ULL: // GET_PACKED_STAT_BOOL_CODE
     case 0x03CFFD51CE515454ULL: // GET_PACKED_STAT_INT_CODE
     case 0xA595AA1819B05EA0ULL: // SET_PACKED_STAT_BOOL_CODE
@@ -368,6 +369,7 @@ constexpr std::string_view BootstrapProbeName(GTA_Native_Hash hash) noexcept
     case 0x4F8678C02360C3D2ULL: return "STAT_SET_FLOAT";
     case 0xF1D0B0CE940F620DULL: return "STAT_SET_BOOL";
     case 0x1A43F9BE4B6AAB67ULL: return "STAT_SET_STRING";
+    case 0xD69CE161FE614531ULL: return "_GET_STAT_HASH_FOR_CHARACTER_STAT";
     case 0xA6D3C21763E25496ULL: return "GET_PACKED_STAT_BOOL_CODE";
     case 0x03CFFD51CE515454ULL: return "GET_PACKED_STAT_INT_CODE";
     case 0xA595AA1819B05EA0ULL: return "SET_PACKED_STAT_BOOL_CODE";
@@ -590,7 +592,7 @@ GTA_Native_Manager_Status GTA_Native_Manager::Initialize(
     const bool requiredHandlersReady = m_handlers.size() == requestedHashes.size();
     if (requiredHandlersReady) {
         // Keep nearest-vehicle lookup optional.  If a future Enhanced build
-        // changes it, the validated 157-handler startup baseline still works.
+        // changes it, the validated startup baseline still works.
         constexpr GTA_Native_Hash GetClosestVehicleEnhancedHash = 0xF0CA45A211FFDCD9ULL;
         std::array<GTA_Native_Handler, 1> optionalEntries{
             reinterpret_cast<GTA_Native_Handler>(

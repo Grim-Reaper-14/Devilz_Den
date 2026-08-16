@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -27,6 +28,8 @@ constexpr GTA_Native_Hash StatSetInt = 0x1164A75E490C27B6ULL;
 constexpr GTA_Native_Hash StatSetFloat = 0x4F8678C02360C3D2ULL;
 constexpr GTA_Native_Hash StatSetBool = 0xF1D0B0CE940F620DULL;
 constexpr GTA_Native_Hash StatSetString = 0x1A43F9BE4B6AAB67ULL;
+constexpr GTA_Native_Hash StatGetHashForCharacterStat = 0xD69CE161FE614531ULL;
+constexpr std::string_view CharacterIntOrPrefix = "__DD_CHARSTAT_INT_OR:";
 constexpr std::size_t MaxStatStringLength = 255;
 
 [[nodiscard]] char Lower(char value) noexcept
@@ -250,14 +253,143 @@ struct NativeStatRead
     return true;
 }
 
+[[nodiscard]] bool ParseUInt32(std::string_view text, std::uint32_t& value) noexcept
+{
+    std::string copy(Trim(text));
+    if (copy.empty()) return false;
+    char* end = nullptr;
+    errno = 0;
+    const auto parsed = std::strtoull(copy.c_str(), &end, 10);
+    if (errno == ERANGE || end != copy.c_str() + copy.size() ||
+        parsed > (std::numeric_limits<std::uint32_t>::max)()) return false;
+    value = static_cast<std::uint32_t>(parsed);
+    return true;
+}
+
 [[nodiscard]] bool FloatsMatch(float left, float right) noexcept
 {
     const auto scale = (std::max)(1.0F, (std::max)(std::fabs(left), std::fabs(right)));
     return std::fabs(left - right) <= std::numeric_limits<float>::epsilon() * 4.0F * scale;
 }
 
+[[nodiscard]] bool IsCharacterIntOrRequest(std::string_view statName) noexcept
+{
+    return statName.size() > CharacterIntOrPrefix.size() &&
+        statName.substr(0, CharacterIntOrPrefix.size()) == CharacterIntOrPrefix;
+}
+
+[[nodiscard]] GTA_Stat_Snapshot ExecuteCharacterIntOr(
+    GTA_Native_Manager& natives,
+    const GTA_Stats_State::Command& command)
+{
+    GTA_Stat_Snapshot snapshot{};
+    snapshot.requestId = command.id;
+    snapshot.requestedName = command.statName;
+
+    if (!natives.Ready()) {
+        snapshot.status = GTA_Stat_Request_Status::RuntimeUnavailable;
+        snapshot.detail = "GTA native manager is unavailable";
+        return snapshot;
+    }
+    if (command.kind != GTA_Stats_State::Command_Kind::Write) {
+        snapshot.status = GTA_Stat_Request_Status::InvalidValue;
+        snapshot.detail = "Character-stat bitmask requests are write-only";
+        return snapshot;
+    }
+
+    std::int32_t statIndex = 0;
+    if (!ParseInt(
+            std::string_view{command.statName}.substr(CharacterIntOrPrefix.size()),
+            statIndex) || statIndex <= 0) {
+        snapshot.status = GTA_Stat_Request_Status::InvalidValue;
+        snapshot.detail = "Character-stat request contains an invalid stat index";
+        return snapshot;
+    }
+
+    std::uint32_t mask = 0;
+    if (!ParseUInt32(command.value, mask) || mask == 0U) {
+        snapshot.status = GTA_Stat_Request_Status::InvalidValue;
+        snapshot.detail = "Character-stat request contains an invalid completion mask";
+        return snapshot;
+    }
+
+    int character = 0;
+    if (!ResolveCharacterIndex(natives, character)) {
+        snapshot.status = GTA_Stat_Request_Status::NotFound;
+        snapshot.detail = "Active MP character could not be resolved through STAT_GET_INT";
+        return snapshot;
+    }
+
+    const auto resolvedHash = natives.InvokeHash<std::uint32_t>(
+        StatGetHashForCharacterStat,
+        0,
+        statIndex,
+        character);
+    if (!resolvedHash.has_value() || resolvedHash.value() == 0U) {
+        snapshot.status = GTA_Stat_Request_Status::NotFound;
+        snapshot.detail = "GTA could not resolve the raw character-stat hash";
+        return snapshot;
+    }
+
+    snapshot.normalizedName = "CHARSTAT[" + std::to_string(statIndex) + "]";
+    snapshot.hash = resolvedHash.value();
+    snapshot.type = GTA_Stat_Data::Type::Int;
+    snapshot.typeKnown = true;
+    snapshot.writeSupported = true;
+
+    std::int32_t currentValue = 0;
+    const auto read = natives.InvokeHash<bool>(StatGetInt, snapshot.hash, &currentValue, -1);
+    if (!read.has_value() || !read.value()) {
+        snapshot.status = GTA_Stat_Request_Status::NotFound;
+        snapshot.detail = "Raw character stat could not be read before applying the completion mask";
+        return snapshot;
+    }
+
+    const auto currentBits = static_cast<std::uint32_t>(currentValue);
+    const auto desiredBits = currentBits | mask;
+    std::int32_t desiredValue = 0;
+    static_assert(sizeof(desiredValue) == sizeof(desiredBits));
+    std::memcpy(&desiredValue, &desiredBits, sizeof(desiredValue));
+    snapshot.value = std::to_string(desiredValue);
+
+    if (desiredBits == currentBits) {
+        snapshot.status = GTA_Stat_Request_Status::Succeeded;
+        snapshot.detail = "Requested Career Progress completion bits were already set; unrelated stat bits were preserved";
+        return snapshot;
+    }
+
+    if (!natives.InvokeHash<void>(StatSetInt, snapshot.hash, desiredValue, true)) {
+        snapshot.status = GTA_Stat_Request_Status::Failed;
+        snapshot.detail = "Career Progress character-stat write handler is unavailable";
+        return snapshot;
+    }
+
+    std::int32_t verifiedValue = 0;
+    const auto verifiedRead = natives.InvokeHash<bool>(StatGetInt, snapshot.hash, &verifiedValue, -1);
+    if (!verifiedRead.has_value() || !verifiedRead.value()) {
+        snapshot.status = GTA_Stat_Request_Status::Failed;
+        snapshot.detail = "Career Progress write was dispatched but native readback failed";
+        return snapshot;
+    }
+
+    snapshot.value = std::to_string(verifiedValue);
+    const auto verifiedBits = static_cast<std::uint32_t>(verifiedValue);
+    if (verifiedBits != desiredBits) {
+        snapshot.status = GTA_Stat_Request_Status::Failed;
+        snapshot.detail = "Career Progress write was dispatched but readback did not preserve the expected bitfield";
+        return snapshot;
+    }
+
+    snapshot.status = GTA_Stat_Request_Status::Succeeded;
+    snapshot.detail = "Career Progress completion bits were merged and verified; reward-claim flags were not modified";
+    return snapshot;
+}
+
 [[nodiscard]] GTA_Stat_Snapshot Execute(GTA_Native_Manager& natives, const GTA_Stats_State::Command& command)
 {
+    if (IsCharacterIntOrRequest(command.statName))
+        return ExecuteCharacterIntOr(natives, command);
+
     GTA_Stat_Snapshot snapshot{};
     snapshot.requestId = command.id;
     snapshot.requestedName = command.statName;
