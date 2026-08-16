@@ -15,6 +15,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -155,16 +156,33 @@ public:
     [[nodiscard]] auto InvokeHash(GTA_Native_Hash hash, Args&&... args) noexcept -> typename GTA_Native_Invoke_Result<Ret>::Type
     {
         if (hash == 0xA52E1AE3848A506BULL) {
+            using Clock = std::chrono::steady_clock;
+            constexpr auto MaintenanceInterval = std::chrono::milliseconds(50);
+            constexpr auto BusinessInterval = std::chrono::milliseconds(100);
+            static auto lastMaintenance = Clock::time_point{};
+            static auto lastBusiness = Clock::time_point{};
+            const auto now = Clock::now();
+
             TickSelfOnlineExtension(*this);
             TickSelfUtilityExtension(*this);
-            TickBusinessExtension(*this);
-            TickOutfitEditorExtension(*this);
-            TickTeleportExtension(*this);
-            TickVehicleGarageSave(*this);
             TickWorldEnvironmentExtension(*this);
             TickPedControl(*this);
-            TickStatsExtension(*this);
-            DrainPackedStatsQueue();
+
+            if (lastMaintenance == Clock::time_point{} ||
+                now - lastMaintenance >= MaintenanceInterval) {
+                lastMaintenance = now;
+                TickOutfitEditorExtension(*this);
+                TickTeleportExtension(*this);
+                TickVehicleGarageSave(*this);
+                TickStatsExtension(*this);
+                DrainPackedStatsQueue();
+            }
+
+            if (lastBusiness == Clock::time_point{} ||
+                now - lastBusiness >= BusinessInterval) {
+                lastBusiness = now;
+                TickBusinessExtension(*this);
+            }
         }
         return InvokeHandler<Ret>(Find(hash), std::forward<Args>(args)...);
     }
