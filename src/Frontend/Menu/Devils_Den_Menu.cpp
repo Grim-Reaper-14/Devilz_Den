@@ -4,6 +4,7 @@
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Teleport_Extension.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_Vehicle_Garage_Save.hpp"
 #include "Integrations/GTA5_Enhanced/Runtime/GTA_World_Environment_Extension.hpp"
+#include "Integrations/GTA5_Enhanced/Runtime/GTA_Ped_Control.hpp"
 
 #define Draw DrawLegacy
 #define DrawBanner DrawBannerLegacy
