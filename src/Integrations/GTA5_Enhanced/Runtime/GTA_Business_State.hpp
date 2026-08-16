@@ -245,6 +245,81 @@ struct GTA_Special_Cargo_Action_Command
     int cargoHeld = 0;
 };
 
+inline constexpr std::uint32_t GTA_Vehicle_Cargo_Steal_Cooldown_Offset = 19170U;
+inline constexpr std::array<std::uint32_t, 4> GTA_Vehicle_Cargo_Sell_Cooldown_Offsets{{
+    19525U,
+    19526U,
+    19527U,
+    19528U,
+}};
+inline constexpr std::uint32_t GTA_Vehicle_Cargo_Top_Range_Value_Offset = 19263U;
+inline constexpr std::uint32_t GTA_Vehicle_Cargo_Mid_Range_Value_Offset = 19264U;
+inline constexpr std::uint32_t GTA_Vehicle_Cargo_Standard_Range_Value_Offset = 19265U;
+
+inline constexpr int GTA_Vehicle_Cargo_Supplied_Steal_Cooldown_Ms = 180'000;
+inline constexpr std::array<int, 4> GTA_Vehicle_Cargo_Supplied_Sell_Cooldowns_Ms{{
+    1'200'000,
+    1'680'000,
+    2'340'000,
+    2'880'000,
+}};
+inline constexpr int GTA_Vehicle_Cargo_Supplied_Top_Range_Value = 40'000;
+inline constexpr int GTA_Vehicle_Cargo_Supplied_Mid_Range_Value = 25'000;
+inline constexpr int GTA_Vehicle_Cargo_Supplied_Standard_Range_Value = 15'000;
+
+struct GTA_Vehicle_Cargo_Values
+{
+    int stealMissionCooldownMs = GTA_Vehicle_Cargo_Supplied_Steal_Cooldown_Ms;
+    std::array<int, 4> sellMissionCooldownMs = GTA_Vehicle_Cargo_Supplied_Sell_Cooldowns_Ms;
+    int topRangeValue = GTA_Vehicle_Cargo_Supplied_Top_Range_Value;
+    int midRangeValue = GTA_Vehicle_Cargo_Supplied_Mid_Range_Value;
+    int standardRangeValue = GTA_Vehicle_Cargo_Supplied_Standard_Range_Value;
+};
+
+inline constexpr GTA_Vehicle_Cargo_Values GTA_Vehicle_Cargo_Supplied_173_Values{};
+
+struct GTA_Vehicle_Cargo_Snapshot
+{
+    bool runtimeReady = false;
+    GTA_Vehicle_Cargo_Values values{};
+    std::string detail = "Vehicle Cargo tunables are unavailable.";
+};
+
+enum class GTA_Vehicle_Cargo_Action_Kind : std::uint8_t
+{
+    None,
+    ApplyCooldowns,
+    ApplySaleValues,
+    ApplyAll
+};
+
+enum class GTA_Vehicle_Cargo_Action_Status : std::uint8_t
+{
+    Idle,
+    Queued,
+    Succeeded,
+    RuntimeUnavailable,
+    UnsupportedBuild,
+    InvalidValue,
+    Failed
+};
+
+struct GTA_Vehicle_Cargo_Action_Snapshot
+{
+    std::uint64_t revision = 0;
+    std::uint64_t requestId = 0;
+    GTA_Vehicle_Cargo_Action_Kind kind = GTA_Vehicle_Cargo_Action_Kind::None;
+    GTA_Vehicle_Cargo_Action_Status status = GTA_Vehicle_Cargo_Action_Status::Idle;
+    std::string detail;
+};
+
+struct GTA_Vehicle_Cargo_Action_Command
+{
+    std::uint64_t id = 0;
+    GTA_Vehicle_Cargo_Action_Kind kind = GTA_Vehicle_Cargo_Action_Kind::None;
+    GTA_Vehicle_Cargo_Values values{};
+};
+
 class GTA_Native_Manager;
 
 class GTA_Business_State final
@@ -287,6 +362,18 @@ public:
     {
         std::scoped_lock lock(m_mutex);
         return m_specialCargoAction;
+    }
+
+    [[nodiscard]] GTA_Vehicle_Cargo_Snapshot VehicleCargo() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_vehicleCargo;
+    }
+
+    [[nodiscard]] GTA_Vehicle_Cargo_Action_Snapshot VehicleCargoAction() const
+    {
+        std::scoped_lock lock(m_mutex);
+        return m_vehicleCargoAction;
     }
 
     [[nodiscard]] bool RequestNightclubCoreValues(
@@ -416,6 +503,30 @@ public:
         return QueueSpecialCargoAction(std::move(command));
     }
 
+    [[nodiscard]] bool RequestVehicleCargoCooldowns(GTA_Vehicle_Cargo_Values values)
+    {
+        GTA_Vehicle_Cargo_Action_Command command{};
+        command.kind = GTA_Vehicle_Cargo_Action_Kind::ApplyCooldowns;
+        command.values = std::move(values);
+        return QueueVehicleCargoAction(std::move(command));
+    }
+
+    [[nodiscard]] bool RequestVehicleCargoSaleValues(GTA_Vehicle_Cargo_Values values)
+    {
+        GTA_Vehicle_Cargo_Action_Command command{};
+        command.kind = GTA_Vehicle_Cargo_Action_Kind::ApplySaleValues;
+        command.values = std::move(values);
+        return QueueVehicleCargoAction(std::move(command));
+    }
+
+    [[nodiscard]] bool RequestVehicleCargoAll(GTA_Vehicle_Cargo_Values values)
+    {
+        GTA_Vehicle_Cargo_Action_Command command{};
+        command.kind = GTA_Vehicle_Cargo_Action_Kind::ApplyAll;
+        command.values = std::move(values);
+        return QueueVehicleCargoAction(std::move(command));
+    }
+
     void PublishNightclub(GTA_Nightclub_Snapshot snapshot)
     {
         std::scoped_lock lock(m_mutex);
@@ -426,6 +537,12 @@ public:
     {
         std::scoped_lock lock(m_mutex);
         m_specialCargo = std::move(snapshot);
+    }
+
+    void PublishVehicleCargo(GTA_Vehicle_Cargo_Snapshot snapshot)
+    {
+        std::scoped_lock lock(m_mutex);
+        m_vehicleCargo = std::move(snapshot);
     }
 
     void Reset()
@@ -442,6 +559,10 @@ public:
         m_pendingSpecialCargoAction.reset();
         m_specialCargoAction = {};
         m_nextSpecialCargoActionId = 1;
+        m_vehicleCargo = {};
+        m_pendingVehicleCargoAction.reset();
+        m_vehicleCargoAction = {};
+        m_nextVehicleCargoActionId = 1;
     }
 
 private:
@@ -581,6 +702,50 @@ private:
         m_specialCargoAction.detail = std::move(detail);
     }
 
+    [[nodiscard]] bool QueueVehicleCargoAction(GTA_Vehicle_Cargo_Action_Command command)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_pendingVehicleCargoAction ||
+            m_vehicleCargoAction.status == GTA_Vehicle_Cargo_Action_Status::Queued) {
+            return false;
+        }
+
+        command.id = m_nextVehicleCargoActionId++;
+        m_pendingVehicleCargoAction = std::move(command);
+
+        ++m_vehicleCargoAction.revision;
+        m_vehicleCargoAction.requestId = m_pendingVehicleCargoAction->id;
+        m_vehicleCargoAction.kind = m_pendingVehicleCargoAction->kind;
+        m_vehicleCargoAction.status = GTA_Vehicle_Cargo_Action_Status::Queued;
+        m_vehicleCargoAction.detail = "Queued for the GTA game thread.";
+        return true;
+    }
+
+    [[nodiscard]] bool ConsumeVehicleCargoAction(GTA_Vehicle_Cargo_Action_Command& command)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (!m_pendingVehicleCargoAction)
+            return false;
+
+        command = std::move(*m_pendingVehicleCargoAction);
+        m_pendingVehicleCargoAction.reset();
+        return true;
+    }
+
+    void CompleteVehicleCargoAction(
+        const GTA_Vehicle_Cargo_Action_Command& command,
+        GTA_Vehicle_Cargo_Action_Status status,
+        std::string detail)
+    {
+        std::scoped_lock lock(m_mutex);
+        if (m_vehicleCargoAction.requestId != command.id)
+            return;
+
+        ++m_vehicleCargoAction.revision;
+        m_vehicleCargoAction.status = status;
+        m_vehicleCargoAction.detail = std::move(detail);
+    }
+
     friend void TickBusinessExtension(GTA_Native_Manager& natives) noexcept;
 
     mutable std::mutex m_mutex;
@@ -595,6 +760,10 @@ private:
     std::optional<GTA_Special_Cargo_Action_Command> m_pendingSpecialCargoAction;
     GTA_Special_Cargo_Action_Snapshot m_specialCargoAction{};
     std::uint64_t m_nextSpecialCargoActionId = 1;
+    GTA_Vehicle_Cargo_Snapshot m_vehicleCargo{};
+    std::optional<GTA_Vehicle_Cargo_Action_Command> m_pendingVehicleCargoAction;
+    GTA_Vehicle_Cargo_Action_Snapshot m_vehicleCargoAction{};
+    std::uint64_t m_nextVehicleCargoActionId = 1;
 };
 
 [[nodiscard]] const char* GTA_Nightclub_Good_Name(GTA_Nightclub_Good good) noexcept;

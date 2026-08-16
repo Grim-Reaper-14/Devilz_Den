@@ -13,6 +13,7 @@
 
 #include "Bunker_Page.inc"
 #include "Special_Cargo_Page.inc"
+#include "Vehicle_Cargo_Page.inc"
 
 namespace Devilz::Frontend::Misc
 {
@@ -876,6 +877,11 @@ void DrawMiscPage()
 
         if (ImGui::BeginTabItem("SPECIAL CARGO")) {
             DrawSpecialCargoControls();
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("VEHICLE CARGO")) {
+            DrawVehicleCargoControls();
             ImGui::EndTabItem();
         }
 

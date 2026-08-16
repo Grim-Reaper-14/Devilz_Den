@@ -121,6 +121,12 @@ struct SpecialCargoActionResult
     std::string detail;
 };
 
+struct VehicleCargoActionResult
+{
+    GTA_Vehicle_Cargo_Action_Status status = GTA_Vehicle_Cargo_Action_Status::Failed;
+    std::string detail;
+};
+
 template <typename T>
 bool ReadGlobal(Script_Global_Manager& globals, std::uint32_t index, T& value)
 {
@@ -405,6 +411,57 @@ GTA_Special_Cargo_Snapshot BuildSpecialCargoSnapshot(GTA_Native_Manager& natives
 
     snapshot.runtimeReady = true;
     snapshot.detail = "Special Cargo controls and five warehouse slots are ready.";
+    return snapshot;
+}
+
+GTA_Vehicle_Cargo_Snapshot BuildVehicleCargoSnapshot()
+{
+    GTA_Vehicle_Cargo_Snapshot snapshot{};
+    auto* globals = g_runtime.globals;
+
+    if (!globals || !globals->Ready()) {
+        snapshot.detail = "Script globals are not configured.";
+        return snapshot;
+    }
+
+    if (g_runtime.buildFingerprint != SupportedFingerprint) {
+        snapshot.detail = "Vehicle Cargo tunables are not registered for this GTA build.";
+        return snapshot;
+    }
+
+    bool liveOk = true;
+    liveOk &= ReadGlobal(
+        *globals,
+        TunablesBase + GTA_Vehicle_Cargo_Steal_Cooldown_Offset,
+        snapshot.values.stealMissionCooldownMs);
+
+    for (std::size_t index = 0; index < GTA_Vehicle_Cargo_Sell_Cooldown_Offsets.size(); ++index) {
+        liveOk &= ReadGlobal(
+            *globals,
+            TunablesBase + GTA_Vehicle_Cargo_Sell_Cooldown_Offsets[index],
+            snapshot.values.sellMissionCooldownMs[index]);
+    }
+
+    liveOk &= ReadGlobal(
+        *globals,
+        TunablesBase + GTA_Vehicle_Cargo_Top_Range_Value_Offset,
+        snapshot.values.topRangeValue);
+    liveOk &= ReadGlobal(
+        *globals,
+        TunablesBase + GTA_Vehicle_Cargo_Mid_Range_Value_Offset,
+        snapshot.values.midRangeValue);
+    liveOk &= ReadGlobal(
+        *globals,
+        TunablesBase + GTA_Vehicle_Cargo_Standard_Range_Value_Offset,
+        snapshot.values.standardRangeValue);
+
+    if (!liveOk) {
+        snapshot.detail = "Vehicle Cargo live tunables could not be read.";
+        return snapshot;
+    }
+
+    snapshot.runtimeReady = true;
+    snapshot.detail = "Vehicle Cargo tunables are ready for Enhanced 1.73 / b1158.13.";
     return snapshot;
 }
 
@@ -782,6 +839,100 @@ SpecialCargoActionResult ExecuteSpecialCargoAction(
     }
 }
 
+VehicleCargoActionResult ExecuteVehicleCargoAction(
+    const GTA_Vehicle_Cargo_Action_Command& command)
+{
+    auto* globals = g_runtime.globals;
+    if (!globals || !globals->Ready()) {
+        return {
+            GTA_Vehicle_Cargo_Action_Status::RuntimeUnavailable,
+            "Script globals are not configured."};
+    }
+
+    if (g_runtime.buildFingerprint != SupportedFingerprint) {
+        return {
+            GTA_Vehicle_Cargo_Action_Status::UnsupportedBuild,
+            "Vehicle Cargo writes are not registered for this GTA build."};
+    }
+
+    const auto& values = command.values;
+    if (values.stealMissionCooldownMs < 0 ||
+        values.topRangeValue < 0 ||
+        values.midRangeValue < 0 ||
+        values.standardRangeValue < 0 ||
+        std::any_of(
+            values.sellMissionCooldownMs.begin(),
+            values.sellMissionCooldownMs.end(),
+            [](int value) { return value < 0; })) {
+        return {
+            GTA_Vehicle_Cargo_Action_Status::InvalidValue,
+            "Vehicle Cargo cooldowns and sale values cannot be negative."};
+    }
+
+    const auto writeCooldowns = [&]() {
+        if (!WriteGlobalVerified(
+                *globals,
+                TunablesBase + GTA_Vehicle_Cargo_Steal_Cooldown_Offset,
+                values.stealMissionCooldownMs)) {
+            return false;
+        }
+
+        for (std::size_t index = 0; index < GTA_Vehicle_Cargo_Sell_Cooldown_Offsets.size(); ++index) {
+            if (!WriteGlobalVerified(
+                    *globals,
+                    TunablesBase + GTA_Vehicle_Cargo_Sell_Cooldown_Offsets[index],
+                    values.sellMissionCooldownMs[index])) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const auto writeSaleValues = [&]() {
+        return WriteGlobalVerified(
+                   *globals,
+                   TunablesBase + GTA_Vehicle_Cargo_Top_Range_Value_Offset,
+                   values.topRangeValue) &&
+            WriteGlobalVerified(
+                *globals,
+                TunablesBase + GTA_Vehicle_Cargo_Mid_Range_Value_Offset,
+                values.midRangeValue) &&
+            WriteGlobalVerified(
+                *globals,
+                TunablesBase + GTA_Vehicle_Cargo_Standard_Range_Value_Offset,
+                values.standardRangeValue);
+    };
+
+    bool success = false;
+    const char* detail = nullptr;
+    switch (command.kind) {
+    case GTA_Vehicle_Cargo_Action_Kind::ApplyCooldowns:
+        success = writeCooldowns();
+        detail = "Vehicle Cargo steal and sell cooldowns were applied and verified.";
+        break;
+    case GTA_Vehicle_Cargo_Action_Kind::ApplySaleValues:
+        success = writeSaleValues();
+        detail = "Vehicle Cargo sale values were applied and verified.";
+        break;
+    case GTA_Vehicle_Cargo_Action_Kind::ApplyAll:
+        success = writeCooldowns() && writeSaleValues();
+        detail = "All Vehicle Cargo tunables were applied and verified.";
+        break;
+    default:
+        return {
+            GTA_Vehicle_Cargo_Action_Status::InvalidValue,
+            "The requested Vehicle Cargo action is invalid."};
+    }
+
+    if (!success) {
+        return {
+            GTA_Vehicle_Cargo_Action_Status::Failed,
+            "A Vehicle Cargo global write failed readback verification."};
+    }
+
+    return {GTA_Vehicle_Cargo_Action_Status::Succeeded, detail};
+}
+
 ResupplyActionResult ExecuteResupplyAction(
     const GTA_Resupply_Action_Command& command)
 {
@@ -903,10 +1054,23 @@ void TickBusinessExtension(GTA_Native_Manager& natives) noexcept
             std::move(result.detail));
     }
 
+    GTA_Vehicle_Cargo_Action_Command vehicleCargoCommand{};
+    const bool vehicleCargoActionProcessed =
+        state.ConsumeVehicleCargoAction(vehicleCargoCommand);
+
+    if (vehicleCargoActionProcessed) {
+        auto result = ExecuteVehicleCargoAction(vehicleCargoCommand);
+        state.CompleteVehicleCargoAction(
+            vehicleCargoCommand,
+            result.status,
+            std::move(result.detail));
+    }
+
     const bool actionProcessed =
         nightclubActionProcessed ||
         resupplyActionProcessed ||
-        specialCargoActionProcessed;
+        specialCargoActionProcessed ||
+        vehicleCargoActionProcessed;
 
     if (!g_runtime.globals)
         return;
@@ -921,5 +1085,6 @@ void TickBusinessExtension(GTA_Native_Manager& natives) noexcept
     g_runtime.lastRefresh = now;
     state.PublishNightclub(BuildNightclubSnapshot(natives));
     state.PublishSpecialCargo(BuildSpecialCargoSnapshot(natives));
+    state.PublishVehicleCargo(BuildVehicleCargoSnapshot());
 }
 }
