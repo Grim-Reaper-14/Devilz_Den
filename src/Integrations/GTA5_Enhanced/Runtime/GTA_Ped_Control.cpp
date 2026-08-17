@@ -19,14 +19,18 @@ namespace Devilz::Integrations::GTA5_Enhanced
 {
 namespace
 {
+// YimMenuV2 Enhanced PedPool pattern. The rel32 branch displacement is masked
+// because it can move between nearby game builds while the surrounding code and
+// PedPool RIP load remain stable.
 constexpr std::array<std::uint8_t, 13> PedPoolPattern{
-    0x80, 0x79, 0x4B, 0x00, 0x0F, 0x84, 0xF5, 0x00, 0x00, 0x00, 0x48, 0x89, 0xF1
+    0x80, 0x79, 0x4B, 0x00, 0x0F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x48, 0x89, 0xF1
 };
-constexpr std::array<std::uint8_t, 14> HandlesAndPtrsPattern{
-    0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x89, 0xF8, 0x0F, 0x28, 0xFE, 0x41
+constexpr std::array<bool, 13> PedPoolPatternMask{
+    true, true, true, true, true, true, false, false, false, false, true, true, true
 };
 constexpr std::size_t PedPoolRipInstructionOffset = 0x18;
-constexpr std::size_t PtrToHandleCallBackOffset = 0x0B;
+constexpr ULONGLONG PedPoolResolveRetryMs = 1000;
+constexpr std::uint32_t MaxPedPoolSlotsPerAction = 16384;
 constexpr GTA_Native_Hash IsPedAPlayer = 0x501EBB0523078750ULL;
 constexpr GTA_Native_Hash IsPedInCombat = 0x1B32E388988DD296ULL;
 constexpr GTA_Native_Hash GetRelationshipBetweenPeds = 0x1E37AEC038A241A3ULL;
@@ -42,8 +46,6 @@ struct PoolEncryption
 };
 static_assert(sizeof(PoolEncryption) == 0x18);
 
-using PtrToHandle = int (*)(void*);
-
 [[nodiscard]] bool Readable(const void* address, std::size_t bytes) noexcept;
 
 struct BasePool
@@ -57,20 +59,52 @@ struct BasePool
     std::uint32_t unknown24 = 0;
     std::uint32_t freeSlotIndex = 0;
 
+    [[nodiscard]] bool ReadFlag(std::uint32_t index, std::uint8_t& value) const noexcept
+    {
+        if (!flags || index >= size)
+            return false;
+
+        const auto flagsAddress = reinterpret_cast<std::uintptr_t>(flags);
+        if (flagsAddress > (std::numeric_limits<std::uintptr_t>::max)() - index)
+            return false;
+
+        const auto* flag = reinterpret_cast<const std::uint8_t*>(flagsAddress + index);
+        if (!Readable(flag, sizeof(*flag)))
+            return false;
+
+        value = *flag;
+        return true;
+    }
+
     [[nodiscard]] bool IsValid(std::uint32_t index) const noexcept
     {
-        return flags && index < size && (flags[index] & 0x80U) == 0;
+        std::uint8_t flag = 0;
+        return ReadFlag(index, flag) && (flag & 0x80U) == 0;
+    }
+
+    [[nodiscard]] int ScriptGuid(std::uint32_t index) const noexcept
+    {
+        std::uint8_t flag = 0;
+        if (!ReadFlag(index, flag))
+            return 0;
+        return static_cast<int>((index << 8U) + flag);
     }
 
     [[nodiscard]] void* GetAt(std::uint32_t index) const noexcept
     {
-        if (!IsValid(index) || flags[index] == 0 || entries == 0 || itemSize == 0)
+        std::uint8_t flag = 0;
+        if (!ReadFlag(index, flag) || (flag & 0x80U) != 0 || flag == 0 ||
+            entries == 0 || itemSize < 0x18U) {
             return nullptr;
+        }
+
         if (index > ((std::numeric_limits<std::uintptr_t>::max)() - entries) / itemSize)
             return nullptr;
+
         const auto address = entries + static_cast<std::uintptr_t>(index) * itemSize;
         if (!Readable(reinterpret_cast<const void*>(address), 0x18))
             return nullptr;
+
         const auto objectMarker = *reinterpret_cast<void* const*>(address + 0x10);
         return objectMarker ? reinterpret_cast<void*>(address) : nullptr;
     }
@@ -81,154 +115,163 @@ static_assert(sizeof(BasePool) == 0x30);
 {
     if (!address || bytes == 0)
         return false;
+
     MEMORY_BASIC_INFORMATION memory{};
     if (::VirtualQuery(address, &memory, sizeof(memory)) == 0)
         return false;
     if (memory.State != MEM_COMMIT || (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0)
         return false;
+
     const auto begin = reinterpret_cast<std::uintptr_t>(memory.BaseAddress);
     const auto current = reinterpret_cast<std::uintptr_t>(address);
     if (begin > (std::numeric_limits<std::uintptr_t>::max)() - memory.RegionSize)
         return false;
+
     const auto end = begin + memory.RegionSize;
     return current >= begin && current <= end && bytes <= end - current;
-}
-
-[[nodiscard]] bool Executable(const void* address) noexcept
-{
-    if (!address)
-        return false;
-    MEMORY_BASIC_INFORMATION memory{};
-    if (::VirtualQuery(address, &memory, sizeof(memory)) == 0)
-        return false;
-    if (memory.State != MEM_COMMIT || (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0)
-        return false;
-    const DWORD protection = memory.Protect & 0xFFU;
-    return protection == PAGE_EXECUTE || protection == PAGE_EXECUTE_READ ||
-           protection == PAGE_EXECUTE_READWRITE || protection == PAGE_EXECUTE_WRITECOPY;
 }
 
 [[nodiscard]] std::size_t ImageSize(std::uintptr_t moduleBase) noexcept
 {
     if (!Readable(reinterpret_cast<const void*>(moduleBase), sizeof(IMAGE_DOS_HEADER)))
         return 0;
+
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(moduleBase);
     if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0)
         return 0;
+
     const auto ntAddress = moduleBase + static_cast<std::uintptr_t>(dos->e_lfanew);
     if (!Readable(reinterpret_cast<const void*>(ntAddress), sizeof(IMAGE_NT_HEADERS64)))
         return 0;
+
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(ntAddress);
     return nt->Signature == IMAGE_NT_SIGNATURE ? nt->OptionalHeader.SizeOfImage : 0;
 }
 
-struct PedRuntimePointers
+[[nodiscard]] bool MatchesPedPoolPattern(const std::uint8_t* bytes) noexcept
 {
-    PoolEncryption* encryptedPool = nullptr;
-    PtrToHandle ptrToHandle = nullptr;
-};
+    for (std::size_t i = 0; i < PedPoolPattern.size(); ++i) {
+        if (PedPoolPatternMask[i] && bytes[i] != PedPoolPattern[i])
+            return false;
+    }
+    return true;
+}
 
-[[nodiscard]] const PedRuntimePointers& ResolvePedRuntimePointers() noexcept
+[[nodiscard]] PoolEncryption* ResolveEncryptedPedPool() noexcept
 {
-    static PedRuntimePointers cached{};
-    static bool attempted = false;
-    if (attempted)
+    static PoolEncryption* cached = nullptr;
+    static ULONGLONG nextRetryMs = 0;
+
+    if (cached && Readable(cached, sizeof(PoolEncryption)))
         return cached;
-    attempted = true;
 
-    const auto module = ::GetModuleHandleW(L"GTA5_Enhanced.exe");
+    const ULONGLONG now = ::GetTickCount64();
+    if (now < nextRetryMs)
+        return nullptr;
+    nextRetryMs = now + PedPoolResolveRetryMs;
+
+    HMODULE module = ::GetModuleHandleW(L"GTA5_Enhanced.exe");
+    if (!module)
+        module = ::GetModuleHandleW(nullptr);
+
     const auto base = reinterpret_cast<std::uintptr_t>(module);
     const auto size = ImageSize(base);
-    const std::size_t minimumPatternSize = (std::min)(PedPoolPattern.size(), HandlesAndPtrsPattern.size());
-    if (!base || size < minimumPatternSize || base > (std::numeric_limits<std::uintptr_t>::max)() - size)
-        return cached;
+    if (!base || size < PedPoolPattern.size() ||
+        base > (std::numeric_limits<std::uintptr_t>::max)() - size) {
+        return nullptr;
+    }
 
     const auto moduleEnd = base + size;
     std::uintptr_t cursor = base;
     while (cursor < moduleEnd) {
         MEMORY_BASIC_INFORMATION memory{};
         if (::VirtualQuery(reinterpret_cast<const void*>(cursor), &memory, sizeof(memory)) == 0)
-            return cached;
+            return nullptr;
+
         const auto regionBase = reinterpret_cast<std::uintptr_t>(memory.BaseAddress);
         if (regionBase > (std::numeric_limits<std::uintptr_t>::max)() - memory.RegionSize)
-            return cached;
+            return nullptr;
+
         const auto regionEndRaw = regionBase + memory.RegionSize;
         const auto regionStart = (std::max)(cursor, regionBase);
         const auto regionEnd = (std::min)(moduleEnd, regionEndRaw);
 
-        if (memory.State == MEM_COMMIT && (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) == 0 && regionEnd > regionStart) {
+        if (memory.State == MEM_COMMIT &&
+            (memory.Protect & (PAGE_GUARD | PAGE_NOACCESS)) == 0 &&
+            regionEnd > regionStart &&
+            regionEnd - regionStart >= PedPoolPattern.size()) {
             const auto* bytes = reinterpret_cast<const std::uint8_t*>(regionStart);
             const std::size_t regionSize = regionEnd - regionStart;
-            for (std::size_t i = 0; i < regionSize; ++i) {
-                if (!cached.encryptedPool && i + PedPoolPattern.size() <= regionSize &&
-                    std::memcmp(bytes + i, PedPoolPattern.data(), PedPoolPattern.size()) == 0) {
-                    const auto match = regionStart + i;
-                    if (match <= (std::numeric_limits<std::uintptr_t>::max)() - PedPoolRipInstructionOffset) {
-                        const auto instruction = match + PedPoolRipInstructionOffset;
-                        if (instruction <= (std::numeric_limits<std::uintptr_t>::max)() - 7 &&
-                            Readable(reinterpret_cast<const void*>(instruction + 3), sizeof(std::int32_t))) {
-                            std::int32_t displacement = 0;
-                            std::memcpy(&displacement, reinterpret_cast<const void*>(instruction + 3), sizeof(displacement));
-                            const auto targetSigned = static_cast<std::intptr_t>(instruction + 7) + static_cast<std::intptr_t>(displacement);
-                            if (targetSigned > 0) {
-                                auto* encrypted = reinterpret_cast<PoolEncryption*>(static_cast<std::uintptr_t>(targetSigned));
-                                if (Readable(encrypted, sizeof(PoolEncryption)))
-                                    cached.encryptedPool = encrypted;
-                            }
-                        }
-                    }
+
+            for (std::size_t i = 0; i + PedPoolPattern.size() <= regionSize; ++i) {
+                if (!MatchesPedPoolPattern(bytes + i))
+                    continue;
+
+                const auto match = regionStart + i;
+                if (match > (std::numeric_limits<std::uintptr_t>::max)() - PedPoolRipInstructionOffset)
+                    continue;
+
+                const auto instruction = match + PedPoolRipInstructionOffset;
+                if (instruction > (std::numeric_limits<std::uintptr_t>::max)() - 7 ||
+                    !Readable(reinterpret_cast<const void*>(instruction + 3), sizeof(std::int32_t))) {
+                    continue;
                 }
 
-                if (!cached.ptrToHandle && i + HandlesAndPtrsPattern.size() <= regionSize &&
-                    std::memcmp(bytes + i, HandlesAndPtrsPattern.data(), HandlesAndPtrsPattern.size()) == 0) {
-                    const auto match = regionStart + i;
-                    if (match >= base + PtrToHandleCallBackOffset) {
-                        const auto callInstruction = match - PtrToHandleCallBackOffset;
-                        if (Readable(reinterpret_cast<const void*>(callInstruction), 5) &&
-                            *reinterpret_cast<const std::uint8_t*>(callInstruction) == 0xE8U) {
-                            std::int32_t displacement = 0;
-                            std::memcpy(&displacement, reinterpret_cast<const void*>(callInstruction + 1), sizeof(displacement));
-                            const auto targetSigned = static_cast<std::intptr_t>(callInstruction + 5) + static_cast<std::intptr_t>(displacement);
-                            if (targetSigned > 0) {
-                                const auto target = static_cast<std::uintptr_t>(targetSigned);
-                                if (target >= base && target < moduleEnd && Executable(reinterpret_cast<const void*>(target)))
-                                    cached.ptrToHandle = reinterpret_cast<PtrToHandle>(target);
-                            }
-                        }
-                    }
-                }
+                std::int32_t displacement = 0;
+                std::memcpy(
+                    &displacement,
+                    reinterpret_cast<const void*>(instruction + 3),
+                    sizeof(displacement));
 
-                if (cached.encryptedPool && cached.ptrToHandle)
-                    return cached;
+                const auto targetSigned =
+                    static_cast<std::intptr_t>(instruction + 7) +
+                    static_cast<std::intptr_t>(displacement);
+                if (targetSigned <= 0)
+                    continue;
+
+                auto* encrypted = reinterpret_cast<PoolEncryption*>(
+                    static_cast<std::uintptr_t>(targetSigned));
+                if (!Readable(encrypted, sizeof(PoolEncryption)))
+                    continue;
+
+                cached = encrypted;
+                return cached;
             }
         }
+
         if (regionEnd <= cursor)
-            return cached;
+            return nullptr;
         cursor = regionEnd;
     }
-    return cached;
+
+    return nullptr;
 }
 
 [[nodiscard]] BasePool* PedPool() noexcept
 {
-    auto* encrypted = ResolvePedRuntimePointers().encryptedPool;
-    if (!encrypted || !encrypted->isSet)
+    auto* encrypted = ResolveEncryptedPedPool();
+    if (!encrypted || !Readable(encrypted, sizeof(PoolEncryption)) || !encrypted->isSet)
         return nullptr;
+
+    // Exact YimMenuV2 Enhanced PedPool decryption.
     const std::uint64_t x = _rotl64(encrypted->second, 30);
-    const std::uint64_t decoded = ~_rotl64(_rotl64(x ^ encrypted->first, 32), (static_cast<std::uint8_t>(x) & 0x1FU) + 2U);
+    const std::uint64_t decoded = ~_rotl64(
+        _rotl64(x ^ encrypted->first, 32),
+        (static_cast<std::uint8_t>(x) & 0x1FU) + 2U);
+
     auto* pool = reinterpret_cast<BasePool*>(decoded);
-    if (!Readable(pool, sizeof(BasePool)) || pool->size == 0 || pool->size > 8192 || pool->entries == 0 ||
-        pool->itemSize < 0x18 || pool->itemSize > 0x1000 || !pool->flags || !Readable(pool->flags, pool->size))
+    if (!Readable(pool, sizeof(BasePool)) || pool->size == 0 ||
+        pool->entries == 0 || pool->itemSize < 0x18U || !pool->flags ||
+        !Readable(pool->flags, 1)) {
         return nullptr;
+    }
+
     return pool;
 }
 
-[[nodiscard]] PtrToHandle PedPtrToHandle() noexcept
-{
-    return ResolvePedRuntimePointers().ptrToHandle;
-}
-
-[[nodiscard]] float DistanceSquared(const GTA_Native_Script_Vector& a, const GTA_Native_Script_Vector& b) noexcept
+[[nodiscard]] float DistanceSquared(
+    const GTA_Native_Script_Vector& a,
+    const GTA_Native_Script_Vector& b) noexcept
 {
     const float dx = a.x - b.x;
     const float dy = a.y - b.y;
@@ -243,11 +286,32 @@ GTA_Ped_Control_State& GTA_Ped_Control_State::Instance() noexcept
     return state;
 }
 
-void GTA_Ped_Control_State::SetRadius(float radius) noexcept { m_radius.store(std::clamp(radius, 10.0F, 1000.0F), std::memory_order_release); }
-float GTA_Ped_Control_State::Radius() const noexcept { return m_radius.load(std::memory_order_acquire); }
-void GTA_Ped_Control_State::RequestKillEnemies() noexcept { g_pedControlBusy.store(true, std::memory_order_release); m_action.store(GTA_Ped_Action::KillEnemies, std::memory_order_release); }
-void GTA_Ped_Control_State::RequestKillPeds() noexcept { g_pedControlBusy.store(true, std::memory_order_release); m_action.store(GTA_Ped_Action::KillPeds, std::memory_order_release); }
-GTA_Ped_Action GTA_Ped_Control_State::ConsumeAction() noexcept { return m_action.exchange(GTA_Ped_Action::None, std::memory_order_acq_rel); }
+void GTA_Ped_Control_State::SetRadius(float radius) noexcept
+{
+    m_radius.store(std::clamp(radius, 10.0F, 1000.0F), std::memory_order_release);
+}
+
+float GTA_Ped_Control_State::Radius() const noexcept
+{
+    return m_radius.load(std::memory_order_acquire);
+}
+
+void GTA_Ped_Control_State::RequestKillEnemies() noexcept
+{
+    g_pedControlBusy.store(true, std::memory_order_release);
+    m_action.store(GTA_Ped_Action::KillEnemies, std::memory_order_release);
+}
+
+void GTA_Ped_Control_State::RequestKillPeds() noexcept
+{
+    g_pedControlBusy.store(true, std::memory_order_release);
+    m_action.store(GTA_Ped_Action::KillPeds, std::memory_order_release);
+}
+
+GTA_Ped_Action GTA_Ped_Control_State::ConsumeAction() noexcept
+{
+    return m_action.exchange(GTA_Ped_Action::None, std::memory_order_acq_rel);
+}
 
 void GTA_Ped_Control_State::Publish(GTA_Ped_Action_Snapshot snapshot) noexcept
 {
@@ -281,8 +345,8 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
     {
         GTA_Ped_Action action = GTA_Ped_Action::None;
         BasePool* pool = nullptr;
-        PtrToHandle ptrToHandle = nullptr;
         std::uint32_t nextIndex = 0;
+        std::uint32_t endIndex = 0;
         int playerPed = 0;
         GTA_Native_Script_Vector playerCoords{};
         float radiusSquared = 0.0F;
@@ -291,6 +355,7 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
 
     constexpr std::uint32_t PoolSlotsPerTick = 64;
     static PendingScan scan{};
+
     auto& state = GTA_Ped_Control_State::Instance();
     const auto requested = state.ConsumeAction();
     if (requested != GTA_Ped_Action::None) {
@@ -298,14 +363,24 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
         scan.action = requested;
         scan.result.action = requested;
         scan.pool = PedPool();
-        scan.ptrToHandle = PedPtrToHandle();
-        scan.result.poolReady = scan.pool != nullptr && scan.ptrToHandle != nullptr;
-        if (!scan.pool || !scan.ptrToHandle) {
+        scan.result.poolReady = scan.pool != nullptr;
+
+        if (!scan.pool) {
             state.Publish(scan.result);
             scan = {};
             g_pedControlBusy.store(false, std::memory_order_release);
             return;
         }
+
+        scan.endIndex = (std::min)(scan.pool->size, MaxPedPoolSlotsPerAction);
+        if (scan.endIndex == 0) {
+            scan.result.poolReady = false;
+            state.Publish(scan.result);
+            scan = {};
+            g_pedControlBusy.store(false, std::memory_order_release);
+            return;
+        }
+
         const auto playerPed = natives.Invoke<int>(GTA_Native_Id::PlayerPedId);
         if (!playerPed || *playerPed == 0) {
             state.Publish(scan.result);
@@ -314,13 +389,18 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
             return;
         }
         scan.playerPed = *playerPed;
-        const auto playerCoords = natives.Invoke<GTA_Native_Script_Vector>(GTA_Native_Id::GetEntityCoords, scan.playerPed, true);
+
+        const auto playerCoords = natives.Invoke<GTA_Native_Script_Vector>(
+            GTA_Native_Id::GetEntityCoords,
+            scan.playerPed,
+            true);
         if (!playerCoords) {
             state.Publish(scan.result);
             scan = {};
             g_pedControlBusy.store(false, std::memory_order_release);
             return;
         }
+
         scan.playerCoords = *playerCoords;
         const float radius = state.Radius();
         scan.radiusSquared = radius * radius;
@@ -329,17 +409,24 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
     if (scan.action == GTA_Ped_Action::None || !scan.pool)
         return;
 
-    const std::uint32_t endIndex = (std::min)(scan.pool->size, scan.nextIndex + PoolSlotsPerTick);
-    for (; scan.nextIndex < endIndex; ++scan.nextIndex) {
+    const std::uint32_t sliceEnd =
+        (std::min)(scan.endIndex, scan.nextIndex + PoolSlotsPerTick);
+
+    for (; scan.nextIndex < sliceEnd; ++scan.nextIndex) {
         const std::uint32_t index = scan.nextIndex;
         if (!scan.pool->IsValid(index))
             continue;
-        void* pedPointer = scan.pool->GetAt(index);
-        if (!pedPointer)
+
+        if (!scan.pool->GetAt(index))
             continue;
-        const int ped = scan.ptrToHandle(pedPointer);
+
+        // fwBasePool::GetScriptGuid in YimMenuV2 Enhanced uses the same formula.
+        // This is a valid script entity handle and avoids making PtrToHandle a
+        // second, unrelated requirement for PedPool actions.
+        const int ped = scan.pool->ScriptGuid(index);
         if (ped == 0 || ped == scan.playerPed)
             continue;
+
         const auto isPlayer = natives.InvokeHash<bool>(IsPedAPlayer, ped);
         if (!isPlayer)
             continue;
@@ -347,30 +434,53 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
             ++scan.result.skippedPlayers;
             continue;
         }
-        const auto coords = natives.Invoke<GTA_Native_Script_Vector>(GTA_Native_Id::GetEntityCoords, ped, true);
+
+        const auto coords = natives.Invoke<GTA_Native_Script_Vector>(
+            GTA_Native_Id::GetEntityCoords,
+            ped,
+            true);
         if (!coords || DistanceSquared(*coords, scan.playerCoords) > scan.radiusSquared)
             continue;
+
         if (scan.action == GTA_Ped_Action::KillEnemies) {
-            const auto relationshipToPlayer = natives.InvokeHash<int>(GetRelationshipBetweenPeds, ped, scan.playerPed);
-            const auto relationshipFromPlayer = natives.InvokeHash<int>(GetRelationshipBetweenPeds, scan.playerPed, ped);
-            const auto inCombat = natives.InvokeHash<bool>(IsPedInCombat, ped, scan.playerPed);
+            const auto relationshipToPlayer = natives.InvokeHash<int>(
+                GetRelationshipBetweenPeds,
+                ped,
+                scan.playerPed);
+            const auto relationshipFromPlayer = natives.InvokeHash<int>(
+                GetRelationshipBetweenPeds,
+                scan.playerPed,
+                ped);
+            const auto inCombat = natives.InvokeHash<bool>(
+                IsPedInCombat,
+                ped,
+                scan.playerPed);
+
             const bool hostileRelationship =
                 (relationshipToPlayer && *relationshipToPlayer >= 3 && *relationshipToPlayer <= 5) ||
                 (relationshipFromPlayer && *relationshipFromPlayer >= 3 && *relationshipFromPlayer <= 5);
             if (!hostileRelationship && (!inCombat || !*inCombat))
                 continue;
         }
+
         if (natives.InvokeHash<void>(SetEntityHealth, ped, 0, scan.playerPed, 0))
             ++scan.result.affected;
     }
 
-    if (scan.nextIndex >= scan.pool->size) {
+    if (scan.nextIndex >= scan.endIndex) {
         state.Publish(scan.result);
         scan = {};
         g_pedControlBusy.store(false, std::memory_order_release);
     }
 }
 
-bool PedControlHasWork() noexcept { return g_pedControlBusy.load(std::memory_order_acquire); }
-void ResetPedControl() noexcept { GTA_Ped_Control_State::Instance().Reset(); }
+bool PedControlHasWork() noexcept
+{
+    return g_pedControlBusy.load(std::memory_order_acquire);
+}
+
+void ResetPedControl() noexcept
+{
+    GTA_Ped_Control_State::Instance().Reset();
+}
 }
