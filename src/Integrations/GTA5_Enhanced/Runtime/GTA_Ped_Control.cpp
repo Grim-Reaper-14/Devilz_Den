@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +27,7 @@ constexpr GTA_Native_Hash IsPedAPlayer = 0x501EBB0523078750ULL;
 constexpr GTA_Native_Hash IsPedInCombat = 0x1B32E388988DD296ULL;
 constexpr GTA_Native_Hash GetRelationshipBetweenPeds = 0x1E37AEC038A241A3ULL;
 constexpr GTA_Native_Hash SetEntityHealth = 0xD25E9BDC14A0B649ULL;
+std::atomic_bool g_pedControlBusy{false};
 
 struct PoolEncryption
 {
@@ -160,8 +162,7 @@ static_assert(sizeof(BasePool) == 0x30);
                 const auto targetSigned = instructionEnd + static_cast<std::intptr_t>(displacement);
                 if (targetSigned <= 0)
                     return nullptr;
-                auto* encrypted = reinterpret_cast<PoolEncryption*>(
-                    static_cast<std::uintptr_t>(targetSigned));
+                auto* encrypted = reinterpret_cast<PoolEncryption*>(static_cast<std::uintptr_t>(targetSigned));
                 if (!Readable(encrypted, sizeof(PoolEncryption)))
                     return nullptr;
                 cached = encrypted;
@@ -222,11 +223,13 @@ float GTA_Ped_Control_State::Radius() const noexcept
 
 void GTA_Ped_Control_State::RequestKillEnemies() noexcept
 {
+    g_pedControlBusy.store(true, std::memory_order_release);
     m_action.store(GTA_Ped_Action::KillEnemies, std::memory_order_release);
 }
 
 void GTA_Ped_Control_State::RequestKillPeds() noexcept
 {
+    g_pedControlBusy.store(true, std::memory_order_release);
     m_action.store(GTA_Ped_Action::KillPeds, std::memory_order_release);
 }
 
@@ -255,6 +258,7 @@ GTA_Ped_Action_Snapshot GTA_Ped_Control_State::Snapshot() const noexcept
 
 void GTA_Ped_Control_State::Reset() noexcept
 {
+    g_pedControlBusy.store(false, std::memory_order_release);
     m_radius.store(150.0F, std::memory_order_release);
     m_action.store(GTA_Ped_Action::None, std::memory_order_release);
     Publish({});
@@ -288,6 +292,7 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
         if (!scan.pool) {
             state.Publish(scan.result);
             scan = {};
+            g_pedControlBusy.store(false, std::memory_order_release);
             return;
         }
 
@@ -295,6 +300,7 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
         if (!playerPed || *playerPed == 0) {
             state.Publish(scan.result);
             scan = {};
+            g_pedControlBusy.store(false, std::memory_order_release);
             return;
         }
         scan.playerPed = *playerPed;
@@ -306,6 +312,7 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
         if (!playerCoords) {
             state.Publish(scan.result);
             scan = {};
+            g_pedControlBusy.store(false, std::memory_order_release);
             return;
         }
         scan.playerCoords = *playerCoords;
@@ -316,9 +323,7 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
     if (scan.action == GTA_Ped_Action::None || !scan.pool)
         return;
 
-    const std::uint32_t endIndex = (std::min)(
-        scan.pool->size,
-        scan.nextIndex + PoolSlotsPerTick);
+    const std::uint32_t endIndex = (std::min)(scan.pool->size, scan.nextIndex + PoolSlotsPerTick);
 
     for (; scan.nextIndex < endIndex; ++scan.nextIndex) {
         const std::uint32_t index = scan.nextIndex;
@@ -365,20 +370,20 @@ void TickPedControl(GTA_Native_Manager& natives) noexcept
                 continue;
         }
 
-        if (natives.InvokeHash<void>(
-                SetEntityHealth,
-                ped,
-                0,
-                scan.playerPed,
-                0)) {
+        if (natives.InvokeHash<void>(SetEntityHealth, ped, 0, scan.playerPed, 0))
             ++scan.result.affected;
-        }
     }
 
     if (scan.nextIndex >= scan.pool->size) {
         state.Publish(scan.result);
         scan = {};
+        g_pedControlBusy.store(false, std::memory_order_release);
     }
+}
+
+bool PedControlHasWork() noexcept
+{
+    return g_pedControlBusy.load(std::memory_order_acquire);
 }
 
 void ResetPedControl() noexcept
