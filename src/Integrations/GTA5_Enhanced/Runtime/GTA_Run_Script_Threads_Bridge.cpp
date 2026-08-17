@@ -6,6 +6,7 @@
 #include "GTA_Explosive_Ammo_Extension.hpp"
 #include "GTA_Gameplay_State.hpp"
 #include "GTA_Network_Session_Extension.hpp"
+#include "GTA_Ped_Control.hpp"
 #include "GTA_Random_Events_Extension.hpp"
 #include "GTA_Script_Function_Invoker.hpp"
 #include "GTA_Self_Online_Extension.hpp"
@@ -13,6 +14,7 @@
 #include "GTA_Stats_Extension.hpp"
 #include "GTA_Vehicle_Editor_Extensions.hpp"
 #include "GTA_Vehicle_Personal_Save.hpp"
+#include "GTA_Vehicle_State.hpp"
 #include "State/GTA_Self_Cache.hpp"
 #include "Integrations/GTA5_Enhanced/Natives/GTA_Native_Registry.hpp"
 
@@ -47,6 +49,7 @@ constexpr std::array<std::byte, GTA_Run_Script_Threads_Bridge::PatchSize> Verifi
 constexpr ULONGLONG FeatureTickIntervalMs = 16;
 constexpr ULONGLONG ScheduledDispatchGapMs = 8;
 constexpr ULONGLONG GameplayTickIntervalMs = 100;
+constexpr ULONGLONG IdleGameplayTickIntervalMs = 500;
 constexpr ULONGLONG SelfCacheTickIntervalMs = 250;
 constexpr ULONGLONG SelfUtilityTickIntervalMs = 100;
 constexpr ULONGLONG OnlineExtensionTickIntervalMs = 250;
@@ -386,6 +389,7 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
         personalSaveStatus == GTA_Vehicle_Personal_Save_Status::Validating ||
         personalSaveStatus == GTA_Vehicle_Personal_Save_Status::OpeningGarageMenu ||
         personalSaveStatus == GTA_Vehicle_Personal_Save_Status::WaitingForGarageSelection;
+    const bool pedControlActive = PedControlHasWork();
     const bool frameFeatureActive =
         gameplayState.SuperJump() ||
         gameplayState.FastRun() ||
@@ -393,7 +397,8 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
         gameplayState.ExplosiveBullets() ||
         m_fastRunApplied ||
         m_fastSwimApplied ||
-        personalSaveActive;
+        personalSaveActive ||
+        pedControlActive;
     const bool frameDue = frameFeatureActive && now >= m_nextFeatureTickMs;
     const bool scheduledWorkReady =
         HasPendingScriptFunctionInvocation() ||
@@ -404,8 +409,7 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
         now >= m_nextSlowExtensionTickMs ||
         now >= m_nextSnapshotExtensionTickMs ||
         now >= m_nextVehicleExtensionTickMs;
-    const bool scheduledDue =
-        scheduledWorkReady && now >= m_nextScheduledDispatchMs;
+    const bool scheduledDue = scheduledWorkReady && now >= m_nextScheduledDispatchMs;
     if (!frameDue && !scheduledDue)
         return;
 
@@ -431,6 +435,8 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
         m_nextFeatureTickMs = now + FeatureTickIntervalMs;
         if (personalSaveActive)
             TickVehiclePersonalSave(*m_natives);
+        if (pedControlActive)
+            TickPedControl(*m_natives);
         m_gameplay.TickFrameSensitive();
         if (gameplayState.ExplosiveBullets())
             TickExplosiveAmmoExtension(*m_natives, scriptThread);
@@ -477,9 +483,6 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
     if (!m_natives || !m_natives->Ready())
         return;
 
-    // Never let multiple periodic backend lanes pile into one hook pass.
-    // If several lanes are overdue, later RunScriptThreads calls drain them
-    // one at a time with a small dispatch gap between slices.
     m_nextScheduledDispatchMs = now + ScheduledDispatchGapMs;
 
     if (HasPendingScriptFunctionInvocation()) {
@@ -488,13 +491,40 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
     }
 
     if (now >= m_nextGameplayTickMs) {
-        m_nextGameplayTickMs = now + GameplayTickIntervalMs;
         auto& gameplayState = GTA_Gameplay_State::Instance();
+        auto& vehicleState = GTA_Vehicle_State::Instance();
+        const auto spawnStatus = vehicleState.SpawnStatus();
+        const auto teleportStatus = gameplayState.TeleportStatus();
+        const bool gameplayHot =
+            gameplayState.MenuInputCaptured() ||
+            gameplayState.GodMode() ||
+            gameplayState.NeverWanted() ||
+            gameplayState.InfiniteOxygen() ||
+            gameplayState.NoRagdoll() ||
+            gameplayState.KeepPlayerClean() ||
+            gameplayState.InfiniteAmmo() ||
+            gameplayState.UnlimitedClip() ||
+            vehicleState.KeepVehiclePerfect() ||
+            vehicleState.VehicleGodMode() ||
+            spawnStatus == GTA_Vehicle_Spawn_Status::Queued ||
+            spawnStatus == GTA_Vehicle_Spawn_Status::Validating ||
+            spawnStatus == GTA_Vehicle_Spawn_Status::Streaming ||
+            spawnStatus == GTA_Vehicle_Spawn_Status::Creating ||
+            spawnStatus == GTA_Vehicle_Spawn_Status::Applying ||
+            teleportStatus == GTA_Teleport_Waypoint_Status::Queued ||
+            teleportStatus == GTA_Teleport_Waypoint_Status::Resolving;
+
+        m_nextGameplayTickMs = now +
+            (gameplayHot ? GameplayTickIntervalMs : IdleGameplayTickIntervalMs);
+
         const bool explosiveAmmo = gameplayState.ExplosiveBullets();
         if (explosiveAmmo)
             gameplayState.SetExplosiveBullets(false);
         m_gameplay.Tick();
-        m_gameplay.TickSlow();
+        if (now >= m_nextForgeSnapshotTickMs) {
+            m_nextForgeSnapshotTickMs = now + ForgeSnapshotTickIntervalMs;
+            m_gameplay.TickSlow();
+        }
         (void)TickStatsExtension(*m_natives, RegularStatDrainBudget);
         if (explosiveAmmo)
             gameplayState.SetExplosiveBullets(true);
@@ -532,8 +562,7 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
             TickBunkerExtension();
             break;
         }
-        m_slowExtensionCursor =
-            static_cast<std::uint8_t>((m_slowExtensionCursor + 1U) % 3U);
+        m_slowExtensionCursor = static_cast<std::uint8_t>((m_slowExtensionCursor + 1U) % 3U);
         return;
     }
 
