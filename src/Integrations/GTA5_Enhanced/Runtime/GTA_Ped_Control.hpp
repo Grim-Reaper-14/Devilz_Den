@@ -48,5 +48,6 @@ private:
 };
 
 void TickPedControl(GTA_Native_Manager& natives) noexcept;
+[[nodiscard]] bool PedControlHasWork() noexcept;
 void ResetPedControl() noexcept;
 }
