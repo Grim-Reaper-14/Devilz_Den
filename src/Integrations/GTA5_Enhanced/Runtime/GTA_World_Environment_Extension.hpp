@@ -83,6 +83,7 @@ void SetForceWorldWeather(bool enabled) noexcept;
 [[nodiscard]] bool ForceWorldWeather() noexcept;
 void RequestResetWorldWeather() noexcept;
 
+[[nodiscard]] bool WorldEnvironmentHasWork() noexcept;
 void ResetWorldEnvironmentExtension() noexcept;
 void TickWorldEnvironmentExtension(GTA_Native_Manager& natives) noexcept;
 }
