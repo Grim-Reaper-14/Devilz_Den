@@ -64,43 +64,13 @@ constexpr std::array<ServiceDefinition, static_cast<std::size_t>(GTA_Service_Req
     }};
 
 constexpr std::array<const char*, GTA_World_Weather_Count> WeatherLabels{
-    "Clear",
-    "Extra Sunny",
-    "Clouds",
-    "Overcast",
-    "Rain",
-    "Clearing",
-    "Thunder",
-    "Smog",
-    "Foggy",
-    "Xmas",
-    "Snow",
-    "Snow Light",
-    "Blizzard",
-    "Halloween",
-    "Neutral",
-    "Rain Halloween",
-    "Snow Halloween"
+    "Clear", "Extra Sunny", "Clouds", "Overcast", "Rain", "Clearing", "Thunder", "Smog", "Foggy",
+    "Xmas", "Snow", "Snow Light", "Blizzard", "Halloween", "Neutral", "Rain Halloween", "Snow Halloween"
 };
 
 constexpr std::array<const char*, GTA_World_Weather_Count> WeatherCodes{
-    "CLEAR",
-    "EXTRASUNNY",
-    "CLOUDS",
-    "OVERCAST",
-    "RAIN",
-    "CLEARING",
-    "THUNDER",
-    "SMOG",
-    "FOGGY",
-    "XMAS",
-    "SNOW",
-    "SNOWLIGHT",
-    "BLIZZARD",
-    "HALLOWEEN",
-    "NEUTRAL",
-    "RAIN_HALLOWEEN",
-    "SNOW_HALLOWEEN"
+    "CLEAR", "EXTRASUNNY", "CLOUDS", "OVERCAST", "RAIN", "CLEARING", "THUNDER", "SMOG", "FOGGY",
+    "XMAS", "SNOW", "SNOWLIGHT", "BLIZZARD", "HALLOWEEN", "NEUTRAL", "RAIN_HALLOWEEN", "SNOW_HALLOWEEN"
 };
 
 std::atomic_int g_networkTimeHour{12};
@@ -109,11 +79,11 @@ std::atomic_int g_networkTimeSecond{0};
 std::atomic_bool g_setNetworkTimeRequested{false};
 std::atomic_bool g_freezeNetworkTime{false};
 std::atomic_bool g_clearNetworkTimeRequested{false};
-
 std::atomic_int g_weatherSelection{0};
 std::atomic_bool g_setWeatherRequested{false};
 std::atomic_bool g_forceWeather{false};
 std::atomic_bool g_clearWeatherRequested{false};
+std::atomic_bool g_worldWorkPending{false};
 
 struct WorldRuntime
 {
@@ -135,17 +105,16 @@ public:
         std::scoped_lock lock(m_mutex);
         if (m_pending || m_snapshot.status == GTA_Service_Request_Status::Queued)
             return false;
-
         ServiceCommand command{};
         command.id = m_nextId++;
         command.request = request;
         m_pending = command;
-
         ++m_snapshot.revision;
         m_snapshot.requestId = command.id;
         m_snapshot.request = request;
         m_snapshot.status = GTA_Service_Request_Status::Queued;
         m_snapshot.detail = "Queued for the GTA game thread.";
+        g_worldWorkPending.store(true, std::memory_order_release);
         return true;
     }
 
@@ -154,21 +123,16 @@ public:
         std::scoped_lock lock(m_mutex);
         if (!m_pending)
             return false;
-
         command = *m_pending;
         m_pending.reset();
         return true;
     }
 
-    void Complete(
-        const ServiceCommand& command,
-        GTA_Service_Request_Status status,
-        std::string detail)
+    void Complete(const ServiceCommand& command, GTA_Service_Request_Status status, std::string detail)
     {
         std::scoped_lock lock(m_mutex);
         if (m_snapshot.requestId != command.id)
             return;
-
         ++m_snapshot.revision;
         m_snapshot.status = status;
         m_snapshot.detail = std::move(detail);
@@ -205,26 +169,16 @@ WorldRuntime g_runtime{};
 ServiceRequestState g_serviceRequests{};
 
 template <typename T>
-bool WriteGlobalVerified(
-    Script_Global_Manager& globals,
-    std::uint32_t index,
-    const T& value)
+bool WriteGlobalVerified(Script_Global_Manager& globals, std::uint32_t index, const T& value)
 {
     static_assert(std::is_trivially_copyable_v<T>);
-
     auto pointer = globals.Get(index).Resolve();
     if (!pointer)
         return false;
-
-    std::memcpy(
-        reinterpret_cast<void*>(pointer.Value().Address()),
-        &value,
-        sizeof(value));
-
+    std::memcpy(reinterpret_cast<void*>(pointer.Value().Address()), &value, sizeof(value));
     auto readback = globals.Get(index).Read<T>();
     if (!readback)
         return false;
-
     const auto actual = readback.Value();
     return std::memcmp(&actual, &value, sizeof(T)) == 0;
 }
@@ -232,53 +186,22 @@ bool WriteGlobalVerified(
 ServiceRequestResult ExecuteServiceRequest(const ServiceCommand& command)
 {
     auto* globals = g_runtime.globals;
-    if (!globals || !globals->Ready()) {
-        return {
-            GTA_Service_Request_Status::RuntimeUnavailable,
-            "Script globals are not configured."};
-    }
-
-    if (g_runtime.buildFingerprint != SupportedFingerprint) {
-        return {
-            GTA_Service_Request_Status::UnsupportedBuild,
-            "Request-service globals are not registered for this GTA build."};
-    }
-
+    if (!globals || !globals->Ready())
+        return {GTA_Service_Request_Status::RuntimeUnavailable, "Script globals are not configured."};
+    if (g_runtime.buildFingerprint != SupportedFingerprint)
+        return {GTA_Service_Request_Status::UnsupportedBuild, "Request-service globals are not registered for this GTA build."};
     const auto requestIndex = static_cast<std::size_t>(command.request);
-    if (requestIndex >= ServiceDefinitions.size()) {
-        return {
-            GTA_Service_Request_Status::InvalidRequest,
-            "The requested service is invalid."};
+    if (requestIndex >= ServiceDefinitions.size())
+        return {GTA_Service_Request_Status::InvalidRequest, "The requested service is invalid."};
+    if (command.request == GTA_Service_Request::HelicopterPickup || command.request == GTA_Service_Request::SuperVolitoPickup) {
+        const int selector = command.request == GTA_Service_Request::SuperVolitoPickup ? 1 : -1;
+        if (!WriteGlobalVerified(*globals, RequestServicesBase + HelicopterPickupSelectorOffset, selector))
+            return {GTA_Service_Request_Status::Failed, "The helicopter type selector failed readback verification."};
     }
-
-    if (command.request == GTA_Service_Request::HelicopterPickup ||
-        command.request == GTA_Service_Request::SuperVolitoPickup) {
-        const int selector = command.request == GTA_Service_Request::SuperVolitoPickup
-            ? 1
-            : -1;
-        if (!WriteGlobalVerified(
-                *globals,
-                RequestServicesBase + HelicopterPickupSelectorOffset,
-                selector)) {
-            return {
-                GTA_Service_Request_Status::Failed,
-                "The helicopter type selector failed readback verification."};
-        }
-    }
-
     const auto& definition = ServiceDefinitions[requestIndex];
-    if (!WriteGlobalVerified(
-            *globals,
-            RequestServicesBase + definition.offset,
-            ServiceRequestTrigger)) {
-        return {
-            GTA_Service_Request_Status::Failed,
-            "The service request trigger failed readback verification."};
-    }
-
-    return {
-        GTA_Service_Request_Status::Succeeded,
-        std::string{definition.name} + " request triggered and verified."};
+    if (!WriteGlobalVerified(*globals, RequestServicesBase + definition.offset, ServiceRequestTrigger))
+        return {GTA_Service_Request_Status::Failed, "The service request trigger failed readback verification."};
+    return {GTA_Service_Request_Status::Succeeded, std::string{definition.name} + " request triggered and verified."};
 }
 
 void ApplySelectedNetworkTime(GTA_Native_Manager& natives) noexcept
@@ -291,10 +214,7 @@ void ApplySelectedNetworkTime(GTA_Native_Manager& natives) noexcept
 
 const char* SelectedWeatherCode() noexcept
 {
-    const int index = std::clamp(
-        g_weatherSelection.load(std::memory_order_acquire),
-        0,
-        GTA_World_Weather_Count - 1);
+    const int index = std::clamp(g_weatherSelection.load(std::memory_order_acquire), 0, GTA_World_Weather_Count - 1);
     return WeatherCodes[static_cast<std::size_t>(index)];
 }
 
@@ -304,13 +224,12 @@ void ApplySelectedWeather(GTA_Native_Manager& natives) noexcept
 }
 }
 
-void ConfigureWorldEnvironmentExtension(
-    Script_Global_Manager* globals,
-    std::uint64_t buildFingerprint) noexcept
+void ConfigureWorldEnvironmentExtension(Script_Global_Manager* globals, std::uint64_t buildFingerprint) noexcept
 {
     g_runtime.globals = globals;
     g_runtime.buildFingerprint = buildFingerprint;
     g_serviceRequests.Reset();
+    g_worldWorkPending.store(false, std::memory_order_release);
 }
 
 bool RequestWorldService(GTA_Service_Request request)
@@ -318,17 +237,12 @@ bool RequestWorldService(GTA_Service_Request request)
     return g_serviceRequests.Queue(request);
 }
 
-GTA_Service_Request_Snapshot WorldServiceRequestSnapshot()
-{
-    return g_serviceRequests.Snapshot();
-}
+GTA_Service_Request_Snapshot WorldServiceRequestSnapshot() { return g_serviceRequests.Snapshot(); }
 
 const char* GTA_Service_Request_Name(GTA_Service_Request request) noexcept
 {
     const auto index = static_cast<std::size_t>(request);
-    return index < ServiceDefinitions.size()
-        ? ServiceDefinitions[index].name
-        : "Unknown service";
+    return index < ServiceDefinitions.size() ? ServiceDefinitions[index].name : "Unknown service";
 }
 
 const char* GTA_Service_Request_Status_Name(GTA_Service_Request_Status status) noexcept
@@ -351,126 +265,78 @@ void SetNetworkTimeSelection(int hour, int minute, int second) noexcept
     g_networkTimeMinute.store(std::clamp(minute, 0, 59), std::memory_order_release);
     g_networkTimeSecond.store(std::clamp(second, 0, 59), std::memory_order_release);
 }
-
-int NetworkTimeHour() noexcept
-{
-    return g_networkTimeHour.load(std::memory_order_acquire);
-}
-
-int NetworkTimeMinute() noexcept
-{
-    return g_networkTimeMinute.load(std::memory_order_acquire);
-}
-
-int NetworkTimeSecond() noexcept
-{
-    return g_networkTimeSecond.load(std::memory_order_acquire);
-}
-
-void RequestSetNetworkTime() noexcept
-{
-    g_setNetworkTimeRequested.store(true, std::memory_order_release);
-}
-
+int NetworkTimeHour() noexcept { return g_networkTimeHour.load(std::memory_order_acquire); }
+int NetworkTimeMinute() noexcept { return g_networkTimeMinute.load(std::memory_order_acquire); }
+int NetworkTimeSecond() noexcept { return g_networkTimeSecond.load(std::memory_order_acquire); }
+void RequestSetNetworkTime() noexcept { g_setNetworkTimeRequested.store(true, std::memory_order_release); g_worldWorkPending.store(true, std::memory_order_release); }
 void SetFreezeNetworkTime(bool enabled) noexcept
 {
     const bool previous = g_freezeNetworkTime.exchange(enabled, std::memory_order_acq_rel);
-    if (previous && !enabled)
-        g_clearNetworkTimeRequested.store(true, std::memory_order_release);
+    if (previous && !enabled) g_clearNetworkTimeRequested.store(true, std::memory_order_release);
+    if (previous != enabled) g_worldWorkPending.store(true, std::memory_order_release);
 }
-
-bool FreezeNetworkTime() noexcept
-{
-    return g_freezeNetworkTime.load(std::memory_order_acquire);
-}
-
-void SetWorldWeatherSelection(int index) noexcept
-{
-    g_weatherSelection.store(
-        std::clamp(index, 0, GTA_World_Weather_Count - 1),
-        std::memory_order_release);
-}
-
-int WorldWeatherSelection() noexcept
-{
-    return g_weatherSelection.load(std::memory_order_acquire);
-}
-
-const char* WorldWeatherLabel(int index) noexcept
-{
-    if (index < 0 || index >= GTA_World_Weather_Count)
-        return "Unknown";
-    return WeatherLabels[static_cast<std::size_t>(index)];
-}
-
-void RequestSetWorldWeather() noexcept
-{
-    g_setWeatherRequested.store(true, std::memory_order_release);
-}
-
+bool FreezeNetworkTime() noexcept { return g_freezeNetworkTime.load(std::memory_order_acquire); }
+void SetWorldWeatherSelection(int index) noexcept { g_weatherSelection.store(std::clamp(index, 0, GTA_World_Weather_Count - 1), std::memory_order_release); }
+int WorldWeatherSelection() noexcept { return g_weatherSelection.load(std::memory_order_acquire); }
+const char* WorldWeatherLabel(int index) noexcept { return index < 0 || index >= GTA_World_Weather_Count ? "Unknown" : WeatherLabels[static_cast<std::size_t>(index)]; }
+void RequestSetWorldWeather() noexcept { g_setWeatherRequested.store(true, std::memory_order_release); g_worldWorkPending.store(true, std::memory_order_release); }
 void SetForceWorldWeather(bool enabled) noexcept
 {
     const bool previous = g_forceWeather.exchange(enabled, std::memory_order_acq_rel);
-    if (previous && !enabled)
-        g_clearWeatherRequested.store(true, std::memory_order_release);
+    if (previous && !enabled) g_clearWeatherRequested.store(true, std::memory_order_release);
+    if (previous != enabled) g_worldWorkPending.store(true, std::memory_order_release);
 }
-
-bool ForceWorldWeather() noexcept
-{
-    return g_forceWeather.load(std::memory_order_acquire);
-}
-
+bool ForceWorldWeather() noexcept { return g_forceWeather.load(std::memory_order_acquire); }
 void RequestResetWorldWeather() noexcept
 {
     g_forceWeather.store(false, std::memory_order_release);
     g_setWeatherRequested.store(false, std::memory_order_release);
     g_clearWeatherRequested.store(true, std::memory_order_release);
+    g_worldWorkPending.store(true, std::memory_order_release);
+}
+
+bool WorldEnvironmentHasWork() noexcept
+{
+    return g_worldWorkPending.load(std::memory_order_acquire) ||
+           g_freezeNetworkTime.load(std::memory_order_acquire) ||
+           g_forceWeather.load(std::memory_order_acquire);
 }
 
 void ResetWorldEnvironmentExtension() noexcept
 {
     g_runtime = {};
     g_serviceRequests.Reset();
-
     g_networkTimeHour.store(12, std::memory_order_release);
     g_networkTimeMinute.store(0, std::memory_order_release);
     g_networkTimeSecond.store(0, std::memory_order_release);
     g_setNetworkTimeRequested.store(false, std::memory_order_release);
     g_freezeNetworkTime.store(false, std::memory_order_release);
     g_clearNetworkTimeRequested.store(false, std::memory_order_release);
-
     g_weatherSelection.store(0, std::memory_order_release);
     g_setWeatherRequested.store(false, std::memory_order_release);
     g_forceWeather.store(false, std::memory_order_release);
     g_clearWeatherRequested.store(false, std::memory_order_release);
+    g_worldWorkPending.store(false, std::memory_order_release);
 }
 
 void TickWorldEnvironmentExtension(GTA_Native_Manager& natives) noexcept
 {
+    (void)g_worldWorkPending.exchange(false, std::memory_order_acq_rel);
     ServiceCommand serviceCommand{};
     if (g_serviceRequests.Consume(serviceCommand)) {
         auto result = ExecuteServiceRequest(serviceCommand);
-        g_serviceRequests.Complete(
-            serviceCommand,
-            result.status,
-            std::move(result.detail));
+        g_serviceRequests.Complete(serviceCommand, result.status, std::move(result.detail));
     }
-
     if (g_clearNetworkTimeRequested.exchange(false, std::memory_order_acq_rel))
         (void)natives.InvokeHash<void>(NetworkClearClockTimeOverrideHash);
-
     if (g_setNetworkTimeRequested.exchange(false, std::memory_order_acq_rel))
         ApplySelectedNetworkTime(natives);
-
     if (g_freezeNetworkTime.load(std::memory_order_acquire))
         ApplySelectedNetworkTime(natives);
-
     if (g_clearWeatherRequested.exchange(false, std::memory_order_acq_rel))
         (void)natives.InvokeHash<void>(ClearOverrideWeatherHash);
-
     if (g_setWeatherRequested.exchange(false, std::memory_order_acq_rel))
         ApplySelectedWeather(natives);
-
     if (g_forceWeather.load(std::memory_order_acquire))
         ApplySelectedWeather(natives);
 }
