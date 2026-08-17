@@ -60,6 +60,7 @@ private:
     std::uint64_t m_nextFeatureTickMs = 0;
     std::uint64_t m_nextScheduledDispatchMs = 0;
     std::uint64_t m_nextGameplayTickMs = 0;
+    std::uint64_t m_nextTeleportExtensionTickMs = 0;
     std::uint64_t m_nextSelfCacheTickMs = 0;
     std::uint64_t m_nextSelfUtilityTickMs = 0;
     std::uint64_t m_nextOnlineExtensionTickMs = 0;

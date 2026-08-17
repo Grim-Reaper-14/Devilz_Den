@@ -32,6 +32,7 @@ void SetAutoTeleportToWaypoint(bool enabled) noexcept;
 void RequestTeleportToObjective() noexcept;
 void RequestQuickTeleport(GTA_Teleport_Quick_Destination destination) noexcept;
 [[nodiscard]] GTA_Teleport_Quick_Status QuickTeleportStatus() noexcept;
+[[nodiscard]] bool TeleportExtensionHasWork() noexcept;
 
 // Serviced from the existing validated game-thread/native tick. Quick
 // destinations use live map blips; waypoint automation reuses the existing

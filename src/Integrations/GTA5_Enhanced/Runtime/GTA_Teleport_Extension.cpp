@@ -237,6 +237,12 @@ GTA_Teleport_Quick_Status QuickTeleportStatus() noexcept
     return g_quickStatus.load(std::memory_order_acquire);
 }
 
+bool TeleportExtensionHasWork() noexcept
+{
+    return g_autoTeleportToWaypoint.load(std::memory_order_acquire) ||
+           g_quickDestination.load(std::memory_order_acquire) != GTA_Teleport_Quick_Destination::None;
+}
+
 void TickTeleportExtension(GTA_Native_Manager& natives) noexcept
 {
     TickQuickTeleport(natives);

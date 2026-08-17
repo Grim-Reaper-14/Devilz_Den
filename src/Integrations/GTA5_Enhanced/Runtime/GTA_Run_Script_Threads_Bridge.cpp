@@ -12,6 +12,7 @@
 #include "GTA_Self_Online_Extension.hpp"
 #include "GTA_Self_Utility_Extension.hpp"
 #include "GTA_Stats_Extension.hpp"
+#include "GTA_Teleport_Extension.hpp"
 #include "GTA_Vehicle_Editor_Extensions.hpp"
 #include "GTA_Vehicle_Personal_Save.hpp"
 #include "GTA_Vehicle_State.hpp"
@@ -51,6 +52,7 @@ constexpr ULONGLONG FeatureTickIntervalMs = 16;
 constexpr ULONGLONG ScheduledDispatchGapMs = 8;
 constexpr ULONGLONG GameplayTickIntervalMs = 100;
 constexpr ULONGLONG IdleGameplayTickIntervalMs = 500;
+constexpr ULONGLONG TeleportExtensionTickIntervalMs = 100;
 constexpr ULONGLONG SelfCacheTickIntervalMs = 250;
 constexpr ULONGLONG SelfUtilityTickIntervalMs = 100;
 constexpr ULONGLONG OnlineExtensionTickIntervalMs = 250;
@@ -162,6 +164,7 @@ bool GTA_Run_Script_Threads_Bridge::Install(
     m_nextScheduledDispatchMs = scheduleBase + 8;
     m_nextGameplayTickMs = scheduleBase + 16;
     m_nextWorldEnvironmentTickMs = scheduleBase + 24;
+    m_nextTeleportExtensionTickMs = scheduleBase + 32;
     m_nextSelfUtilityTickMs = scheduleBase + 48;
     m_nextSelfCacheTickMs = scheduleBase + 84;
     m_nextOnlineExtensionTickMs = scheduleBase + 132;
@@ -241,6 +244,7 @@ void GTA_Run_Script_Threads_Bridge::Uninstall() noexcept
     m_nextFeatureTickMs = 0;
     m_nextScheduledDispatchMs = 0;
     m_nextGameplayTickMs = 0;
+    m_nextTeleportExtensionTickMs = 0;
     m_nextSelfCacheTickMs = 0;
     m_nextSelfUtilityTickMs = 0;
     m_nextOnlineExtensionTickMs = 0;
@@ -318,8 +322,11 @@ void GTA_Run_Script_Threads_Bridge::RunGameThreadFeatureTick() noexcept
         gameplayState.ExplosiveBullets() || m_fastRunApplied || m_fastSwimApplied || personalSaveActive || pedControlActive;
     const bool frameDue = frameFeatureActive && now >= m_nextFeatureTickMs;
     const bool worldEnvironmentReady = WorldEnvironmentHasWork() && now >= m_nextWorldEnvironmentTickMs;
+    const bool teleportExtensionReady = TeleportExtensionHasWork() && now >= m_nextTeleportExtensionTickMs;
+    const bool gameplayTeleportRequestReady = gameplayState.HasPendingTeleportRequest();
     const bool scheduledWorkReady = HasPendingScriptFunctionInvocation() || worldEnvironmentReady ||
-        now >= m_nextGameplayTickMs || now >= m_nextSelfCacheTickMs || now >= m_nextSelfUtilityTickMs ||
+        teleportExtensionReady || gameplayTeleportRequestReady || now >= m_nextGameplayTickMs ||
+        now >= m_nextSelfCacheTickMs || now >= m_nextSelfUtilityTickMs ||
         now >= m_nextOnlineExtensionTickMs || now >= m_nextSlowExtensionTickMs ||
         now >= m_nextSnapshotExtensionTickMs || now >= m_nextVehicleExtensionTickMs;
     const bool scheduledDue = scheduledWorkReady && now >= m_nextScheduledDispatchMs;
@@ -380,8 +387,15 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
         TickWorldEnvironmentExtension(*m_natives);
         return;
     }
-    if (now >= m_nextGameplayTickMs) {
-        auto& gameplayState = GTA_Gameplay_State::Instance();
+    if (TeleportExtensionHasWork() && now >= m_nextTeleportExtensionTickMs) {
+        m_nextTeleportExtensionTickMs = now + TeleportExtensionTickIntervalMs;
+        TickTeleportExtension(*m_natives);
+        return;
+    }
+
+    auto& gameplayState = GTA_Gameplay_State::Instance();
+    const bool gameplayTeleportRequestReady = gameplayState.HasPendingTeleportRequest();
+    if (gameplayTeleportRequestReady || now >= m_nextGameplayTickMs) {
         auto& vehicleState = GTA_Vehicle_State::Instance();
         const auto spawnStatus = vehicleState.SpawnStatus();
         const auto teleportStatus = gameplayState.TeleportStatus();
@@ -391,7 +405,8 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
             vehicleState.VehicleGodMode() || spawnStatus == GTA_Vehicle_Spawn_Status::Queued ||
             spawnStatus == GTA_Vehicle_Spawn_Status::Validating || spawnStatus == GTA_Vehicle_Spawn_Status::Streaming ||
             spawnStatus == GTA_Vehicle_Spawn_Status::Creating || spawnStatus == GTA_Vehicle_Spawn_Status::Applying ||
-            teleportStatus == GTA_Teleport_Waypoint_Status::Queued || teleportStatus == GTA_Teleport_Waypoint_Status::Resolving;
+            gameplayTeleportRequestReady || teleportStatus == GTA_Teleport_Waypoint_Status::Queued ||
+            teleportStatus == GTA_Teleport_Waypoint_Status::Resolving;
         m_nextGameplayTickMs = now + (gameplayHot ? GameplayTickIntervalMs : IdleGameplayTickIntervalMs);
         const bool explosiveAmmo = gameplayState.ExplosiveBullets();
         if (explosiveAmmo) gameplayState.SetExplosiveBullets(false);

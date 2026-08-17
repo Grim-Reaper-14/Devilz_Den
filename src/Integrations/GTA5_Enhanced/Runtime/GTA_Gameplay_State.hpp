@@ -142,6 +142,12 @@ public:
         return m_requestedTeleportLocation.exchange(GTA_Teleport_Location_Id::None, std::memory_order_acq_rel);
     }
 
+    [[nodiscard]] bool HasPendingTeleportRequest() const noexcept
+    {
+        return m_teleportWaypointRequested.load(std::memory_order_acquire) ||
+               m_requestedTeleportLocation.load(std::memory_order_acquire) != GTA_Teleport_Location_Id::None;
+    }
+
     [[nodiscard]] GTA_Teleport_Waypoint_Status TeleportStatus() const noexcept
     {
         return m_teleportStatus.load(std::memory_order_acquire);
