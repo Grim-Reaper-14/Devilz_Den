@@ -67,6 +67,7 @@ private:
     std::uint64_t m_nextSnapshotExtensionTickMs = 0;
     std::uint64_t m_nextVehicleExtensionTickMs = 0;
     std::uint64_t m_nextForgeSnapshotTickMs = 0;
+    std::uint64_t m_nextWorldEnvironmentTickMs = 0;
     std::uint8_t m_slowExtensionCursor = 0;
     std::uint8_t m_snapshotExtensionCursor = 0;
     bool m_fastRunApplied = false;
