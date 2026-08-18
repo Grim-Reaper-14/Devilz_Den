@@ -145,7 +145,7 @@
     tls->currentScriptThread = previousThread;
     restoreStack();
 
-    if (postState != 0) {
+    if (postState != 0 && !descriptor.allowNonIdleCompletion) {
         result.status = GTA_Script_Function_Invoke_Status::UnexpectedYield;
         result.detail = "Verified synchronous function returned with a non-idle script state; stack was restored";
         return result;
@@ -157,6 +157,8 @@
                     (resolved.cacheHit ? " using the revalidated PC cache" :
                                          "; resolved PC cached for this loaded program") +
                     "; temporary stack changes restored";
+    if (postState != 0)
+        result.detail += "; verified descriptor accepted the non-idle completion boundary";
     return result;
 }
 
