@@ -473,3 +473,4 @@ void* GTA_Run_Script_Threads_Bridge::FindValidatedScriptThread() const noexcept
     }
     return nullptr;
 }
+}
