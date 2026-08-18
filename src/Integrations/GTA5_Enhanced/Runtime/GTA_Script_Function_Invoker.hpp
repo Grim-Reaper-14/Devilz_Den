@@ -128,6 +128,11 @@ struct GTA_Script_Function_Descriptor
     GTA_Script_Function_Exposure exposure = GTA_Script_Function_Exposure::Internal;
     std::uint8_t targetOperandOffset = 1;
     GTA_Script_Function_Abi abi;
+
+    // Most verified helpers must return the copied VM context to IDLE. A very
+    // small number of Rockstar transition helpers intentionally stop at a
+    // non-idle boundary; those descriptors may opt in explicitly.
+    bool allowNonIdleCompletion = false;
 };
 struct GTA_Script_Function_Invoke_Snapshot
 {
