@@ -14,6 +14,7 @@
 #include "GTA_Stats_Extension.hpp"
 #include "GTA_Teleport_Extension.hpp"
 #include "GTA_Vehicle_Editor_Extensions.hpp"
+#include "GTA_Vehicle_Garage_Save.hpp"
 #include "GTA_Vehicle_Personal_Save.hpp"
 #include "GTA_Vehicle_State.hpp"
 #include "GTA_World_Environment_Extension.hpp"
@@ -402,7 +403,8 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
         const bool gameplayHot = gameplayState.MenuInputCaptured() || gameplayState.GodMode() || gameplayState.NeverWanted() ||
             gameplayState.InfiniteOxygen() || gameplayState.NoRagdoll() || gameplayState.KeepPlayerClean() ||
             gameplayState.InfiniteAmmo() || gameplayState.UnlimitedClip() || vehicleState.KeepVehiclePerfect() ||
-            vehicleState.VehicleGodMode() || spawnStatus == GTA_Vehicle_Spawn_Status::Queued ||
+            vehicleState.VehicleGodMode() || RemoveLSCRestrictions() ||
+            spawnStatus == GTA_Vehicle_Spawn_Status::Queued ||
             spawnStatus == GTA_Vehicle_Spawn_Status::Validating || spawnStatus == GTA_Vehicle_Spawn_Status::Streaming ||
             spawnStatus == GTA_Vehicle_Spawn_Status::Creating || spawnStatus == GTA_Vehicle_Spawn_Status::Applying ||
             gameplayTeleportRequestReady || teleportStatus == GTA_Teleport_Waypoint_Status::Queued ||
@@ -415,6 +417,7 @@ void GTA_Run_Script_Threads_Bridge::RunLegacyGameplayTick(std::uint64_t now) noe
             m_nextForgeSnapshotTickMs = now + ForgeSnapshotTickIntervalMs;
             m_gameplay.TickSlow();
         }
+        TickVehicleGarageSave(*m_natives);
         (void)TickStatsExtension(*m_natives, RegularStatDrainBudget);
         if (explosiveAmmo) gameplayState.SetExplosiveBullets(true);
         return;
@@ -469,5 +472,4 @@ void* GTA_Run_Script_Threads_Bridge::FindValidatedScriptThread() const noexcept
         }
     }
     return nullptr;
-}
 }
