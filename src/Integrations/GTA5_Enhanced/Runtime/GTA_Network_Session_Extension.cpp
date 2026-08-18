@@ -91,6 +91,7 @@ GTA_Script_Function_Descriptor SendToCloudsDescriptor()
     descriptor.source.path = "scripts/shop_controller.c";
     descriptor.expectedBuildFingerprint = SupportedBuildFingerprint;
     descriptor.verifiedSynchronous = true;
+    descriptor.allowNonIdleCompletion = true;
     descriptor.exposure = GTA_Script_Function_Exposure::Internal;
     descriptor.locator = GTA_Script_Function_Locator_Kind::UniqueBytePattern;
     descriptor.bytePattern.assign(SendToCloudsPattern.begin(), SendToCloudsPattern.end());
